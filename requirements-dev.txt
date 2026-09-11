@@ -1,0 +1,2 @@
+-r requirements-cpu.txt
+mypy==1.15.0

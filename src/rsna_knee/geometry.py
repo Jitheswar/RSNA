@@ -1,0 +1,106 @@
+"""Deterministic geometry validation and anatomical slice ordering."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Sequence
+
+import numpy as np
+
+from .domain import DicomSlice
+
+
+class GeometryError(ValueError):
+    """Raised when a series cannot be ordered from reliable DICOM geometry."""
+
+
+@dataclass(frozen=True)
+class GeometryPolicy:
+    """Numerical policy used by :func:`order_slices`.
+
+    The policy is deliberately explicit so a future data audit can version
+    and change it without silently changing an existing cache.
+    """
+
+    position_tolerance: float = 1e-4
+    orientation_tolerance: float = 1e-3
+
+
+def _finite_vector(
+    value: object,
+    *,
+    length: int,
+    field_name: str,
+    uid: str,
+) -> np.ndarray:
+    if value is None:
+        raise GeometryError(f"{field_name} is missing for slice {uid}")
+    vector = np.asarray(value, dtype=np.float64)
+    if vector.shape != (length,) or not np.isfinite(vector).all():
+        raise GeometryError(f"{field_name} is invalid for slice {uid}")
+    return vector
+
+
+def _normal_for(item: DicomSlice, policy: GeometryPolicy) -> np.ndarray:
+    orientation = _finite_vector(
+        item.image_orientation,
+        length=6,
+        field_name="image orientation",
+        uid=item.sop_instance_uid,
+    )
+    row = orientation[:3]
+    column = orientation[3:]
+    row_norm = np.linalg.norm(row)
+    column_norm = np.linalg.norm(column)
+    if not np.isclose(row_norm, 1.0, atol=policy.orientation_tolerance):
+        raise GeometryError(f"row direction is not unit length for slice {item.sop_instance_uid}")
+    if not np.isclose(column_norm, 1.0, atol=policy.orientation_tolerance):
+        raise GeometryError(f"column direction is not unit length for slice {item.sop_instance_uid}")
+    if not np.isclose(float(np.dot(row, column)), 0.0, atol=policy.orientation_tolerance):
+        raise GeometryError(f"row and column directions are not orthogonal for slice {item.sop_instance_uid}")
+    normal = np.cross(row, column)
+    normal_norm = np.linalg.norm(normal)
+    if normal_norm <= policy.orientation_tolerance:
+        raise GeometryError(f"slice normal is undefined for slice {item.sop_instance_uid}")
+    return normal / normal_norm
+
+
+def order_slices(
+    slices: Sequence[DicomSlice],
+    policy: GeometryPolicy = GeometryPolicy(),
+) -> tuple[DicomSlice, ...]:
+    """Return slices ordered by their position projected onto the series normal.
+
+    File names and ``InstanceNumber`` are intentionally never consulted. Every
+    slice must carry finite position and orientation metadata, and every
+    orientation must agree with the first slice. Duplicate projected
+    positions are rejected because their order would be ambiguous.
+    """
+
+    if not slices:
+        raise GeometryError("series contains no slices")
+
+    reference_normal: np.ndarray | None = None
+    positioned: list[tuple[float, DicomSlice]] = []
+    for item in slices:
+        position = _finite_vector(
+            item.image_position,
+            length=3,
+            field_name="image position",
+            uid=item.sop_instance_uid,
+        )
+        normal = _normal_for(item, policy)
+        if reference_normal is None:
+            reference_normal = normal
+        elif float(np.dot(reference_normal, normal)) < 1.0 - policy.orientation_tolerance:
+            raise GeometryError(f"inconsistent slice orientation for slice {item.sop_instance_uid}")
+        positioned.append((float(np.dot(position, reference_normal)), item))
+
+    positioned.sort(key=lambda entry: (entry[0], entry[1].sop_instance_uid))
+    for previous, current in zip(positioned, positioned[1:]):
+        if current[0] - previous[0] <= policy.position_tolerance:
+            raise GeometryError(
+                "duplicate or indistinguishable spatial location for "
+                f"slices {previous[1].sop_instance_uid} and {current[1].sop_instance_uid}"
+            )
+    return tuple(item for _, item in positioned)
