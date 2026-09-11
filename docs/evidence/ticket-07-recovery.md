@@ -31,6 +31,9 @@ with `alpha=1` by default and `0.5` when that target has no known eligible
 reference label. Held-out identifiers cannot overlap the eligible set. The
 CLI accepts private inventory/fold-shaped JSON and admits only complete gold
 or reference rows from those formats; report-only memberships are ignored.
+For non-fold label files, the eligible study list is mandatory. A fold-shaped
+manifest can derive the training-reference set and held-out exclusion from an
+explicit `--fallback-held-out-fold` selection.
 
 ## Demonstrated scope
 
@@ -46,8 +49,12 @@ Synthetic integration tests exercise:
   usable-series count, and fallback status;
 - aggregate public numerator/denominator and rate for full-study fallback,
   separately from slice and series loss;
-- exclusion of report-only rows when the CLI reads a fold-shaped label file;
-  and
+- exclusion of report-only rows and held-out gold rows when the CLI reads a
+  fold-shaped label file;
+- private geometry/preprocessing rejection records with affected files and
+  admission-stage errors; and
+- public and private pending-investigation status for every nonzero fallback
+  case; no case is claimed unavoidable by synthetic evidence;
 - an unexpected decoder `RuntimeError` propagating as a fatal failure instead
   of becoming a successful universal-fallback output.
 
@@ -71,7 +78,8 @@ No private ticket-07 Slurm execution was performed in this implementation
 pass. Therefore this note does not claim full-corpus recovery coverage,
 representative real corruption rates, NFS/runtime compliance, or V17
 promotion. The hidden-set fallback rate remains unknown until the exact
-private bundle is run and every fallback case is investigated. Real decoder
+private bundle is run and every fallback case is investigated and assigned an
+unavoidable disposition. Real decoder
 classes outside the admitted pinned syntax, canonical fold-based eligibility,
 and owner-dependent competition delivery approvals remain governed by their
 earlier verification gates.

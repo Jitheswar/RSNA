@@ -233,15 +233,18 @@ The recovery adapter is bounded to one `cluster1-cpu` node, 16 CPUs, 64 GB,
 six hours, and no exclusive allocation. It requires the private ticket-05
 integration manifest and source. A private inventory or fold manifest can
 provide gold reference rows through `RSNA_TICKET07_FALLBACK_REFERENCE_LABELS`;
-optional JSON study lists can narrow the eligible set or declare held-out
-rows:
+when the label file has no fold assignments, an explicit
+`RSNA_TICKET07_FALLBACK_ELIGIBLE_STUDIES` list is required. For a fold-shaped
+manifest, select one held-out fold with
+`RSNA_TICKET07_FALLBACK_HELD_OUT_FOLD` (or provide explicit eligible and
+held-out lists):
 
 ```bash
 export RSNA_TICKET07_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json
 export RSNA_TICKET07_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
 export RSNA_TICKET07_OUTPUT=/private/path/ticket-07-recovery
 export RSNA_TICKET07_FALLBACK_REFERENCE_LABELS=/private/path/ticket-04-folds/private/fold-manifest.json
-export RSNA_TICKET07_FALLBACK_ELIGIBLE_STUDIES=/private/path/ticket-07/eligible-study-uids.json
+export RSNA_TICKET07_FALLBACK_HELD_OUT_FOLD=1
 sbatch --wait slurm/run_ticket07_recovery.sbatch
 ```
 
@@ -250,5 +253,7 @@ diagnostics below `private/`, and aggregate fallback numerator/denominator,
 slice loss, series loss, failure reasons, and prior counts below `public/`.
 Fallback status follows the promotion thresholds: zero is preferred, below
 0.5% requires investigation of every case, 0.5–1% normally blocks promotion,
-and above 1% blocks promotion. A prepared adapter or synthetic fixture does
-not constitute a private full-corpus or competition verification run.
+and above 1% blocks promotion. Any nonzero run records fallback cases as
+pending operator investigation and blocks promotion until each case has an
+investigated/unavoidable disposition. A prepared adapter or synthetic fixture
+does not constitute a private full-corpus or competition verification run.

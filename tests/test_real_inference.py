@@ -13,8 +13,10 @@ from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, UID
 from rsna_knee.cache_benchmark import run_cache_benchmark
 from rsna_knee.dicom import DecoderPolicy
 from rsna_knee.geometry import GeometryPolicy
+from rsna_knee.model import HierarchicalStudyModel, ModelConfig
 from rsna_knee.preprocessing import PreprocessConfig
 from rsna_knee.inventory import inventory_archive, select_representative_batch, write_inventory_reports, write_selection_reports
+from rsna_knee.series_cache import SeriesCacheError
 from rsna_knee.targets import NUM_TARGETS
 from rsna_knee.real_inference import (
     IntegrationManifest,
@@ -70,20 +72,7 @@ def _write_slice(
 
 
 def _manifest(study_uid: str, series: tuple[IntegrationSeries, ...]) -> IntegrationManifest:
-    geometry = GeometryPolicy(minimum_usable_slices=3)
-    return IntegrationManifest(
-        source_version="fixture-real-v1",
-        archive_fingerprint="fixture-fingerprint",
-        geometry_policy=geometry,
-        decoder_policy=DecoderPolicy(require_modality=True),
-        preprocess_config=PreprocessConfig(
-            image_size=(8, 8),
-            max_slices=8,
-            max_series=4,
-            geometry_policy=geometry,
-        ),
-        studies=(IntegrationStudy(study_uid, series),),
-    )
+    return _manifest_for_studies((IntegrationStudy(study_uid, series),))
 
 
 def _manifest_for_studies(studies: tuple[IntegrationStudy, ...]) -> IntegrationManifest:
@@ -339,16 +328,24 @@ def test_real_inference_records_geometry_rejection_and_keeps_the_study_row(tmp_p
         manifest_path,
     )
 
+    private_evidence_path = tmp_path / "private" / "geometry.json"
     evidence = run_real_inference(
         manifest_path,
         tmp_path,
         tmp_path / "submission.csv",
+        private_evidence_path=private_evidence_path,
         allow_local_smoke=True,
     )
 
     assert evidence["counts"]["fallback_studies"] == 1
     assert evidence["counts"]["prediction_rejected_series"] == 1
     assert evidence["counts"]["output_rows"] == 1
+    private = json.loads(private_evidence_path.read_text(encoding="utf-8"))
+    rejection = private["studies"][0]["recovery"]["series_rejections"][0]
+    assert rejection["affected_files"] == list(entries)
+    assert rejection["decoder"] == "preprocessing_or_geometry"
+    assert rejection["error"] == "inconsistent slice spacing"
+    assert rejection["recovery"] == "study_fallback_reference_prior"
 
 
 def test_real_inference_recovers_a_partially_corrupt_series_and_logs_each_attempt_privately(
@@ -360,7 +357,7 @@ def test_real_inference_recovers_a_partially_corrupt_series_and_logs_each_attemp
         _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
         for index in range(4)
     )
-    (tmp_path / entries[-1]).unlink()
+    (tmp_path / entries[-1]).write_bytes(b"truncated-dicom")
     manifest_path = tmp_path / "manifest.json"
     write_integration_manifest(
         _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
@@ -460,6 +457,9 @@ def test_real_inference_keeps_rows_for_missing_series_and_all_invalid_studies_us
     assert by_uid[missing_uid]["recovery"]["remaining_usable_series"] == 0
     assert by_uid[empty_uid]["recovery"]["used_fallback"] is True
     assert by_uid[empty_uid]["recovery"]["manifest_series_count"] == 0
+    assert evidence["recovery"]["fallback_investigation"]["complete"] is False
+    assert evidence["recovery"]["fallback_investigation"]["promotion_blocked_until_complete"] is True
+    assert by_uid[missing_uid]["recovery"]["fallback_investigation"]["status"] == "pending_operator_review"
 
 
 def test_unexpected_decoder_programming_failure_is_not_converted_to_study_fallback(
@@ -512,11 +512,19 @@ def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Pat
                     {
                         "StudyInstanceUID": "gold",
                         "cohort": "gold",
+                        "fold": 0,
                         "reference_labels": [1] + [0] * (NUM_TARGETS - 1),
+                    },
+                    {
+                        "StudyInstanceUID": "held-out-gold",
+                        "cohort": "gold",
+                        "fold": 1,
+                        "reference_labels": [0] * NUM_TARGETS,
                     },
                     {
                         "StudyInstanceUID": "weak-report",
                         "cohort": "report_only",
+                        "fold": 1,
                         "reference_labels": [0] * NUM_TARGETS,
                     },
                 ]
@@ -540,6 +548,8 @@ def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Pat
             "07",
             "--fallback-reference-labels",
             str(labels_path),
+            "--fallback-held-out-fold",
+            "1",
             "--allow-local-smoke",
         ]
     )
@@ -547,6 +557,60 @@ def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Pat
     assert exit_code == 0
     private = json.loads(private_evidence_path.read_text(encoding="utf-8"))
     assert private["fallback_prior"]["eligible_study_uids"] == ["gold"]
+
+
+def test_real_inference_fails_on_model_configuration_errors_instead_of_using_fallback(
+    tmp_path: Path,
+) -> None:
+    study_uid = "1.2.826.0.1.3680043.8.498.101"
+    series_uid = "1.2.826.0.1.3680043.8.498.102"
+    entries = tuple(
+        _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(3)
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(
+        _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
+        manifest_path,
+    )
+
+    with pytest.raises(ValueError, match="image sizes must agree"):
+        run_real_inference(
+            manifest_path,
+            tmp_path,
+            tmp_path / "submission.csv",
+            model=HierarchicalStudyModel(ModelConfig(image_size=(16, 16))),
+            allow_local_smoke=True,
+        )
+
+
+def test_real_inference_fails_on_cache_root_configuration_errors_instead_of_using_fallback(
+    tmp_path: Path,
+) -> None:
+    study_uid = "1.2.826.0.1.3680043.8.498.111"
+    series_uid = "1.2.826.0.1.3680043.8.498.112"
+    entries = tuple(
+        _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(3)
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(
+        _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
+        manifest_path,
+    )
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    cache_root.chmod(0o700)
+    (cache_root / "unrelated-file").write_text("not a disposable cache", encoding="utf-8")
+
+    with pytest.raises(SeriesCacheError, match="new, empty"):
+        run_real_inference(
+            manifest_path,
+            tmp_path,
+            tmp_path / "submission.csv",
+            cache_root=cache_root,
+            allow_local_smoke=True,
+        )
 
 
 def test_cache_benchmark_proves_sampling_reuses_materialized_series(tmp_path: Path) -> None:

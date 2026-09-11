@@ -62,3 +62,8 @@ def test_reference_priors_reject_held_out_eligibility_and_invalid_labels() -> No
             {"study": (2,) + (None,) * (NUM_TARGETS - 1)},
             eligible_study_uids=("study",),
         )
+
+
+def test_reference_priors_require_an_explicit_eligible_set_for_nonempty_inputs() -> None:
+    with pytest.raises(ValueError, match="eligible_study_uids is required"):
+        compute_laplace_smoothed_reference_priors({"study": _labels(acl=1)})

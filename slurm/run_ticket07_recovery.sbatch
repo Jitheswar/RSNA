@@ -18,6 +18,7 @@ output_dir="${RSNA_TICKET07_OUTPUT:?set RSNA_TICKET07_OUTPUT to a private ticket
 fallback_labels_path="${RSNA_TICKET07_FALLBACK_REFERENCE_LABELS:-}"
 eligible_uids_path="${RSNA_TICKET07_FALLBACK_ELIGIBLE_STUDIES:-}"
 held_out_uids_path="${RSNA_TICKET07_FALLBACK_HELD_OUT_STUDIES:-}"
+held_out_fold="${RSNA_TICKET07_FALLBACK_HELD_OUT_FOLD:-}"
 cache_root="${RSNA_TICKET07_CACHE_ROOT:-}"
 
 cd "${project_dir}"
@@ -51,6 +52,10 @@ if [[ -n "${held_out_uids_path}" && ! -f "${held_out_uids_path}" ]]; then
   echo "fallback held-out-study file does not exist: ${held_out_uids_path}" >&2
   exit 1
 fi
+if [[ -n "${held_out_fold}" && ! "${held_out_fold}" =~ ^[0-9]+$ ]]; then
+  echo "fallback held-out fold must be a non-negative integer: ${held_out_fold}" >&2
+  exit 1
+fi
 
 export PYTHONPATH="${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
 recovery_args=(
@@ -70,6 +75,9 @@ if [[ -n "${eligible_uids_path}" ]]; then
 fi
 if [[ -n "${held_out_uids_path}" ]]; then
   recovery_args+=(--fallback-held-out-study-uids "${held_out_uids_path}")
+fi
+if [[ -n "${held_out_fold}" ]]; then
+  recovery_args+=(--fallback-held-out-fold "${held_out_fold}")
 fi
 if [[ -n "${cache_root}" ]]; then
   recovery_args+=(--cache-root "${cache_root}")

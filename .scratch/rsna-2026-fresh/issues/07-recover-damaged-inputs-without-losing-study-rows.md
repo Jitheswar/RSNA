@@ -51,3 +51,17 @@ verification gates are recorded in
 No private ticket-07 execution was performed, so full-corpus recovery rate,
 hidden-set fallback investigation, V17 promotion, and approval-dependent
 delivery remain unresolved.
+
+### 2026-09-11 — Boundary tightening and final local verification
+
+Fallback computation now requires an explicit eligible set for direct/API
+inputs. Fold-shaped CLI inputs can derive training-reference rows and exclude
+one selected held-out fold; report-only rows never enter the prior. Private
+evidence also records affected files for geometry/preprocessing rejections and
+marks every nonzero fallback case pending operator investigation rather than
+claiming it unavoidable. Model, cache, and unexpected decoder failures remain
+fatal.
+
+Final local verification: 89 tests passed, mypy passed, the recovery Slurm
+adapter parsed with `bash -n`, and `git diff --check` passed. No private Slurm
+execution was performed.

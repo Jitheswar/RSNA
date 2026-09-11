@@ -64,6 +64,7 @@ from .recovery import (
     ReferenceFallbackPrior,
     compute_laplace_smoothed_reference_priors,
     default_reference_fallback_prior,
+    validate_reference_label_vector,
 )
 from .real_inference import (
     DEFAULT_REAL_DECODER_POLICY,
@@ -211,6 +212,7 @@ __all__ = [
     "ReferenceFallbackPrior",
     "compute_laplace_smoothed_reference_priors",
     "default_reference_fallback_prior",
+    "validate_reference_label_vector",
     "SubmissionError",
     "validate_predictions",
     "write_submission",

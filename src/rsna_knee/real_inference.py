@@ -48,6 +48,7 @@ from .recovery import (
     ReferenceFallbackPrior,
     compute_laplace_smoothed_reference_priors,
     default_reference_fallback_prior,
+    validate_reference_label_vector,
 )
 from .submission import write_submission
 from .series_policy import has_non_diagnostic_token
@@ -66,6 +67,8 @@ DEFAULT_REAL_DECODER_POLICY = DecoderPolicy(require_modality=True)
 DEFAULT_REAL_PREPROCESS_CONFIG = PreprocessConfig(
     geometry_policy=DEFAULT_REAL_GEOMETRY_POLICY,
 )
+
+
 class RealIntegrationError(ValueError):
     """Raised when a private manifest or real-input admission is unsafe."""
 
@@ -1053,34 +1056,21 @@ def _verify_archive_source_identity(source_path: Path, manifest: IntegrationMani
         )
 
 
-def _reference_label_vector(value: object, field: str) -> tuple[int | None, ...]:
-    if not isinstance(value, (list, tuple)) or len(value) != NUM_TARGETS:
-        raise RealIntegrationError(f"{field} must contain {NUM_TARGETS} target labels")
-    labels: list[int | None] = []
-    for label in value:
-        if label is None:
-            labels.append(None)
-        elif (
-            isinstance(label, bool)
-            or not isinstance(label, (int, np.integer))
-            or int(label) not in (0, 1)
-        ):
-            raise RealIntegrationError(f"{field} must contain only 0, 1 or missing values")
-        else:
-            labels.append(int(label))
-    return tuple(labels)
-
-
-def _load_reference_labels_json(path: str | Path) -> dict[str, tuple[int | None, ...]]:
+def _load_reference_labels_json(
+    path: str | Path,
+) -> tuple[dict[str, tuple[int | None, ...]], dict[str, int] | None]:
     """Load trusted reference rows from a private inventory/fold-style JSON."""
 
     root = _load_json_object(path, "fallback reference labels")
     rows: dict[str, tuple[int | None, ...]] = {}
+    folds: dict[str, int] = {}
     labels_value = root.get("labels")
     if isinstance(labels_value, Mapping):
         for raw_uid, raw_labels in labels_value.items():
             uid = _nonempty(raw_uid, "fallback reference label study identifier")
-            rows[uid] = _reference_label_vector(raw_labels, f"fallback labels for {uid}")
+            if uid in rows:
+                raise RealIntegrationError(f"fallback reference labels repeat study {uid}")
+            rows[uid] = validate_reference_label_vector(raw_labels, field=f"fallback labels for {uid}")
     else:
         memberships = root.get("memberships")
         if isinstance(memberships, list):
@@ -1089,10 +1079,29 @@ def _load_reference_labels_json(path: str | Path) -> dict[str, tuple[int | None,
                 if item.get("cohort") != "gold":
                     continue
                 uid = _nonempty(item.get("StudyInstanceUID", ""), "fallback membership StudyInstanceUID")
-                rows[uid] = _reference_label_vector(
+                if uid in rows:
+                    raise RealIntegrationError(f"fallback reference labels repeat study {uid}")
+                rows[uid] = validate_reference_label_vector(
                     item.get("reference_labels"),
-                    f"fallback membership labels for {uid}",
+                    field=f"fallback membership labels for {uid}",
                 )
+                if any(label is None for label in rows[uid]):
+                    raise RealIntegrationError(
+                        f"fallback gold membership labels must be complete for {uid}"
+                    )
+                raw_fold = item.get("fold")
+                if raw_fold is not None:
+                    if isinstance(raw_fold, bool):
+                        raise RealIntegrationError(f"fallback membership fold is invalid for {uid}")
+                    try:
+                        fold = int(str(raw_fold))
+                    except (TypeError, ValueError, OverflowError) as exc:
+                        raise RealIntegrationError(
+                            f"fallback membership fold is invalid for {uid}"
+                        ) from exc
+                    if fold < 0:
+                        raise RealIntegrationError(f"fallback membership fold is invalid for {uid}")
+                    folds[uid] = fold
         else:
             source = root.get("source")
             source_mapping = source if isinstance(source, Mapping) else root
@@ -1100,15 +1109,17 @@ def _load_reference_labels_json(path: str | Path) -> dict[str, tuple[int | None,
             if isinstance(studies, list):
                 for index, raw_item in enumerate(studies):
                     item = _mapping(raw_item, f"fallback source study {index}")
-                    labels = _reference_label_vector(
+                    labels = validate_reference_label_vector(
                         item.get("reference_labels"),
-                        f"fallback source labels {index}",
+                        field=f"fallback source labels {index}",
                     )
                     if all(label is not None for label in labels):
                         uid = _nonempty(
                             item.get("StudyInstanceUID", ""),
                             "fallback source StudyInstanceUID",
                         )
+                        if uid in rows:
+                            raise RealIntegrationError(f"fallback reference labels repeat study {uid}")
                         rows[uid] = labels
     if not rows:
         raise RealIntegrationError(
@@ -1116,7 +1127,7 @@ def _load_reference_labels_json(path: str | Path) -> dict[str, tuple[int | None,
         )
     if len(rows) != len(set(rows)):
         raise RealIntegrationError("fallback reference labels contain duplicate study identifiers")
-    return rows
+    return rows, (folds if folds else None)
 
 
 def _load_study_uid_list_json(path: str | Path) -> tuple[str, ...]:
@@ -1136,6 +1147,61 @@ def _load_study_uid_list_json(path: str | Path) -> tuple[str, ...]:
     else:
         raise RealIntegrationError(f"study identifier list {source} must contain an array")
     return _tuple_of_strings(values, "study identifier list")
+
+
+def _private_series_rejections(
+    loaded: LoadedStudy,
+    prediction: StudyPrediction,
+) -> list[dict[str, object]]:
+    """Expand non-loader rejections with the files and admission stage involved."""
+
+    result: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for failure in prediction.rejected_series:
+        manifest_series = next(
+            (
+                item
+                for item in loaded.series_results
+                if item.manifest_series.series_instance_uid == failure.series_instance_uid
+            ),
+            None,
+        )
+        if manifest_series is None:
+            continue
+        loader_reasons = {
+            f"{item.reason}: {item.detail}" for item in manifest_series.failures
+        }
+        if failure.reason in loader_reasons:
+            continue
+        key = (failure.series_instance_uid, failure.reason)
+        if key in seen:
+            continue
+        seen.add(key)
+        is_preprocessing_rejection = manifest_series.series is not None
+        result.append(
+            {
+                "series_instance_uid": failure.series_instance_uid,
+                "affected_files": list(manifest_series.manifest_series.entries),
+                "surviving_files": (
+                    list(manifest_series.series.source_entry_names)
+                    if manifest_series.series is not None
+                    else []
+                ),
+                "decoder": "preprocessing_or_geometry" if is_preprocessing_rejection else "admission_policy",
+                "attempts": [],
+                "error": failure.reason,
+                "recovery": (
+                    "study_fallback_reference_prior"
+                    if prediction.used_fallback
+                    else (
+                        "skip_unusable_series_continue_with_survivors"
+                        if is_preprocessing_rejection
+                        else "exclude_non_diagnostic_series"
+                    )
+                ),
+            }
+        )
+    return result
 
 
 def _private_study_evidence(
@@ -1202,6 +1268,14 @@ def _private_study_evidence(
                 "admitted_by_loader": sum(item.series is not None for item in loaded.series_results),
                 "usable": prediction.valid_series_count,
                 "lost": len(loaded.series_results) - prediction.valid_series_count,
+            },
+            "series_rejections": _private_series_rejections(loaded, prediction),
+            "fallback_investigation": {
+                "required": prediction.used_fallback,
+                "status": "pending_operator_review" if prediction.used_fallback else "not_required",
+                "investigated": not prediction.used_fallback,
+                "unavoidable": None,
+                "promotion_eligible": not prediction.used_fallback,
             },
         },
     }
@@ -1424,6 +1498,15 @@ def run_real_inference(
             },
             "failure_reasons": dict(sorted(failure_reason_counts.items())),
             "global_failures_are_fatal": True,
+            "fallback_investigation": {
+                "required": fallback_numerator > 0,
+                "fallback_cases": fallback_numerator,
+                "investigated_cases": 0,
+                "unavoidable_cases": 0,
+                "status": "pending_operator_review" if fallback_numerator else "not_required",
+                "complete": fallback_numerator == 0,
+                "promotion_blocked_until_complete": fallback_numerator > 0,
+            },
         },
         "timing": {"elapsed_seconds": elapsed_seconds},
         "cache_boundary": {
@@ -1496,6 +1579,12 @@ def _parser() -> Any:
         default=None,
         help="private JSON array/object naming rows excluded from the prior",
     )
+    parser.add_argument(
+        "--fallback-held-out-fold",
+        type=int,
+        default=None,
+        help="derive eligible and held-out gold rows from this fold in a private fold manifest",
+    )
     parser.add_argument("--fallback-alpha", type=float, default=1.0)
     parser.add_argument("--evidence-ticket", default="05")
     parser.add_argument("--require-slurm", action="store_true")
@@ -1511,14 +1600,67 @@ def main(argv: list[str] | None = None) -> int:
         if args.inventory is not None and args.selection is not None:
             build_integration_manifest(args.inventory, args.selection, args.manifest)
         fallback_reference_labels = None
+        fallback_label_folds = None
         fallback_eligible_study_uids = None
-        fallback_held_out_study_uids: Sequence[str] = ()
+        fallback_held_out_study_uids: tuple[str, ...] | None = None
         if args.fallback_reference_labels is not None:
-            fallback_reference_labels = _load_reference_labels_json(args.fallback_reference_labels)
+            fallback_reference_labels, fallback_label_folds = _load_reference_labels_json(
+                args.fallback_reference_labels
+            )
         if args.fallback_eligible_study_uids is not None:
             fallback_eligible_study_uids = _load_study_uid_list_json(args.fallback_eligible_study_uids)
         if args.fallback_held_out_study_uids is not None:
             fallback_held_out_study_uids = _load_study_uid_list_json(args.fallback_held_out_study_uids)
+        if args.fallback_held_out_fold is not None:
+            if fallback_reference_labels is None or fallback_label_folds is None:
+                raise RealIntegrationError(
+                    "--fallback-held-out-fold requires a fold-shaped reference-label file"
+                )
+            if set(fallback_label_folds) != set(fallback_reference_labels):
+                raise RealIntegrationError(
+                    "fold-shaped reference labels must declare a fold for every gold row"
+                )
+            derived_held_out = tuple(
+                sorted(
+                    uid
+                    for uid, fold in fallback_label_folds.items()
+                    if fold == args.fallback_held_out_fold
+                )
+            )
+            derived_eligible = tuple(
+                sorted(
+                    uid
+                    for uid, fold in fallback_label_folds.items()
+                    if fold != args.fallback_held_out_fold
+                )
+            )
+            if not derived_held_out:
+                raise RealIntegrationError(
+                    f"selected held-out fold {args.fallback_held_out_fold} has no gold rows"
+                )
+            if (
+                fallback_eligible_study_uids is not None
+                and set(fallback_eligible_study_uids) != set(derived_eligible)
+            ):
+                raise RealIntegrationError(
+                    "explicit eligible studies disagree with the selected held-out fold"
+                )
+            if (
+                fallback_held_out_study_uids is not None
+                and set(fallback_held_out_study_uids) != set(derived_held_out)
+            ):
+                raise RealIntegrationError(
+                    "explicit held-out studies disagree with the selected held-out fold"
+                )
+            fallback_eligible_study_uids = derived_eligible
+            fallback_held_out_study_uids = derived_held_out
+        elif fallback_reference_labels is not None and fallback_eligible_study_uids is None:
+            if fallback_label_folds is None:
+                raise RealIntegrationError(
+                    "--fallback-eligible-study-uids is required for reference labels "
+                    "without fold assignments"
+                )
+            fallback_eligible_study_uids = tuple(sorted(fallback_reference_labels))
         evidence = run_real_inference(
             args.manifest,
             args.source,
@@ -1529,7 +1671,7 @@ def main(argv: list[str] | None = None) -> int:
             cache_root=args.cache_root,
             fallback_reference_labels=fallback_reference_labels,
             fallback_eligible_study_uids=fallback_eligible_study_uids,
-            fallback_held_out_study_uids=fallback_held_out_study_uids,
+            fallback_held_out_study_uids=fallback_held_out_study_uids or (),
             fallback_alpha=args.fallback_alpha,
             evidence_ticket=args.evidence_ticket,
             require_slurm=args.require_slurm,

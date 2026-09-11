@@ -39,25 +39,32 @@ def _validated_labels(
             raise RecoveryConfigurationError("reference labels contain an empty study identifier")
         if uid in result:
             raise RecoveryConfigurationError(f"reference labels repeat study {uid}")
-        labels = tuple(raw_labels)
-        if len(labels) != NUM_TARGETS:
-            raise RecoveryConfigurationError(
-                f"reference labels for {uid} must contain {NUM_TARGETS} targets"
-            )
-        if any(
-            label is not None
-            and (
-                isinstance(label, bool)
-                or not isinstance(label, (int, np.integer))
-                or int(label) not in (0, 1)
-            )
-            for label in labels
-        ):
-            raise RecoveryConfigurationError(
-                f"reference labels for {uid} must contain only 0, 1 or missing values"
-            )
-        result[uid] = tuple(None if label is None else int(label) for label in labels)
+        result[uid] = validate_reference_label_vector(raw_labels, field=f"reference labels for {uid}")
     return result
+
+
+def validate_reference_label_vector(
+    value: object,
+    *,
+    field: str = "reference labels",
+) -> tuple[int | None, ...]:
+    """Validate one twelve-target reference-label vector."""
+
+    if not isinstance(value, (list, tuple)) or len(value) != NUM_TARGETS:
+        raise RecoveryConfigurationError(f"{field} must contain {NUM_TARGETS} target labels")
+    labels: list[int | None] = []
+    for label in value:
+        if label is None:
+            labels.append(None)
+        elif (
+            isinstance(label, bool)
+            or not isinstance(label, (int, np.integer))
+            or int(label) not in (0, 1)
+        ):
+            raise RecoveryConfigurationError(f"{field} must contain only 0, 1 or missing values")
+        else:
+            labels.append(int(label))
+    return tuple(labels)
 
 
 @dataclass(frozen=True)
@@ -112,7 +119,7 @@ class ReferenceFallbackPrior:
         if not self.source.strip():
             raise RecoveryConfigurationError("fallback prior source must be non-empty")
         uids = _study_uids(self.eligible_study_uids, "eligible_study_uids")
-        if uids and len(uids) != self.eligible_study_count:
+        if len(uids) != self.eligible_study_count:
             raise RecoveryConfigurationError(
                 "eligible_study_uids does not agree with eligible_study_count"
             )
@@ -177,18 +184,22 @@ def compute_laplace_smoothed_reference_priors(
     """
 
     labels_by_study = _validated_labels(reference_labels)
-    eligible = (
-        _study_uids(eligible_study_uids, "eligible_study_uids")
-        if eligible_study_uids is not None
-        else tuple(sorted(labels_by_study))
-    )
+    eligible: tuple[str, ...]
+    if eligible_study_uids is None:
+        if labels_by_study:
+            raise RecoveryConfigurationError(
+                "eligible_study_uids is required when reference labels are supplied"
+            )
+        eligible = ()
+    else:
+        eligible = _study_uids(eligible_study_uids, "eligible_study_uids")
     held_out = _study_uids(held_out_study_uids, "held_out_study_uids")
-    overlap = sorted(set(eligible).intersection(held_out))
+    overlap: list[str] = sorted(set(eligible).intersection(held_out))
     if overlap:
         raise RecoveryConfigurationError(
             f"eligible reference labels overlap held-out studies: {overlap[:3]}"
         )
-    missing = sorted(set(eligible).difference(labels_by_study))
+    missing: list[str] = sorted(set(eligible).difference(labels_by_study))
     if missing:
         raise RecoveryConfigurationError(
             f"eligible reference labels are missing study rows: {missing[:3]}"
@@ -239,4 +250,5 @@ __all__ = [
     "ReferenceFallbackPrior",
     "compute_laplace_smoothed_reference_priors",
     "default_reference_fallback_prior",
+    "validate_reference_label_vector",
 ]
