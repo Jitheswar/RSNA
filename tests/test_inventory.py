@@ -338,6 +338,28 @@ def test_inventory_excludes_reliably_named_localizer_series(tmp_path: Path) -> N
     assert series.is_complete is False
 
 
+def test_inventory_requires_a_token_boundary_for_non_diagnostic_names(tmp_path: Path) -> None:
+    from rsna_knee.inventory import inventory_archive
+
+    archive_path = tmp_path / "token-boundary-source.zip"
+    _write_fixture_archive(archive_path)
+    with zipfile.ZipFile(archive_path, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "train_series/2.25.100/2.25.101/2.25.401.dcm",
+            _dicom_bytes(
+                "2.25.100",
+                "2.25.101",
+                "2.25.401",
+                position=1.0,
+                series_description="calibrationlike sequence",
+            ),
+        )
+
+    report = inventory_archive(archive_path, source_version="fixture-2026-09-11")
+
+    assert report.series_by_uid["2.25.101"].diagnostic_status == "diagnostic"
+
+
 def test_partial_reference_labels_are_neither_gold_nor_report_only() -> None:
     from rsna_knee.inventory import SourceStudy
 

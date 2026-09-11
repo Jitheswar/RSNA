@@ -15,6 +15,7 @@ import json
 import math
 import os
 import platform
+import re
 import socket
 import sys
 import time
@@ -43,6 +44,14 @@ INVENTORY_SCHEMA_VERSION = "rsna-knee-inventory-v1"
 _NON_DIAGNOSTIC_METADATA_TOKENS = frozenset(
     {"scout", "localizer", "localiser", "survey", "pilot", "calibration"}
 )
+
+
+def _has_non_diagnostic_token(values: Iterable[str]) -> bool:
+    return any(
+        re.search(rf"(?<![\w]){re.escape(token)}(?![\w])", value.casefold())
+        for value in values
+        for token in _NON_DIAGNOSTIC_METADATA_TOKENS
+    )
 
 
 class InventoryError(ValueError):
@@ -574,10 +583,13 @@ class InventoryReport:
             "source_version": self.source_version,
             "split": self.split,
             "geometry_policy": {
+                "policy_version": self.geometry_policy.policy_version,
                 "position_tolerance": self.geometry_policy.position_tolerance,
                 "orientation_tolerance": self.geometry_policy.orientation_tolerance,
                 "spacing_tolerance": self.geometry_policy.spacing_tolerance,
                 "minimum_usable_slices": self.geometry_policy.minimum_usable_slices,
+                "require_consistent_dimensions": self.geometry_policy.require_consistent_dimensions,
+                "require_consistent_orientation": self.geometry_policy.require_consistent_orientation,
             },
             "archive": {
                 "archive_size_bytes": self.archive_identity.archive_size_bytes,
@@ -632,10 +644,13 @@ class InventoryReport:
             "source_version": self.source_version,
             "split": self.split,
             "geometry_policy": {
+                "policy_version": self.geometry_policy.policy_version,
                 "position_tolerance": self.geometry_policy.position_tolerance,
                 "orientation_tolerance": self.geometry_policy.orientation_tolerance,
                 "spacing_tolerance": self.geometry_policy.spacing_tolerance,
                 "minimum_usable_slices": self.geometry_policy.minimum_usable_slices,
+                "require_consistent_dimensions": self.geometry_policy.require_consistent_dimensions,
+                "require_consistent_orientation": self.geometry_policy.require_consistent_orientation,
             },
             "archive": {
                 "archive_name": self.archive_identity.archive_name,
@@ -803,8 +818,7 @@ class _SeriesAccumulator:
         metadata = tuple(self.dicom_series_descriptions) + tuple(self.image_type_values)
         if not metadata:
             return "unknown"
-        normalized = tuple(value.casefold() for value in metadata)
-        if any(token in value for value in normalized for token in _NON_DIAGNOSTIC_METADATA_TOKENS):
+        if _has_non_diagnostic_token(metadata):
             return "excluded_non_diagnostic"
         return "diagnostic"
 

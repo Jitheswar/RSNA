@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from rsna_knee.domain import DicomSlice
-from rsna_knee.geometry import GeometryError, order_slices
+from rsna_knee.geometry import GeometryError, GeometryPolicy, order_slices
 
 
 ORIENTATION = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
@@ -58,3 +58,25 @@ def test_order_slices_rejects_duplicate_spatial_locations() -> None:
 
     with pytest.raises(GeometryError, match="duplicate"):
         order_slices(slices)
+
+
+def test_geometry_policy_rejects_inconsistent_spacing_and_dimensions() -> None:
+    first = make_slice("first", 0.0, filename="a.dcm", instance_number=1)
+    second = make_slice("second", 1.0, filename="b.dcm", instance_number=2)
+    third = make_slice("third", 3.0, filename="c.dcm", instance_number=3)
+    object.__setattr__(third, "pixel_array", np.zeros((3, 2), dtype=np.float32))
+
+    with pytest.raises(GeometryError, match="dimension"):
+        order_slices((first, second, third), GeometryPolicy(minimum_usable_slices=3))
+
+    matching_third = make_slice("third", 3.0, filename="c.dcm", instance_number=3)
+    with pytest.raises(GeometryError, match="spacing"):
+        order_slices((first, second, matching_third), GeometryPolicy(minimum_usable_slices=3))
+
+
+def test_geometry_policy_rejects_a_series_shorter_than_the_frozen_minimum() -> None:
+    first = make_slice("first", 0.0, filename="a.dcm", instance_number=1)
+    second = make_slice("second", 1.0, filename="b.dcm", instance_number=2)
+
+    with pytest.raises(GeometryError, match="at least 3"):
+        order_slices((first, second), GeometryPolicy(minimum_usable_slices=3))

@@ -1,9 +1,10 @@
 # RSNA knee mechanics baseline
 
-This repository contains the ticket 2 tracer bullet: a small, image-only
-inference core that turns in-memory synthetic pydicom studies into the exact
-twelve-target competition schema. It is intentionally not a real-DICOM
-compatibility or training-preflight claim.
+This repository contains the ticket 2 image-only inference core and the ticket
+5 private real-DICOM integration path. The core turns synthetic or admitted
+MRI studies into the exact twelve-target competition schema; the real-data
+runner consumes a checksum-covered private manifest and uses the same decoder,
+geometry, preprocessing, hierarchical model, and submission interfaces.
 
 ## Reproducible CPU environment
 
@@ -142,3 +143,33 @@ silently chooses that path. The adapter requests one
 Both output paths are immutable: rerunning with an existing manifest refuses
 to overwrite it. Identifier-bearing output belongs below a private ignored
 path; `public/fold-evidence.json` is safe for aggregate evidence only.
+
+## Ticket 05 real-DICOM integration
+
+`rsna_knee.real_inference` builds a private integration manifest from the
+ticket-03 inventory and selection, verifies the source archive identity, and
+streams each admitted DICOM entry through the pinned decoder. It then uses the
+shared geometry, preprocessing, masked eight-slice/series packing, hierarchical
+model, and exact submission writer. The manifest freezes the geometry,
+decoder, preprocessing, and packing policies; sampling is post-materialization
+and model architecture is not part of the preprocessing cache identity.
+
+The default real-input policy admits explicit VR little endian through pydicom
+3.0.1, requires MR modality and single-frame grayscale pixels, rejects uncertain
+geometry, requires at least three usable slices, excludes only reliably named
+scout/localizer-style series, and records typed failures and warnings. Real
+competition data and identifier-bearing artifacts stay outside Git:
+
+```bash
+export RSNA_TICKET05_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET05_INVENTORY=/private/path/ticket-03-inventory/private/inventory.json
+export RSNA_TICKET05_SELECTION=/private/path/ticket-03-inventory/private/selection.json
+export RSNA_TICKET05_OUTPUT=/private/path/ticket-05-real-inference
+sbatch --wait slurm/run_ticket05_real_inference.sbatch
+```
+
+The adapter requests one `cluster1-cpu` node, 16 CPUs, 64 GB, and six hours
+without exclusive allocation. It writes the private manifest, submission, and
+diagnostics below `private/`, plus identifier-free aggregate evidence below
+`public/`. The bounded real run and its limitations are recorded in
+[`docs/evidence/ticket-05-real-inference.md`](docs/evidence/ticket-05-real-inference.md).

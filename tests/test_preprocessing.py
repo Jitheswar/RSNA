@@ -53,3 +53,49 @@ def test_pack_study_marks_padding_without_repeating_evidence() -> None:
     assert packed.sampled_source_indices == ((0, 1, 2), ())
     assert np.all(packed.images[0, 3] == 0.0)
     assert np.all(packed.images[1] == 0.0)
+
+
+def test_preprocessing_masks_stored_padding_before_modality_normalization() -> None:
+    item = DicomSlice(
+        sop_instance_uid="slice-padding",
+        image_position=(0.0, 0.0, 0.0),
+        image_orientation=ORIENTATION,
+        pixel_array=np.array([[-1, 0], [10, 20]], dtype=np.int16),
+        padding_value=-1.0,
+        padding_range_limit=0.0,
+        rescale_slope=2.0,
+        rescale_intercept=-10.0,
+    )
+    series = SeriesRecord("study-padding", "series-padding", (item,))
+
+    prepared = prepare_series(
+        series,
+        PreprocessConfig(image_size=(2, 2), max_slices=8, max_series=1),
+    )
+
+    np.testing.assert_allclose(prepared.images[0, 0], [[0.0, 0.0], [0.0, 1.0]])
+    assert prepared.warnings == ()
+
+
+def test_preprocessing_records_a_warning_for_constant_valid_intensity() -> None:
+    item = DicomSlice(
+        sop_instance_uid="slice-constant",
+        image_position=(0.0, 0.0, 0.0),
+        image_orientation=ORIENTATION,
+        pixel_array=np.array([[-1, 5], [-1, 5]], dtype=np.int16),
+        padding_value=-1.0,
+    )
+    prepared = prepare_series(
+        SeriesRecord("study-constant", "series-constant", (item,)),
+        PreprocessConfig(image_size=(2, 2), max_slices=8, max_series=1),
+    )
+
+    assert np.all(prepared.images == 0.0)
+    assert prepared.warnings == ("slice-constant:constant_valid_intensity",)
+
+
+def test_cache_configuration_does_not_change_when_only_sampling_changes() -> None:
+    first = PreprocessConfig(image_size=(8, 8), max_slices=8, max_series=4)
+    second = PreprocessConfig(image_size=(8, 8), max_slices=16, max_series=12)
+
+    assert first.cache_config() == second.cache_config()

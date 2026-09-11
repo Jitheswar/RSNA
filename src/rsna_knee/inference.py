@@ -14,6 +14,7 @@ from .model import HierarchicalStudyModel
 from .preprocessing import (
     PackedStudy,
     PreprocessConfig,
+    PackingConfig,
     SeriesFailure,
     pack_study,
     prepare_study,
@@ -36,6 +37,7 @@ class StudyPrediction:
     valid_series_count: int
     rejected_series: tuple[SeriesFailure, ...]
     sampled_source_indices: tuple[tuple[int, ...], ...]
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,12 +58,14 @@ class InferenceEngine:
         *,
         device: str | torch.device = "cpu",
         fallback_scores: Sequence[float] | None = None,
+        packing_config: PackingConfig | None = None,
     ) -> None:
         if tuple(model.config.image_size) != tuple(preprocess_config.image_size):
             raise ValueError("model and preprocessing image sizes must agree")
         self.model = model.to(device)
         self.model.eval()
         self.preprocess_config = preprocess_config
+        self.packing_config = packing_config or preprocess_config.packing_config()
         self.device = torch.device(device)
         if fallback_scores is None:
             fallback: np.ndarray = np.full(NUM_TARGETS, 0.5, dtype=np.float64)
@@ -86,28 +90,43 @@ class InferenceEngine:
             raise InferenceError(f"model returned an out-of-range score vector for {packed.study_instance_uid}")
         return values
 
-    def predict_study(self, study: StudyRecord) -> StudyPrediction:
+    def predict_study(
+        self,
+        study: StudyRecord,
+        *,
+        input_failures: Sequence[SeriesFailure] = (),
+        input_warnings: Sequence[str] = (),
+    ) -> StudyPrediction:
         """Predict one study, retaining partial-input diagnostics and rows."""
 
         prepared = prepare_study(study, self.preprocess_config)
-        packed = pack_study(study, prepared.series, self.preprocess_config)
+        packed = pack_study(
+            study,
+            prepared.series,
+            self.preprocess_config,
+            packing_config=self.packing_config,
+        )
         valid_series_count = int(packed.series_mask.sum())
+        rejected_series = tuple(input_failures) + prepared.failures
+        warnings = tuple(input_warnings) + prepared.warnings
         if valid_series_count == 0:
             return StudyPrediction(
                 study_instance_uid=study.study_instance_uid,
                 scores=self.fallback_scores.copy(),
                 used_fallback=True,
                 valid_series_count=0,
-                rejected_series=prepared.failures,
+                rejected_series=rejected_series,
                 sampled_source_indices=packed.sampled_source_indices,
+                warnings=warnings,
             )
         return StudyPrediction(
             study_instance_uid=study.study_instance_uid,
             scores=self._predict_packed(packed),
             used_fallback=False,
             valid_series_count=valid_series_count,
-            rejected_series=prepared.failures,
+            rejected_series=rejected_series,
             sampled_source_indices=packed.sampled_source_indices,
+            warnings=warnings,
         )
 
 

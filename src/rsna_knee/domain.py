@@ -29,6 +29,19 @@ class DicomSlice:
     rescale_intercept: float = 0.0
     photometric_interpretation: str = "MONOCHROME2"
     padding_value: Optional[float] = None
+    padding_range_limit: Optional[float] = None
+    transfer_syntax_uid: Optional[str] = None
+    modality: Optional[str] = None
+    rows: Optional[int] = None
+    columns: Optional[int] = None
+    number_of_frames: int = 1
+    samples_per_pixel: int = 1
+    bits_allocated: Optional[int] = None
+    bits_stored: Optional[int] = None
+    high_bit: Optional[int] = None
+    pixel_representation: int = 0
+    image_type_values: tuple[str, ...] = ()
+    series_description: str = ""
 
 
 @dataclass(frozen=True)
@@ -39,6 +52,11 @@ class SeriesRecord:
     series_instance_uid: str
     slices: tuple[DicomSlice, ...]
     description: str = ""
+    anatomical_plane: Optional[str] = None
+    fluid_sensitive: Optional[bool] = None
+    fat_suppression: Optional[bool] = None
+    diagnostic_status: str = "unknown"
+    source_entry_names: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for item in self.slices:

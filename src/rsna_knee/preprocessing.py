@@ -8,7 +8,10 @@ from typing import Sequence
 import numpy as np
 
 from .domain import DicomSlice, SeriesRecord, StudyRecord
-from .geometry import GeometryError, order_slices
+from .geometry import GeometryError, GeometryPolicy, order_slices
+
+
+PREPROCESS_SCHEMA_VERSION = "rsna-knee-preprocess-v1"
 
 
 class PreprocessingError(ValueError):
@@ -20,12 +23,42 @@ class StudyPackingError(ValueError):
 
 
 @dataclass(frozen=True)
+class PackingConfig:
+    """Model-input sampling controls applied after series materialization."""
+
+    max_slices: int = 8
+    max_series: int = 16
+
+    def __post_init__(self) -> None:
+        if self.max_slices <= 0:
+            raise ValueError("max_slices must be positive")
+        if self.max_series <= 0:
+            raise ValueError("max_series must be positive")
+
+    def to_dict(self) -> dict[str, int]:
+        return {"max_slices": self.max_slices, "max_series": self.max_series}
+
+
+@dataclass(frozen=True)
 class PreprocessConfig:
-    """Versionable fixed preprocessing and baseline tensor dimensions."""
+    """Versionable, model-independent series materialization policy.
+
+    ``max_slices`` and ``max_series`` remain as compatibility conveniences for
+    the original mechanics API.  They are packing controls and are excluded
+    from :meth:`cache_config`; changing them cannot invalidate a materialized
+    series cache.
+    """
 
     image_size: tuple[int, int] = (128, 128)
     max_slices: int = 8
     max_series: int = 16
+    geometry_policy: GeometryPolicy = GeometryPolicy()
+    normalization_domain: str = "valid_slice"
+    normalization_percentiles: tuple[float, float] = (0.0, 100.0)
+    use_voi_lut: bool = False
+    interpolation: str = "nearest"
+    padding_fill_value: float = 0.0
+    output_dtype: str = "float32"
 
     def __post_init__(self) -> None:
         if len(self.image_size) != 2 or any(size <= 0 for size in self.image_size):
@@ -34,6 +67,41 @@ class PreprocessConfig:
             raise ValueError("max_slices must be positive")
         if self.max_series <= 0:
             raise ValueError("max_series must be positive")
+        if not isinstance(self.geometry_policy, GeometryPolicy):
+            raise ValueError("geometry_policy must be a GeometryPolicy")
+        if self.normalization_domain != "valid_slice":
+            raise ValueError("normalization_domain must be 'valid_slice'")
+        if len(self.normalization_percentiles) != 2:
+            raise ValueError("normalization_percentiles must contain low and high values")
+        low, high = self.normalization_percentiles
+        if not np.isfinite((low, high)).all() or not 0.0 <= low <= high <= 100.0:
+            raise ValueError("normalization_percentiles must be ordered values within [0, 100]")
+        if self.use_voi_lut:
+            raise ValueError("VOI/window transforms are deliberately omitted by this policy")
+        if self.interpolation != "nearest":
+            raise ValueError("only deterministic nearest-neighbor interpolation is supported")
+        if not np.isfinite(self.padding_fill_value):
+            raise ValueError("padding_fill_value must be finite")
+        if self.output_dtype != "float32":
+            raise ValueError("the preprocessing output dtype must be float32")
+
+    def packing_config(self) -> PackingConfig:
+        return PackingConfig(max_slices=self.max_slices, max_series=self.max_series)
+
+    def cache_config(self) -> dict[str, object]:
+        """Return only choices that affect materialized series pixels."""
+
+        return {
+            "schema_version": PREPROCESS_SCHEMA_VERSION,
+            "image_size": list(self.image_size),
+            "geometry_policy": self.geometry_policy.to_dict(),
+            "normalization_domain": self.normalization_domain,
+            "normalization_percentiles": list(self.normalization_percentiles),
+            "use_voi_lut": self.use_voi_lut,
+            "interpolation": self.interpolation,
+            "padding_fill_value": self.padding_fill_value,
+            "output_dtype": self.output_dtype,
+        }
 
 
 @dataclass(frozen=True)
@@ -44,6 +112,7 @@ class PreparedSeries:
     series_instance_uid: str
     images: np.ndarray
     source_slice_uids: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -61,6 +130,7 @@ class PreparedStudy:
     study_instance_uid: str
     series: tuple[PreparedSeries, ...]
     failures: tuple[SeriesFailure, ...]
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -74,7 +144,12 @@ class PackedStudy:
     sampled_source_indices: tuple[tuple[int, ...], ...]
 
 
-def _resize_aspect_preserving(image: np.ndarray, target_size: tuple[int, int]) -> np.ndarray:
+def _resize_aspect_preserving(
+    image: np.ndarray,
+    target_size: tuple[int, int],
+    *,
+    padding_fill_value: float,
+) -> np.ndarray:
     target_height, target_width = target_size
     height, width = image.shape
     scale = min(target_height / height, target_width / width)
@@ -90,14 +165,14 @@ def _resize_aspect_preserving(image: np.ndarray, target_size: tuple[int, int]) -
         np.floor(np.arange(resized_width) * width / resized_width).astype(np.int64),
     )
     resized = image[row_indices[:, None], column_indices[None, :]]
-    canvas = np.zeros((target_height, target_width), dtype=np.float32)
+    canvas = np.full((target_height, target_width), padding_fill_value, dtype=np.float32)
     top = (target_height - resized_height) // 2
     left = (target_width - resized_width) // 2
     canvas[top : top + resized_height, left : left + resized_width] = resized
     return canvas
 
 
-def _preprocess_pixels(item: DicomSlice, config: PreprocessConfig) -> np.ndarray:
+def _preprocess_pixels(item: DicomSlice, config: PreprocessConfig) -> tuple[np.ndarray, str | None]:
     try:
         raw = np.asarray(item.pixel_array, dtype=np.float64)
     except (TypeError, ValueError) as exc:
@@ -110,6 +185,18 @@ def _preprocess_pixels(item: DicomSlice, config: PreprocessConfig) -> np.ndarray
         if not np.isfinite(item.padding_value):
             raise PreprocessingError(f"padding value is non-finite for slice {item.sop_instance_uid}")
         valid &= raw != item.padding_value
+        if item.padding_range_limit is not None:
+            if not np.isfinite(item.padding_range_limit):
+                raise PreprocessingError(
+                    f"padding range limit is non-finite for slice {item.sop_instance_uid}"
+                )
+            lower = min(item.padding_value, item.padding_range_limit)
+            upper = max(item.padding_value, item.padding_range_limit)
+            valid &= ~((raw >= lower) & (raw <= upper))
+    elif item.padding_range_limit is not None:
+        raise PreprocessingError(
+            f"padding range limit has no PixelPaddingValue for slice {item.sop_instance_uid}"
+        )
     if not valid.any():
         raise PreprocessingError(f"slice {item.sop_instance_uid} contains no valid pixels")
 
@@ -135,12 +222,24 @@ def _preprocess_pixels(item: DicomSlice, config: PreprocessConfig) -> np.ndarray
     values = transformed[valid]
     low = float(values.min())
     high = float(values.max())
+    percentile_low, percentile_high = config.normalization_percentiles
+    low = float(np.percentile(values, percentile_low))
+    high = float(np.percentile(values, percentile_high))
+    warning: str | None = None
     if high > low:
         transformed[valid] = (values - low) / (high - low)
     else:
         transformed[valid] = 0.0
+        warning = f"{item.sop_instance_uid}:constant_valid_intensity"
     transformed[~valid] = 0.0
-    return _resize_aspect_preserving(transformed.astype(np.float32), config.image_size)[None, ...]
+    return (
+        _resize_aspect_preserving(
+            transformed.astype(np.float32),
+            config.image_size,
+            padding_fill_value=config.padding_fill_value,
+        )[None, ...],
+        warning,
+    )
 
 
 def prepare_series(series: SeriesRecord, config: PreprocessConfig = PreprocessConfig()) -> PreparedSeries:
@@ -148,15 +247,20 @@ def prepare_series(series: SeriesRecord, config: PreprocessConfig = PreprocessCo
 
     if not series.slices:
         raise PreprocessingError(f"series {series.series_instance_uid} contains no slices")
-    ordered = order_slices(series.slices)
+    ordered = order_slices(series.slices, config.geometry_policy)
     images = []
+    warnings: list[str] = []
     for item in ordered:
-        images.append(_preprocess_pixels(item, config))
+        image, warning = _preprocess_pixels(item, config)
+        images.append(image)
+        if warning is not None:
+            warnings.append(warning)
     return PreparedSeries(
         study_instance_uid=series.study_instance_uid,
         series_instance_uid=series.series_instance_uid,
         images=np.stack(images).astype(np.float32, copy=False),
         source_slice_uids=tuple(item.sop_instance_uid for item in ordered),
+        warnings=tuple(warnings),
     )
 
 
@@ -170,7 +274,12 @@ def prepare_study(study: StudyRecord, config: PreprocessConfig = PreprocessConfi
             prepared.append(prepare_series(series, config))
         except (GeometryError, PreprocessingError) as exc:
             failures.append(SeriesFailure(series.series_instance_uid, str(exc)))
-    return PreparedStudy(study.study_instance_uid, tuple(prepared), tuple(failures))
+    return PreparedStudy(
+        study.study_instance_uid,
+        tuple(prepared),
+        tuple(failures),
+        tuple(warning for item in prepared for warning in item.warnings),
+    )
 
 
 def _sample_indices(count: int, max_slices: int) -> tuple[int, ...]:
@@ -183,14 +292,18 @@ def _sample_indices(count: int, max_slices: int) -> tuple[int, ...]:
 def pack_study(
     study: StudyRecord,
     prepared_series: Sequence[PreparedSeries],
-    config: PreprocessConfig = PreprocessConfig(),
+    config: PreprocessConfig | None = None,
+    *,
+    packing_config: PackingConfig | None = None,
 ) -> PackedStudy:
     """Pack valid series into a fixed tensor without hiding missing evidence."""
 
-    if len(prepared_series) > config.max_series:
+    materialization_config = config or PreprocessConfig()
+    packing = packing_config or materialization_config.packing_config()
+    if len(prepared_series) > packing.max_series:
         raise StudyPackingError(
             f"study {study.study_instance_uid} has {len(prepared_series)} valid series, "
-            f"exceeding configured max_series={config.max_series}"
+            f"exceeding configured max_series={packing.max_series}"
         )
     study_series_ids = {item.series_instance_uid for item in study.series}
     ordered_series = sorted(prepared_series, key=lambda item: item.series_instance_uid)
@@ -201,26 +314,28 @@ def pack_study(
     if any(item.series_instance_uid not in study_series_ids for item in ordered_series):
         raise StudyPackingError("prepared series is not present in the source study")
 
-    image_height, image_width = config.image_size
+    image_height, image_width = materialization_config.image_size
     images = np.zeros(
-        (config.max_series, config.max_slices, 1, image_height, image_width),
+        (packing.max_series, packing.max_slices, 1, image_height, image_width),
         dtype=np.float32,
     )
-    slice_mask = np.zeros((config.max_series, config.max_slices), dtype=bool)
-    series_mask = np.zeros(config.max_series, dtype=bool)
+    if materialization_config.padding_fill_value != 0.0:
+        images.fill(materialization_config.padding_fill_value)
+    slice_mask = np.zeros((packing.max_series, packing.max_slices), dtype=bool)
+    series_mask = np.zeros(packing.max_series, dtype=bool)
     sampled_source_indices: list[tuple[int, ...]] = []
 
     for series_index, item in enumerate(ordered_series):
         if item.images.ndim != 4 or item.images.shape[1:] != (1, image_height, image_width):
             raise StudyPackingError(f"prepared series {item.series_instance_uid} has an incompatible image shape")
-        indices = _sample_indices(item.images.shape[0], config.max_slices)
+        indices = _sample_indices(item.images.shape[0], packing.max_slices)
         if indices:
             images[series_index, : len(indices)] = item.images[list(indices)]
             slice_mask[series_index, : len(indices)] = True
             series_mask[series_index] = True
         sampled_source_indices.append(indices)
 
-    while len(sampled_source_indices) < config.max_series:
+    while len(sampled_source_indices) < packing.max_series:
         sampled_source_indices.append(())
     return PackedStudy(
         study_instance_uid=study.study_instance_uid,
