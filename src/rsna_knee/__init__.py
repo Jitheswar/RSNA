@@ -18,6 +18,7 @@ from .archive import (
 from .dicom import (
     DICOM_POLICY_VERSION,
     DEFAULT_SUPPORTED_TRANSFER_SYNTAXES,
+    PINNED_PYDICOM_VERSION,
     DamagedDicomError,
     DecoderInfrastructureError,
     DecoderPolicy,
@@ -130,6 +131,7 @@ __all__ = [
     "DicomDecodeError",
     "DICOM_POLICY_VERSION",
     "DEFAULT_SUPPORTED_TRANSFER_SYNTAXES",
+    "PINNED_PYDICOM_VERSION",
     "UnsupportedTransferSyntaxError",
     "DicomValidationError",
     "DamagedDicomError",

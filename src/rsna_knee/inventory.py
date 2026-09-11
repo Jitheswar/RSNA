@@ -15,7 +15,6 @@ import json
 import math
 import os
 import platform
-import re
 import socket
 import sys
 import time
@@ -37,23 +36,11 @@ from .archive import (
     write_extraction_report,
 )
 from .geometry import GeometryPolicy
+from .series_policy import has_non_diagnostic_token
 from .targets import TARGET_COLUMNS
 
 
 INVENTORY_SCHEMA_VERSION = "rsna-knee-inventory-v1"
-_NON_DIAGNOSTIC_METADATA_TOKENS = frozenset(
-    {"scout", "localizer", "localiser", "survey", "pilot", "calibration"}
-)
-
-
-def _has_non_diagnostic_token(values: Iterable[str]) -> bool:
-    return any(
-        re.search(rf"(?<![\w]){re.escape(token)}(?![\w])", value.casefold())
-        for value in values
-        for token in _NON_DIAGNOSTIC_METADATA_TOKENS
-    )
-
-
 class InventoryError(ValueError):
     """Base class for invalid or unsafe inventory/admission inputs."""
 
@@ -818,7 +805,7 @@ class _SeriesAccumulator:
         metadata = tuple(self.dicom_series_descriptions) + tuple(self.image_type_values)
         if not metadata:
             return "unknown"
-        if _has_non_diagnostic_token(metadata):
+        if has_non_diagnostic_token(metadata):
             return "excluded_non_diagnostic"
         return "diagnostic"
 

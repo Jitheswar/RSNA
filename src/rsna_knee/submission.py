@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import os
+import tempfile
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -73,9 +75,30 @@ def write_submission(
 
     rows = _ordered_rows(expected_study_uids, predictions)
     destination = Path(output_path)
+    if destination.exists() or destination.is_symlink():
+        raise FileExistsError(f"refusing to overwrite protected submission {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow(SUBMISSION_COLUMNS)
-        writer.writerows((uid, *values) for uid, values in rows)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.partial-",
+        dir=destination.parent,
+        text=True,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle, lineterminator="\n")
+            writer.writerow(SUBMISSION_COLUMNS)
+            writer.writerows((uid, *values) for uid, values in rows)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary_name, destination)
+        except FileExistsError as exc:
+            raise FileExistsError(f"refusing to overwrite protected submission {destination}") from exc
+    except BaseException:
+        raise
+    finally:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
     return destination

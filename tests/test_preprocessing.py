@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from rsna_knee.domain import DicomSlice, SeriesRecord, StudyRecord
 from rsna_knee.preprocessing import (
     PreprocessConfig,
+    PreprocessingError,
     pack_study,
     prepare_series,
 )
@@ -99,3 +101,36 @@ def test_cache_configuration_does_not_change_when_only_sampling_changes() -> Non
     second = PreprocessConfig(image_size=(8, 8), max_slices=16, max_series=12)
 
     assert first.cache_config() == second.cache_config()
+
+
+def test_preprocessing_rejects_an_all_padding_slice() -> None:
+    item = DicomSlice(
+        sop_instance_uid="slice-all-padding",
+        image_position=(0.0, 0.0, 0.0),
+        image_orientation=ORIENTATION,
+        pixel_array=np.full((2, 2), -1, dtype=np.int16),
+        padding_value=-1.0,
+    )
+
+    with pytest.raises(PreprocessingError, match="no valid pixels"):
+        prepare_series(
+            SeriesRecord("study-all-padding", "series-all-padding", (item,)),
+            PreprocessConfig(image_size=(2, 2), max_slices=8, max_series=1),
+        )
+
+
+def test_preprocessing_applies_monochrome1_polarity_once() -> None:
+    item = DicomSlice(
+        sop_instance_uid="slice-monochrome1",
+        image_position=(0.0, 0.0, 0.0),
+        image_orientation=ORIENTATION,
+        pixel_array=np.array([[0, 10]], dtype=np.uint16),
+        photometric_interpretation="MONOCHROME1",
+    )
+
+    prepared = prepare_series(
+        SeriesRecord("study-monochrome1", "series-monochrome1", (item,)),
+        PreprocessConfig(image_size=(1, 2), max_slices=8, max_series=1),
+    )
+
+    np.testing.assert_allclose(prepared.images[0, 0], [[1.0, 0.0]])

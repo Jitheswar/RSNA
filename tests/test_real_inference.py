@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, UID
 
@@ -16,6 +17,7 @@ from rsna_knee.real_inference import (
     IntegrationManifest,
     IntegrationSeries,
     IntegrationStudy,
+    RealIntegrationError,
     load_integration_manifest,
     load_real_study,
     run_real_inference,
@@ -104,7 +106,12 @@ def test_private_manifest_round_trip_and_loader_preserve_source_mapping(tmp_path
     write_integration_manifest(manifest, manifest_path)
 
     loaded_manifest = load_integration_manifest(manifest_path)
-    loaded = load_real_study(loaded_manifest, loaded_manifest.studies[0], tmp_path)
+    loaded = load_real_study(
+        loaded_manifest,
+        loaded_manifest.studies[0],
+        tmp_path,
+        allow_unverified_directory=True,
+    )
 
     assert loaded.study.series[0].anatomical_plane == "Sagittal"
     assert loaded.study.series[0].fluid_sensitive is True
@@ -114,6 +121,30 @@ def test_private_manifest_round_trip_and_loader_preserve_source_mapping(tmp_path
     assert loaded.series_results[0].complete is True
     assert loaded.study.series[0].slices[0].filename.endswith(".dcm")
     assert loaded_manifest.manifest_checksum
+
+    with pytest.raises(RealIntegrationError, match="source ZIP"):
+        load_real_study(loaded_manifest, loaded_manifest.studies[0], tmp_path)
+
+    altered = IntegrationStudy(
+        study_uid,
+        (
+            IntegrationSeries(
+                study_uid,
+                series_uid,
+                entries=tuple(reversed(entries)),
+                anatomical_plane="Sagittal",
+                fluid_sensitive=True,
+                fat_suppression=True,
+            ),
+        ),
+    )
+    with pytest.raises(RealIntegrationError, match="checksum-covered"):
+        load_real_study(
+            loaded_manifest,
+            altered,
+            tmp_path,
+            allow_unverified_directory=True,
+        )
 
 
 def test_real_inference_uses_shared_model_path_and_writes_public_safe_evidence(tmp_path: Path) -> None:
@@ -154,6 +185,8 @@ def test_real_inference_uses_shared_model_path_and_writes_public_safe_evidence(t
     assert study_uid not in public_text
     assert series_uid not in public_text
     assert "train_series/" not in public_text
+    assert "/home/" not in public_text
+    assert "slurm_job_id" not in public_text
     assert json.loads(public_text)["policies"]["decoder"]["supported_transfer_syntaxes"]
 
 
@@ -194,6 +227,7 @@ def test_real_loader_excludes_reliably_identified_localizer_but_keeps_diagnostic
             ),
         ),
         tmp_path,
+        allow_unverified_directory=True,
     )
 
     assert tuple(item.series_instance_uid for item in loaded.study.series) == (diagnostic_uid,)
@@ -253,7 +287,12 @@ def test_real_loader_rejects_a_partial_series_with_typed_file_diagnostics(tmp_pa
     (tmp_path / entries[-1]).unlink()
     manifest = _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),))
 
-    loaded = load_real_study(manifest, manifest.studies[0], tmp_path)
+    loaded = load_real_study(
+        manifest,
+        manifest.studies[0],
+        tmp_path,
+        allow_unverified_directory=True,
+    )
 
     assert loaded.study.series == ()
     assert loaded.series_results[0].status == "rejected"

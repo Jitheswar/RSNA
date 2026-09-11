@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 
 import numpy as np
+import pydicom
 import pytest
 from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, ImplicitVRLittleEndian, MRImageStorage
@@ -12,6 +13,7 @@ from rsna_knee.dicom import (
     DecoderPolicy,
     UnsupportedTransferSyntaxError,
     decode_bytes,
+    decode_dataset,
     decode_stream,
 )
 
@@ -24,6 +26,7 @@ def _dicom_bytes(
     padding_value: int | None = None,
     padding_range_limit: int | None = None,
     modality: str = "MR",
+    bits_stored: int = 16,
 ) -> bytes:
     file_meta = FileMetaDataset()
     file_meta.MediaStorageSOPClassUID = MRImageStorage
@@ -43,8 +46,8 @@ def _dicom_bytes(
     dataset.SamplesPerPixel = 1
     dataset.PhotometricInterpretation = photometric
     dataset.BitsAllocated = 16
-    dataset.BitsStored = 16
-    dataset.HighBit = 15
+    dataset.BitsStored = bits_stored
+    dataset.HighBit = bits_stored - 1
     dataset.PixelRepresentation = pixel_representation
     if padding_value is not None:
         dataset.PixelPaddingValue = padding_value
@@ -94,3 +97,16 @@ def test_decoder_stream_and_bytes_paths_share_the_same_policy() -> None:
 
     np.testing.assert_array_equal(from_bytes.pixel_array, from_stream.pixel_array)
     assert from_bytes.sop_instance_uid == from_stream.sop_instance_uid
+
+
+def test_decoder_freezes_backend_version_and_declared_pixel_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    policy = DecoderPolicy()
+
+    assert policy.to_dict()["pydicom_version"] == "3.0.1"
+    dataset = pydicom.dcmread(io.BytesIO(_dicom_bytes(bits_stored=2)), force=False)
+    monkeypatch.setattr(
+        "rsna_knee.dicom._read_pixel_array",
+        lambda dataset, sop_instance_uid: np.full((2, 3), 4, dtype=np.uint16),
+    )
+    with pytest.raises(DicomValidationError, match="pixel range"):
+        decode_dataset(dataset, policy=policy)

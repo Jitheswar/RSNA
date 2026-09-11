@@ -2,9 +2,9 @@
 
 This module is the boundary between a private ticket-03 selection and the
 shared decoder, geometry, preprocessing, hierarchical model, and submission
-interfaces.  It accepts either an extracted private directory or the original
-ZIP so a verification run need not create an unreviewed second copy of the
-competition data.  No report or training module is imported here.
+interfaces.  Production verification consumes the original private ZIP; an
+unverified directory is accepted only when an explicit local fixture-smoke
+flag is used.  No report or training module is imported here.
 """
 
 from __future__ import annotations
@@ -13,13 +13,11 @@ import hashlib
 import json
 import os
 import platform
-import re
-import socket
 import sys
 import time
 import zipfile
+import zlib
 from dataclasses import dataclass
-from importlib.metadata import version
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Iterator, Mapping, Sequence, cast
 
@@ -41,11 +39,13 @@ from .geometry import GeometryPolicy
 from .inference import InferenceEngine, StudyPrediction
 from .model import HierarchicalStudyModel, ModelConfig
 from .preprocessing import (
+    PREPROCESS_SCHEMA_VERSION,
     PackingConfig,
     PreprocessConfig,
     SeriesFailure,
 )
 from .submission import write_submission
+from .series_policy import has_non_diagnostic_token
 from .targets import NUM_TARGETS
 
 
@@ -58,16 +58,6 @@ DEFAULT_REAL_DECODER_POLICY = DecoderPolicy(require_modality=True)
 DEFAULT_REAL_PREPROCESS_CONFIG = PreprocessConfig(
     geometry_policy=DEFAULT_REAL_GEOMETRY_POLICY,
 )
-_NON_DIAGNOSTIC_TOKENS = (
-    "scout",
-    "localizer",
-    "localiser",
-    "survey",
-    "pilot",
-    "calibration",
-)
-
-
 class RealIntegrationError(ValueError):
     """Raised when a private manifest or real-input admission is unsafe."""
 
@@ -312,8 +302,17 @@ def _optional_int(value: object, field: str) -> int | None:
     return parsed
 
 
+def _required_nonnegative_int(value: object, field: str) -> int:
+    parsed = _optional_int(value, field)
+    if parsed is None:
+        raise RealIntegrationError(f"{field} is required")
+    return parsed
+
+
 def _preprocess_from_cache_config(value: object, geometry_policy: GeometryPolicy) -> PreprocessConfig:
     payload = _mapping(value, "preprocessing policy")
+    if payload.get("schema_version") != PREPROCESS_SCHEMA_VERSION:
+        raise RealIntegrationError("unsupported preprocessing policy schema")
     image_size_value = payload.get("image_size")
     if not isinstance(image_size_value, (list, tuple)) or len(image_size_value) != 2:
         raise RealIntegrationError("preprocessing image_size must contain two values")
@@ -457,6 +456,56 @@ def _expected_keys(value: object, field: str) -> tuple[str, ...]:
     return tuple(sorted(_nonempty(key, field) for key in payload))
 
 
+def _validate_storage_budget(
+    inventory: Mapping[str, object],
+    selection: Mapping[str, object],
+    inventory_series: Mapping[str, Mapping[str, object]],
+    selected_series_uids: Sequence[str],
+    image_size: tuple[int, int],
+) -> None:
+    """Recompute the selected batch's conservative 2 TB peak before admission."""
+
+    archive = _mapping(inventory.get("archive"), "inventory archive")
+    storage = _mapping(selection.get("storage_estimate"), "selection storage_estimate")
+    current_project_bytes = _required_nonnegative_int(
+        storage.get("current_project_bytes"), "storage current_project_bytes"
+    )
+    soft_budget_bytes = _required_nonnegative_int(storage.get("soft_budget_bytes"), "storage soft_budget_bytes")
+    archive_bytes = _required_nonnegative_int(archive.get("archive_size_bytes"), "archive archive_size_bytes")
+    selected_items = [inventory_series[uid] for uid in selected_series_uids]
+    extracted_bytes = sum(
+        _required_nonnegative_int(item.get("uncompressed_bytes"), f"series {uid}.uncompressed_bytes")
+        for uid, item in zip(selected_series_uids, selected_items)
+    )
+    cached_frames = sum(
+        _required_nonnegative_int(item.get("effective_frame_count"), f"series {uid}.effective_frame_count")
+        for uid, item in zip(selected_series_uids, selected_items)
+    )
+    pixel_cache_bytes = cached_frames * image_size[0] * image_size[1] * 4
+    temporary_bytes = extracted_bytes + pixel_cache_bytes
+    projected_peak_bytes = (
+        current_project_bytes
+        + archive_bytes
+        + extracted_bytes
+        + pixel_cache_bytes
+        + temporary_bytes
+    )
+    expected = {
+        "source_archive_bytes": archive_bytes,
+        "extracted_bytes": extracted_bytes,
+        "pixel_cache_bytes": pixel_cache_bytes,
+        "temporary_bytes": temporary_bytes,
+        "projected_peak_bytes": projected_peak_bytes,
+    }
+    for field, value in expected.items():
+        if _required_nonnegative_int(storage.get(field), f"storage {field}") != value:
+            raise RealIntegrationError(f"selection storage estimate is stale for {field}")
+    if projected_peak_bytes > soft_budget_bytes or storage.get("within_soft_budget") is not True:
+        raise RealIntegrationError(
+            f"selected integration batch exceeds the {soft_budget_bytes}-byte storage budget"
+        )
+
+
 def build_integration_manifest(
     inventory_path: str | Path,
     selection_path: str | Path,
@@ -537,6 +586,10 @@ def build_integration_manifest(
             )
         expected_dimensions = _expected_keys(item.get("dimension_counts", {}), "dimension_counts")
         expected_frames = _expected_frame_counts(item.get("frame_count_counts", {}), "frame_count_counts")
+        if any(frame_count != 1 for frame_count in expected_frames):
+            raise RealIntegrationError(
+                f"selected series {series_uid} contains unsupported multiframe entries"
+            )
         effective_frame_count = _optional_int(item.get("effective_frame_count"), "effective_frame_count")
         if effective_frame_count is None:
             effective_frame_count = len(entries)
@@ -569,6 +622,13 @@ def build_integration_manifest(
     materialization = preprocess_config or PreprocessConfig(geometry_policy=geometry_policy)
     if materialization.geometry_policy != geometry_policy:
         raise RealIntegrationError("preprocess_config geometry policy differs from manifest policy")
+    _validate_storage_budget(
+        inventory,
+        selection,
+        inventory_series,
+        selected_series_uids,
+        materialization.image_size,
+    )
     manifest = IntegrationManifest(
         source_version=source_version,
         archive_fingerprint=archive_fingerprint,
@@ -587,15 +647,21 @@ def build_integration_manifest(
 
 
 class _SourceReader:
-    """Read manifest entries from one private directory or one open ZIP."""
+    """Read manifest entries from one verified ZIP or an explicit local fixture."""
 
-    def __init__(self, source: Path) -> None:
+    def __init__(self, source: Path, *, allow_unverified_directory: bool = False) -> None:
         self.source = source
+        self.allow_unverified_directory = allow_unverified_directory
         self.archive: zipfile.ZipFile | None = None
         self.root: Path | None = None
 
     def __enter__(self) -> "_SourceReader":
         if self.source.is_dir():
+            if not self.allow_unverified_directory:
+                raise RealIntegrationError(
+                    "real integration requires a source ZIP with archive identity; "
+                    "unverified directories are allowed only for local fixture smoke tests"
+                )
             self.root = self.source.resolve()
             return self
         try:
@@ -613,10 +679,16 @@ class _SourceReader:
         if self.archive is not None:
             try:
                 stream = self.archive.open(safe.as_posix(), "r")
-            except (KeyError, OSError) as exc:
+            except (KeyError, OSError, zipfile.BadZipFile) as exc:
                 raise DamagedDicomError(f"source entry is missing: {entry_name}") from exc
-            with stream:
-                return decode_stream(cast(BinaryIO, stream), filename=entry_name, policy=policy)
+            try:
+                with stream:
+                    decoded = decode_stream(cast(BinaryIO, stream), filename=entry_name, policy=policy)
+                    while stream.read(1024 * 1024):
+                        pass
+                    return decoded
+            except (OSError, RuntimeError, zipfile.BadZipFile, zlib.error) as exc:
+                raise DamagedDicomError(f"archive integrity failed for {entry_name}") from exc
         if self.root is None:
             raise RealIntegrationError("source reader was used outside its context")
         target = (self.root / Path(*safe.parts)).resolve()
@@ -644,14 +716,7 @@ def _failure_reason(error: DicomDecodeError) -> str:
 
 
 def _has_non_diagnostic_token(values: Sequence[str]) -> bool:
-    for value in values:
-        normalized = value.casefold()
-        if any(
-            re.search(rf"(?<![\w]){re.escape(token)}(?![\w])", normalized)
-            for token in _NON_DIAGNOSTIC_TOKENS
-        ):
-            return True
-    return False
+    return has_non_diagnostic_token(values)
 
 
 def _validate_slice_against_manifest(
@@ -704,6 +769,11 @@ def _load_series(
         try:
             item = reader.decode(entry_name, decoder_policy)
             _validate_slice_against_manifest(item, manifest_series, entry_name)
+        except DecoderInfrastructureError as exc:
+            raise RealInferenceError(
+                f"decoder infrastructure failure for {manifest_series.series_instance_uid}/"
+                f"{entry_name}: {exc}"
+            ) from exc
         except DicomDecodeError as exc:
             failures.append(
                 SeriesLoadFailure(
@@ -824,15 +894,22 @@ def load_real_study(
     source: str | Path,
     *,
     require_complete_series: bool = True,
+    allow_unverified_directory: bool = False,
 ) -> LoadedStudy:
-    """Load one private manifest study through the frozen decoder policy."""
+    """Load one manifest study; directories are reserved for local fixtures."""
 
-    if study_manifest.study_instance_uid not in manifest.study_uids:
+    canonical = next(
+        (item for item in manifest.studies if item.study_instance_uid == study_manifest.study_instance_uid),
+        None,
+    )
+    if canonical is None:
         raise RealIntegrationError("study is not present in the integration manifest")
-    with _SourceReader(Path(source)) as reader:
+    if study_manifest != canonical:
+        raise RealIntegrationError("study does not match the checksum-covered integration manifest")
+    with _SourceReader(Path(source), allow_unverified_directory=allow_unverified_directory) as reader:
         return _load_real_study_with_reader(
             manifest,
-            study_manifest,
+            canonical,
             reader,
             require_complete_series=require_complete_series,
         )
@@ -843,10 +920,11 @@ def iter_real_studies(
     source: str | Path,
     *,
     require_complete_series: bool = True,
+    allow_unverified_directory: bool = False,
 ) -> Iterator[LoadedStudy]:
-    """Yield manifest studies while keeping a ZIP handle open only once."""
+    """Yield canonical manifest studies while keeping a ZIP handle open once."""
 
-    with _SourceReader(Path(source)) as reader:
+    with _SourceReader(Path(source), allow_unverified_directory=allow_unverified_directory) as reader:
         for study_manifest in manifest.studies:
             yield _load_real_study_with_reader(
                 manifest,
@@ -974,7 +1052,11 @@ def run_real_inference(
     decoded_slice_count = 0
     prediction_rejected_series_count = 0
     warning_count = 0
-    for loaded in iter_real_studies(manifest, source_path):
+    for loaded in iter_real_studies(
+        manifest,
+        source_path,
+        allow_unverified_directory=allow_local_smoke,
+    ):
         manifest_series_count += len(loaded.series_results)
         accepted_series_count += sum(
             item.status in {"accepted", "accepted_partial"} for item in loaded.series_results
@@ -1016,11 +1098,6 @@ def run_real_inference(
     result_uids = tuple(item.study_instance_uid for item in predictions)
     if result_uids != study_uids:
         raise RealInferenceError("real loader changed the manifest study order or membership")
-    destination = write_submission(
-        output_path,
-        expected_study_uids=study_uids,
-        predictions={item.study_instance_uid: item.scores for item in predictions},
-    )
     elapsed_seconds = time.perf_counter() - started
 
     scores = np.concatenate([item.scores for item in predictions])
@@ -1041,18 +1118,13 @@ def run_real_inference(
             "packing": manifest.packing_config.to_dict(),
         },
         "environment": {
-            "python_executable": sys.executable,
-            "python_version": sys.version,
-            "python_prefix": sys.prefix,
-            "python_base_prefix": sys.base_prefix,
+            "python_version": platform.python_version(),
             "python_isolated_venv": sys.prefix != sys.base_prefix,
-            "platform": platform.platform(),
-            "hostname": socket.gethostname(),
-            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
-            "slurm_partition": os.environ.get("SLURM_JOB_PARTITION"),
+            "platform": platform.system(),
+            "execution": "slurm_cluster1_cpu" if os.environ.get("SLURM_JOB_ID") else "local_smoke",
             "numpy_version": np.__version__,
             "torch_version": torch.__version__,
-            "pydicom_version": version("pydicom"),
+            "pydicom_version": manifest.decoder_policy.pydicom_version,
             "torch_num_threads": thread_count,
         },
         "counts": {
@@ -1080,6 +1152,16 @@ def run_real_inference(
             "model_architecture_is_not_in_cache_identity": True,
         },
     }
+    destinations = [Path(output_path)]
+    if evidence_path is not None:
+        destinations.append(Path(evidence_path))
+    if private_evidence_path is not None:
+        destinations.append(Path(private_evidence_path))
+    if len(set(destinations)) != len(destinations):
+        raise RealInferenceError("submission and evidence destinations must be distinct")
+    for destination in destinations:
+        if destination.exists() or destination.is_symlink():
+            raise FileExistsError(f"refusing to overwrite protected integration artifact {destination}")
     if evidence_path is not None:
         atomic_json_write(evidence_path, public_evidence)
     if private_evidence_path is not None:
@@ -1093,6 +1175,11 @@ def run_real_inference(
                 "studies": private_study_evidence,
             },
         )
+    write_submission(
+        output_path,
+        expected_study_uids=study_uids,
+        predictions={item.study_instance_uid: item.scores for item in predictions},
+    )
     return public_evidence
 
 

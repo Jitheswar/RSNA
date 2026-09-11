@@ -44,3 +44,11 @@ def test_write_submission_preserves_expected_uid_order_and_exact_schema(tmp_path
 def test_write_submission_rejects_incomplete_or_invalid_predictions(tmp_path, predictions) -> None:
     with pytest.raises(SubmissionError):
         write_submission(tmp_path / "submission.csv", ("study-a", "study-b"), predictions)
+
+
+def test_write_submission_refuses_to_overwrite_an_existing_artifact(tmp_path) -> None:
+    output_path = tmp_path / "submission.csv"
+    write_submission(output_path, ("study-a",), {"study-a": scores(0.5)})
+
+    with pytest.raises(FileExistsError):
+        write_submission(output_path, ("study-a",), {"study-a": scores(0.25)})

@@ -22,6 +22,7 @@ from .domain import DicomSlice
 
 
 DICOM_POLICY_VERSION = "rsna-knee-dicom-v1"
+PINNED_PYDICOM_VERSION = "3.0.1"
 DEFAULT_SUPPORTED_TRANSFER_SYNTAXES = (str(ExplicitVRLittleEndian),)
 
 
@@ -55,6 +56,7 @@ class DecoderPolicy:
     """
 
     policy_version: str = DICOM_POLICY_VERSION
+    pydicom_version: str = PINNED_PYDICOM_VERSION
     supported_transfer_syntaxes: tuple[str, ...] = DEFAULT_SUPPORTED_TRANSFER_SYNTAXES
     attempt_order: tuple[str, ...] = ("pydicom",)
     require_file_meta: bool = True
@@ -64,6 +66,8 @@ class DecoderPolicy:
     def __post_init__(self) -> None:
         if self.policy_version != DICOM_POLICY_VERSION:
             raise ValueError(f"unsupported decoder policy version {self.policy_version!r}")
+        if self.pydicom_version != PINNED_PYDICOM_VERSION:
+            raise ValueError(f"unsupported pydicom version {self.pydicom_version!r}")
         syntaxes = tuple(str(value).strip() for value in self.supported_transfer_syntaxes)
         if not syntaxes or any(not value for value in syntaxes):
             raise ValueError("supported_transfer_syntaxes must contain non-empty UIDs")
@@ -76,12 +80,22 @@ class DecoderPolicy:
             raise ValueError("attempt_order must not contain duplicate backends")
         if attempts != ("pydicom",):
             raise ValueError("the pinned decoder currently supports only the pydicom backend")
+        if self.allow_multiframe:
+            raise ValueError("multiframe decoding is not implemented by the pinned decoder")
         object.__setattr__(self, "supported_transfer_syntaxes", syntaxes)
         object.__setattr__(self, "attempt_order", attempts)
+
+    def validate_runtime(self) -> None:
+        if pydicom.__version__ != self.pydicom_version:
+            raise DecoderInfrastructureError(
+                f"runtime pydicom {pydicom.__version__!r} does not match pinned "
+                f"version {self.pydicom_version!r}"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
             "policy_version": self.policy_version,
+            "pydicom_version": self.pydicom_version,
             "supported_transfer_syntaxes": list(self.supported_transfer_syntaxes),
             "attempt_order": list(self.attempt_order),
             "require_file_meta": self.require_file_meta,
@@ -99,6 +113,7 @@ class DecoderPolicy:
             raise ValueError("decoder policy syntax and attempt fields must be arrays")
         return cls(
             policy_version=str(value.get("policy_version", "")),
+            pydicom_version=str(value.get("pydicom_version", "")),
             supported_transfer_syntaxes=tuple(str(item) for item in syntaxes),
             attempt_order=tuple(str(item) for item in attempts),
             require_file_meta=bool(value.get("require_file_meta", True)),
@@ -215,6 +230,7 @@ def decode_dataset(
 ) -> DicomSlice:
     """Validate and decode one DICOM dataset into the stable core record."""
 
+    policy.validate_runtime()
     transfer_syntax_uid = _transfer_syntax(dataset, policy)
     study_instance_uid = _required_text(dataset, "StudyInstanceUID")
     series_instance_uid = _required_text(dataset, "SeriesInstanceUID")
@@ -269,6 +285,21 @@ def decode_dataset(
         raise DicomValidationError("signed PixelRepresentation decoded to a non-signed dtype")
     if pixel_representation == 0 and not np.issubdtype(pixel_array.dtype, np.unsignedinteger):
         raise DicomValidationError("unsigned PixelRepresentation decoded to a signed dtype")
+    if pixel_array.dtype.itemsize * 8 != bits_allocated:
+        raise DicomValidationError(
+            f"decoded pixel width {pixel_array.dtype.itemsize * 8} does not match "
+            f"BitsAllocated={bits_allocated}"
+        )
+    if pixel_representation == 1:
+        minimum = -(2 ** (bits_stored - 1))
+        maximum = (2 ** (bits_stored - 1)) - 1
+    else:
+        minimum = 0
+        maximum = (2**bits_stored) - 1
+    if pixel_array.size and (int(pixel_array.min()) < minimum or int(pixel_array.max()) > maximum):
+        raise DicomValidationError(
+            f"decoded pixel range is outside the declared {bits_stored}-bit representation"
+        )
 
     slope = _float_value(
         getattr(dataset, "RescaleSlope", None),
@@ -383,6 +414,7 @@ def read_dicom_slice(
 
 __all__ = [
     "DICOM_POLICY_VERSION",
+    "PINNED_PYDICOM_VERSION",
     "DEFAULT_SUPPORTED_TRANSFER_SYNTAXES",
     "DecoderPolicy",
     "DicomDecodeError",

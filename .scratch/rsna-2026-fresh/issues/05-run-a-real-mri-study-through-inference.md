@@ -69,13 +69,13 @@ architecture choices.
 
 The bounded Slurm adapter is `slurm/run_ticket05_real_inference.sbatch` and
 requests one `cluster1-cpu` node, 16 CPUs, 64 GB, six hours, and no exclusive
-allocation. Private job 6912 completed in 590.0 seconds over 158 studies, 965
+allocation. Private job 6913 completed in 551.6 seconds over 158 studies, 965
 series, and 31,486 decoded slices with no rejected series, decoder failures,
 fallback rows, or warnings. The exact output contract produced 158 rows and
 13 columns with finite bounded scores. No competition data was added as a Git
 fixture.
 
-The repository suite passes 65 tests and mypy is clean. Public-safe details
+The repository suite passes 69 tests and mypy is clean. Public-safe details
 and the unresolved representative-scope, compressed-syntax, repeatability,
 and model-quality limitations are recorded in
 `docs/evidence/ticket-05-real-inference.md`. V04–V06 are not marked fully
