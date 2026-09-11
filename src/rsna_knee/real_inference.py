@@ -54,6 +54,7 @@ INTEGRATION_EVIDENCE_SCHEMA_VERSION = "rsna-knee-real-integration-evidence-v1"
 INVENTORY_SCHEMA_VERSION = "rsna-knee-inventory-v1"
 SELECTION_SCHEMA_VERSION = "rsna-knee-extraction-selection-v1"
 MAX_STORAGE_BUDGET_BYTES = 2_000_000_000_000
+LOCAL_SMOKE_MAX_BYTES = 256 * 1024 * 1024
 DEFAULT_REAL_GEOMETRY_POLICY = GeometryPolicy(minimum_usable_slices=3)
 DEFAULT_REAL_DECODER_POLICY = DecoderPolicy(require_modality=True)
 DEFAULT_REAL_PREPROCESS_CONFIG = PreprocessConfig(
@@ -65,6 +66,10 @@ class RealIntegrationError(ValueError):
 
 class RealInferenceError(RuntimeError):
     """Raised for a global integration or model failure."""
+
+
+class UnsupportedSourceEntryError(DicomDecodeError):
+    """Raised when the archive cannot provide a selected member to the decoder."""
 
 
 def _canonical_json(value: object) -> str:
@@ -684,8 +689,12 @@ class _SourceReader:
         if self.archive is not None:
             try:
                 stream = self.archive.open(safe.as_posix(), "r")
-            except (KeyError, OSError, zipfile.BadZipFile) as exc:
+            except (KeyError, OSError, EOFError, zipfile.BadZipFile) as exc:
                 raise DamagedDicomError(f"source entry is missing: {entry_name}") from exc
+            except (NotImplementedError, RuntimeError) as exc:
+                raise UnsupportedSourceEntryError(
+                    f"archive compression is unsupported for {entry_name}"
+                ) from exc
             try:
                 with stream:
                     decoded = decode_stream(cast(BinaryIO, stream), filename=entry_name, policy=policy)
@@ -709,6 +718,8 @@ class _SourceReader:
 
 
 def _failure_reason(error: DicomDecodeError) -> str:
+    if isinstance(error, UnsupportedSourceEntryError):
+        return "unsupported_source_encoding"
     if isinstance(error, UnsupportedTransferSyntaxError):
         return "unsupported_transfer_syntax"
     if isinstance(error, DecoderInfrastructureError):
@@ -911,6 +922,8 @@ def load_real_study(
         raise RealIntegrationError("study is not present in the integration manifest")
     if study_manifest != canonical:
         raise RealIntegrationError("study does not match the checksum-covered integration manifest")
+    if allow_unverified_directory:
+        _validate_local_smoke_scope(manifest, Path(source))
     with _SourceReader(Path(source), allow_unverified_directory=allow_unverified_directory) as reader:
         return _load_real_study_with_reader(
             manifest,
@@ -929,6 +942,8 @@ def iter_real_studies(
 ) -> Iterator[LoadedStudy]:
     """Yield canonical manifest studies while keeping a ZIP handle open once."""
 
+    if allow_unverified_directory:
+        _validate_local_smoke_scope(manifest, Path(source))
     with _SourceReader(Path(source), allow_unverified_directory=allow_unverified_directory) as reader:
         for study_manifest in manifest.studies:
             yield _load_real_study_with_reader(
@@ -954,10 +969,20 @@ def _check_execution_context(*, require_slurm: bool, allow_local_smoke: bool) ->
 
 
 def _validate_local_smoke_scope(manifest: IntegrationManifest, source: Path) -> None:
+    if os.environ.get("SLURM_JOB_ID"):
+        raise RealInferenceError("local smoke mode cannot run inside a Slurm allocation")
     if not source.is_dir():
         raise RealInferenceError("local smoke mode requires a small extracted fixture directory")
     if manifest.series_count > 16 or sum(len(item.entries) for study in manifest.studies for item in study.series) > 256:
         raise RealInferenceError("local smoke mode is limited to 16 series and 256 source entries")
+    try:
+        total_bytes = sum(item.stat().st_size for item in source.rglob("*") if item.is_file())
+    except OSError as exc:
+        raise RealInferenceError(f"could not inspect local smoke fixture {source}") from exc
+    if total_bytes > LOCAL_SMOKE_MAX_BYTES:
+        raise RealInferenceError(
+            f"local smoke mode is limited to {LOCAL_SMOKE_MAX_BYTES} source bytes"
+        )
 
 
 def _configure_threads() -> int:
