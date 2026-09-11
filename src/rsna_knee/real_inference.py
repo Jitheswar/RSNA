@@ -44,6 +44,11 @@ from .preprocessing import (
     PreprocessConfig,
     SeriesFailure,
 )
+from .recovery import (
+    ReferenceFallbackPrior,
+    compute_laplace_smoothed_reference_priors,
+    default_reference_fallback_prior,
+)
 from .submission import write_submission
 from .series_policy import has_non_diagnostic_token
 from .series_cache import SeriesCache
@@ -202,6 +207,9 @@ class SeriesLoadFailure:
     source_entry_name: str
     reason: str
     detail: str
+    decoder: str = ""
+    attempts: tuple[str, ...] = ()
+    recovery: str = "skip_unusable_input"
 
 
 @dataclass(frozen=True)
@@ -699,20 +707,20 @@ class _SourceReader:
                 hash_stream = self.archive.open(safe.as_posix(), "r")
             except (KeyError, OSError, EOFError, zipfile.BadZipFile) as exc:
                 raise DamagedDicomError(f"source entry is missing: {entry_name}") from exc
-            except (NotImplementedError, RuntimeError) as exc:
+            except NotImplementedError as exc:
                 raise UnsupportedSourceEntryError(
                     f"archive compression is unsupported for {entry_name}"
                 ) from exc
             try:
                 with hash_stream:
                     source_content_sha256 = self._hash_stream(cast(BinaryIO, hash_stream))
-            except (EOFError, OSError, RuntimeError, zipfile.BadZipFile, zlib.error) as exc:
+            except (EOFError, OSError, zipfile.BadZipFile, zlib.error) as exc:
                 raise DamagedDicomError(f"archive integrity failed for {entry_name}") from exc
             try:
                 stream = self.archive.open(safe.as_posix(), "r")
             except (KeyError, OSError, EOFError, zipfile.BadZipFile) as exc:
                 raise DamagedDicomError(f"source entry is missing: {entry_name}") from exc
-            except (NotImplementedError, RuntimeError) as exc:
+            except NotImplementedError as exc:
                 raise UnsupportedSourceEntryError(
                     f"archive compression is unsupported for {entry_name}"
                 ) from exc
@@ -720,7 +728,7 @@ class _SourceReader:
                 with stream:
                     decoded = decode_stream(cast(BinaryIO, stream), filename=entry_name, policy=policy)
                     return replace(decoded, source_content_sha256=source_content_sha256)
-            except (EOFError, OSError, RuntimeError, zipfile.BadZipFile, zlib.error) as exc:
+            except (EOFError, OSError, zipfile.BadZipFile, zlib.error) as exc:
                 raise DamagedDicomError(f"archive integrity failed for {entry_name}") from exc
         if self.root is None:
             raise RealIntegrationError("source reader was used outside its context")
@@ -802,6 +810,7 @@ def _load_series(
         )
 
     decoded: list[Any] = []
+    decoded_entries: list[str] = []
     failures: list[SeriesLoadFailure] = []
     for entry_name in manifest_series.entries:
         try:
@@ -819,10 +828,18 @@ def _load_series(
                     source_entry_name=entry_name,
                     reason=_failure_reason(exc),
                     detail=str(exc),
+                    decoder=decoder_policy.attempt_order[-1],
+                    attempts=decoder_policy.attempt_order,
+                    recovery=(
+                        "reject_series_on_any_failure"
+                        if require_complete_series
+                        else "skip_damaged_input_continue_with_survivors"
+                    ),
                 )
             )
             continue
         decoded.append(item)
+        decoded_entries.append(entry_name)
 
     metadata = [
         value
@@ -854,6 +871,8 @@ def _load_series(
                     f"{len(decoded)} decoded slices are below minimum "
                     f"{geometry_policy.minimum_usable_slices}"
                 ),
+                decoder="geometry",
+                recovery="reject_series_below_minimum_slices",
             )
         )
     if failures and require_complete_series:
@@ -888,7 +907,7 @@ def _load_series(
         fluid_sensitive=manifest_series.fluid_sensitive,
         fat_suppression=manifest_series.fat_suppression,
         diagnostic_status="diagnostic",
-        source_entry_names=manifest_series.entries,
+        source_entry_names=tuple(decoded_entries),
     )
     return LoadedSeries(
         manifest_series=manifest_series,
@@ -1034,6 +1053,91 @@ def _verify_archive_source_identity(source_path: Path, manifest: IntegrationMani
         )
 
 
+def _reference_label_vector(value: object, field: str) -> tuple[int | None, ...]:
+    if not isinstance(value, (list, tuple)) or len(value) != NUM_TARGETS:
+        raise RealIntegrationError(f"{field} must contain {NUM_TARGETS} target labels")
+    labels: list[int | None] = []
+    for label in value:
+        if label is None:
+            labels.append(None)
+        elif (
+            isinstance(label, bool)
+            or not isinstance(label, (int, np.integer))
+            or int(label) not in (0, 1)
+        ):
+            raise RealIntegrationError(f"{field} must contain only 0, 1 or missing values")
+        else:
+            labels.append(int(label))
+    return tuple(labels)
+
+
+def _load_reference_labels_json(path: str | Path) -> dict[str, tuple[int | None, ...]]:
+    """Load trusted reference rows from a private inventory/fold-style JSON."""
+
+    root = _load_json_object(path, "fallback reference labels")
+    rows: dict[str, tuple[int | None, ...]] = {}
+    labels_value = root.get("labels")
+    if isinstance(labels_value, Mapping):
+        for raw_uid, raw_labels in labels_value.items():
+            uid = _nonempty(raw_uid, "fallback reference label study identifier")
+            rows[uid] = _reference_label_vector(raw_labels, f"fallback labels for {uid}")
+    else:
+        memberships = root.get("memberships")
+        if isinstance(memberships, list):
+            for index, raw_item in enumerate(memberships):
+                item = _mapping(raw_item, f"fallback membership {index}")
+                if item.get("cohort") != "gold":
+                    continue
+                uid = _nonempty(item.get("StudyInstanceUID", ""), "fallback membership StudyInstanceUID")
+                rows[uid] = _reference_label_vector(
+                    item.get("reference_labels"),
+                    f"fallback membership labels for {uid}",
+                )
+        else:
+            source = root.get("source")
+            source_mapping = source if isinstance(source, Mapping) else root
+            studies = source_mapping.get("studies") if isinstance(source_mapping, Mapping) else None
+            if isinstance(studies, list):
+                for index, raw_item in enumerate(studies):
+                    item = _mapping(raw_item, f"fallback source study {index}")
+                    labels = _reference_label_vector(
+                        item.get("reference_labels"),
+                        f"fallback source labels {index}",
+                    )
+                    if all(label is not None for label in labels):
+                        uid = _nonempty(
+                            item.get("StudyInstanceUID", ""),
+                            "fallback source StudyInstanceUID",
+                        )
+                        rows[uid] = labels
+    if not rows:
+        raise RealIntegrationError(
+            "fallback reference labels contain no complete gold/reference rows"
+        )
+    if len(rows) != len(set(rows)):
+        raise RealIntegrationError("fallback reference labels contain duplicate study identifiers")
+    return rows
+
+
+def _load_study_uid_list_json(path: str | Path) -> tuple[str, ...]:
+    source = Path(path)
+    try:
+        root_value: object = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RealIntegrationError(f"could not read study identifier list {source}") from exc
+    if isinstance(root_value, list):
+        values = root_value
+    elif isinstance(root_value, Mapping):
+        values = root_value.get("study_uids", root_value.get("eligible_study_uids"))
+        if not isinstance(values, list):
+            raise RealIntegrationError(
+                f"study identifier list {source} must be an array or contain study_uids"
+            )
+    else:
+        raise RealIntegrationError(f"study identifier list {source} must contain an array")
+    return _tuple_of_strings(values, "study identifier list")
+
+
 def _private_study_evidence(
     loaded: LoadedStudy,
     prediction: StudyPrediction,
@@ -1052,6 +1156,9 @@ def _private_study_evidence(
                         "source_entry_name": failure.source_entry_name,
                         "reason": failure.reason,
                         "detail": failure.detail,
+                        "decoder": failure.decoder,
+                        "attempts": list(failure.attempts),
+                        "recovery": failure.recovery,
                     }
                     for failure in item.failures
                 ],
@@ -1068,6 +1175,35 @@ def _private_study_evidence(
             "warnings": list(prediction.warnings),
             "sampled_source_indices": [list(indices) for indices in prediction.sampled_source_indices],
         },
+        "recovery": {
+            "manifest_series_count": len(loaded.series_results),
+            "remaining_usable_series": prediction.valid_series_count,
+            "used_fallback": prediction.used_fallback,
+            "action": (
+                "study_fallback_reference_prior"
+                if prediction.used_fallback
+                else (
+                    "continue_with_surviving_series"
+                    if loaded.failures or prediction.rejected_series
+                    else "normal_model_inference"
+                )
+            ),
+            "full_study_fallback": prediction.used_fallback,
+            "slice_loss": {
+                "expected": sum(item.expected_slice_count for item in loaded.series_results),
+                "decoded": sum(item.decoded_slice_count for item in loaded.series_results),
+                "lost": sum(
+                    item.expected_slice_count - item.decoded_slice_count
+                    for item in loaded.series_results
+                ),
+            },
+            "series_loss": {
+                "expected": len(loaded.series_results),
+                "admitted_by_loader": sum(item.series is not None for item in loaded.series_results),
+                "usable": prediction.valid_series_count,
+                "lost": len(loaded.series_results) - prediction.valid_series_count,
+            },
+        },
     }
 
 
@@ -1082,18 +1218,39 @@ def run_real_inference(
     model_seed: int = 20260911,
     device: str | torch.device = "cpu",
     cache_root: str | Path | None = None,
+    fallback_prior: ReferenceFallbackPrior | None = None,
+    fallback_reference_labels: Mapping[str, Sequence[int | None]] | None = None,
+    fallback_eligible_study_uids: Sequence[str] | None = None,
+    fallback_held_out_study_uids: Sequence[str] = (),
+    fallback_alpha: float = 1.0,
+    evidence_ticket: str = "05",
     require_slurm: bool = False,
     allow_local_smoke: bool = False,
 ) -> dict[str, object]:
     """Run all manifest studies through the shared model and submission path."""
 
     _check_execution_context(require_slurm=require_slurm, allow_local_smoke=allow_local_smoke)
+    if not evidence_ticket.strip():
+        raise RealIntegrationError("evidence_ticket must be non-empty")
     thread_count = _configure_threads()
     manifest = load_integration_manifest(manifest_path)
     source = Path(source_path)
     if allow_local_smoke:
         _validate_local_smoke_scope(manifest, source)
     _verify_archive_source_identity(source, manifest)
+    if fallback_prior is not None and fallback_reference_labels is not None:
+        raise RealIntegrationError(
+            "fallback_prior and fallback_reference_labels are mutually exclusive"
+        )
+    if fallback_reference_labels is not None:
+        prior = compute_laplace_smoothed_reference_priors(
+            fallback_reference_labels,
+            eligible_study_uids=fallback_eligible_study_uids,
+            held_out_study_uids=fallback_held_out_study_uids,
+            alpha=fallback_alpha,
+        )
+    else:
+        prior = fallback_prior or default_reference_fallback_prior()
     if model is None:
         torch.manual_seed(model_seed)
         model = HierarchicalStudyModel(ModelConfig(image_size=manifest.preprocess_config.image_size))
@@ -1102,6 +1259,7 @@ def run_real_inference(
         model,
         manifest.preprocess_config,
         device=device,
+        fallback_prior=prior,
         packing_config=manifest.packing_config,
         series_cache=series_cache,
     )
@@ -1111,6 +1269,7 @@ def run_real_inference(
     private_study_evidence: list[dict[str, object]] = []
     manifest_series_count = 0
     accepted_series_count = 0
+    usable_series_count = 0
     complete_series_count = 0
     rejected_series_count = 0
     excluded_series_count = 0
@@ -1119,9 +1278,11 @@ def run_real_inference(
     decoded_slice_count = 0
     prediction_rejected_series_count = 0
     warning_count = 0
+    failure_reason_counts: dict[str, int] = {}
     for loaded in iter_real_studies(
         manifest,
         source,
+        require_complete_series=False,
         allow_unverified_directory=allow_local_smoke,
     ):
         manifest_series_count += len(loaded.series_results)
@@ -1155,6 +1316,14 @@ def run_real_inference(
             input_warnings=loaded.warnings,
         )
         private_study_evidence.append(_private_study_evidence(loaded, prediction))
+        usable_series_count += prediction.valid_series_count
+        for failure in loaded.failures:
+            failure_reason_counts[failure.reason] = failure_reason_counts.get(failure.reason, 0) + 1
+        if prediction.rejected_series:
+            failure_reason_counts["preprocessing_or_geometry"] = (
+                failure_reason_counts.get("preprocessing_or_geometry", 0)
+                + len(prediction.rejected_series)
+            )
         prediction_rejected_series_count += len(prediction.rejected_series)
         warning_count += len(prediction.warnings)
         predictions.append(prediction)
@@ -1167,10 +1336,24 @@ def run_real_inference(
         raise RealInferenceError("real loader changed the manifest study order or membership")
     elapsed_seconds = time.perf_counter() - started
 
+    fallback_numerator = sum(item.used_fallback for item in predictions)
+    fallback_denominator = len(predictions)
+    fallback_rate = fallback_numerator / fallback_denominator
+    if fallback_numerator == 0:
+        fallback_status = "zero_preferred_achieved"
+    elif fallback_rate < 0.005:
+        fallback_status = "investigation_required_before_promotion"
+    elif fallback_rate < 0.01:
+        fallback_status = "normally_blocks_promotion"
+    else:
+        fallback_status = "blocks_promotion"
+    lost_series_count = manifest_series_count - usable_series_count
+    lost_slice_count = expected_slice_count - decoded_slice_count
+
     scores = np.concatenate([item.scores for item in predictions])
     public_evidence: dict[str, object] = {
         "schema_version": INTEGRATION_EVIDENCE_SCHEMA_VERSION,
-        "ticket": "05",
+        "ticket": evidence_ticket,
         "status": "completed_real_integration",
         "scope": "private representative real DICOM series; no identifiers or paths in this record",
         "source": {
@@ -1198,6 +1381,7 @@ def run_real_inference(
             "input_studies": len(predictions),
             "manifest_series": manifest_series_count,
             "accepted_series": accepted_series_count,
+            "usable_series": usable_series_count,
             "complete_series": complete_series_count,
             "rejected_series": rejected_series_count,
             "excluded_non_diagnostic_series": excluded_series_count,
@@ -1211,6 +1395,35 @@ def run_real_inference(
             "scores_bounded": bool(((scores >= 0.0) & (scores <= 1.0)).all()),
             "output_rows": len(predictions),
             "output_columns": NUM_TARGETS + 1,
+            "full_study_fallback_numerator": fallback_numerator,
+            "full_study_fallback_denominator": fallback_denominator,
+            "full_study_fallback_rate": fallback_rate,
+            "lost_series": lost_series_count,
+            "lost_slices": lost_slice_count,
+        },
+        "fallback_prior": prior.to_public_dict(),
+        "recovery": {
+            "full_study_fallback": {
+                "numerator": fallback_numerator,
+                "denominator": fallback_denominator,
+                "rate": fallback_rate,
+                "status": fallback_status,
+            },
+            "slice_loss": {
+                "expected": expected_slice_count,
+                "decoded": decoded_slice_count,
+                "lost": lost_slice_count,
+            },
+            "series_loss": {
+                "expected": manifest_series_count,
+                "admitted_by_loader": accepted_series_count,
+                "usable": usable_series_count,
+                "lost": lost_series_count,
+                "rejected": rejected_series_count,
+                "excluded_non_diagnostic": excluded_series_count,
+            },
+            "failure_reasons": dict(sorted(failure_reason_counts.items())),
+            "global_failures_are_fatal": True,
         },
         "timing": {"elapsed_seconds": elapsed_seconds},
         "cache_boundary": {
@@ -1237,9 +1450,10 @@ def run_real_inference(
             private_evidence_path,
             {
                 "schema_version": INTEGRATION_EVIDENCE_SCHEMA_VERSION,
-                "ticket": "05",
+                "ticket": evidence_ticket,
                 "manifest_checksum": manifest.manifest_checksum,
                 "source_version": manifest.source_version,
+                "fallback_prior": prior.to_private_dict(),
                 "studies": private_study_evidence,
             },
         )
@@ -1264,6 +1478,26 @@ def _parser() -> Any:
     parser.add_argument("--selection", type=Path, default=None)
     parser.add_argument("--model-seed", type=int, default=20260911)
     parser.add_argument("--cache-root", type=Path, default=None)
+    parser.add_argument(
+        "--fallback-reference-labels",
+        type=Path,
+        default=None,
+        help="private JSON object containing trusted reference-label rows",
+    )
+    parser.add_argument(
+        "--fallback-eligible-study-uids",
+        type=Path,
+        default=None,
+        help="private JSON array/object naming the reference rows allowed in the prior",
+    )
+    parser.add_argument(
+        "--fallback-held-out-study-uids",
+        type=Path,
+        default=None,
+        help="private JSON array/object naming rows excluded from the prior",
+    )
+    parser.add_argument("--fallback-alpha", type=float, default=1.0)
+    parser.add_argument("--evidence-ticket", default="05")
     parser.add_argument("--require-slurm", action="store_true")
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
@@ -1276,6 +1510,15 @@ def main(argv: list[str] | None = None) -> int:
             raise RealIntegrationError("--inventory and --selection must be supplied together")
         if args.inventory is not None and args.selection is not None:
             build_integration_manifest(args.inventory, args.selection, args.manifest)
+        fallback_reference_labels = None
+        fallback_eligible_study_uids = None
+        fallback_held_out_study_uids: Sequence[str] = ()
+        if args.fallback_reference_labels is not None:
+            fallback_reference_labels = _load_reference_labels_json(args.fallback_reference_labels)
+        if args.fallback_eligible_study_uids is not None:
+            fallback_eligible_study_uids = _load_study_uid_list_json(args.fallback_eligible_study_uids)
+        if args.fallback_held_out_study_uids is not None:
+            fallback_held_out_study_uids = _load_study_uid_list_json(args.fallback_held_out_study_uids)
         evidence = run_real_inference(
             args.manifest,
             args.source,
@@ -1284,6 +1527,11 @@ def main(argv: list[str] | None = None) -> int:
             private_evidence_path=args.private_evidence,
             model_seed=args.model_seed,
             cache_root=args.cache_root,
+            fallback_reference_labels=fallback_reference_labels,
+            fallback_eligible_study_uids=fallback_eligible_study_uids,
+            fallback_held_out_study_uids=fallback_held_out_study_uids,
+            fallback_alpha=args.fallback_alpha,
+            evidence_ticket=args.evidence_ticket,
             require_slurm=args.require_slurm,
             allow_local_smoke=args.allow_local_smoke,
         )

@@ -1,10 +1,11 @@
 # RSNA knee mechanics baseline
 
-This repository contains the ticket 2 image-only inference core and the ticket
-5 private real-DICOM integration path. The core turns synthetic or admitted
-MRI studies into the exact twelve-target competition schema; the real-data
-runner consumes a checksum-covered private manifest and uses the same decoder,
-geometry, preprocessing, hierarchical model, and submission interfaces.
+This repository contains the ticket 2 image-only inference core, the ticket 5
+private real-DICOM integration path, and the ticket 7 input-recovery path. The
+core turns synthetic or admitted MRI studies into the exact twelve-target
+competition schema; the real-data runner consumes a checksum-covered private
+manifest and uses the same decoder, geometry, preprocessing, hierarchical
+model, and submission interfaces.
 
 ## Reproducible CPU environment
 
@@ -209,3 +210,45 @@ export RSNA_TICKET06_CACHE_ROOT=/private/path/ticket-06-cache
 export RSNA_TICKET06_OUTPUT=/private/path/ticket-06/public/cache-evidence.json
 sbatch --wait slurm/run_ticket06_cache_benchmark.sbatch
 ```
+
+## Ticket 07 damaged-input recovery
+
+`rsna_knee.recovery.compute_laplace_smoothed_reference_priors` computes the
+emergency study fallback vector from an explicitly eligible set of trusted
+reference-label rows. Each target uses `(positive + alpha) / (known + 2 *
+alpha)`; a target with no known eligible reference label receives `0.5`.
+Report-derived or weak rows must not be placed in the eligible set, and
+held-out rows are rejected if they overlap it. Public prior evidence contains
+counts and scores only; the private record retains the eligible identifiers.
+
+`run_real_inference` admits a series when enough valid slices survive the
+bounded decoder policy and geometry/minimum-slice checks. Failed slices are
+skipped with their source entry, decoder attempt, typed reason, and recovery
+action recorded. If no usable series remains, the study still receives one
+submission row using the reference prior. Unexpected decoder infrastructure,
+model, cache, or configuration failures remain fatal and are not converted to
+universal fallback output.
+
+The recovery adapter is bounded to one `cluster1-cpu` node, 16 CPUs, 64 GB,
+six hours, and no exclusive allocation. It requires the private ticket-05
+integration manifest and source. A private inventory or fold manifest can
+provide gold reference rows through `RSNA_TICKET07_FALLBACK_REFERENCE_LABELS`;
+optional JSON study lists can narrow the eligible set or declare held-out
+rows:
+
+```bash
+export RSNA_TICKET07_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json
+export RSNA_TICKET07_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET07_OUTPUT=/private/path/ticket-07-recovery
+export RSNA_TICKET07_FALLBACK_REFERENCE_LABELS=/private/path/ticket-04-folds/private/fold-manifest.json
+export RSNA_TICKET07_FALLBACK_ELIGIBLE_STUDIES=/private/path/ticket-07/eligible-study-uids.json
+sbatch --wait slurm/run_ticket07_recovery.sbatch
+```
+
+The adapter writes the exact submission and identifier-bearing recovery
+diagnostics below `private/`, and aggregate fallback numerator/denominator,
+slice loss, series loss, failure reasons, and prior counts below `public/`.
+Fallback status follows the promotion thresholds: zero is preferred, below
+0.5% requires investigation of every case, 0.5–1% normally blocks promotion,
+and above 1% blocks promotion. A prepared adapter or synthetic fixture does
+not constitute a private full-corpus or competition verification run.

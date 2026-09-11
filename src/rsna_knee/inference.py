@@ -19,6 +19,7 @@ from .preprocessing import (
     pack_study,
     prepare_study,
 )
+from .recovery import ReferenceFallbackPrior
 from .series_cache import SeriesCache
 from .submission import write_submission
 from .targets import NUM_TARGETS
@@ -59,6 +60,7 @@ class InferenceEngine:
         *,
         device: str | torch.device = "cpu",
         fallback_scores: Sequence[float] | None = None,
+        fallback_prior: ReferenceFallbackPrior | None = None,
         packing_config: PackingConfig | None = None,
         series_cache: SeriesCache | None = None,
     ) -> None:
@@ -70,15 +72,21 @@ class InferenceEngine:
         self.packing_config = packing_config or preprocess_config.packing_config()
         self.series_cache = series_cache
         self.device = torch.device(device)
-        if fallback_scores is None:
-            fallback: np.ndarray = np.full(NUM_TARGETS, 0.5, dtype=np.float64)
+        if fallback_scores is not None and fallback_prior is not None:
+            raise ValueError("fallback_scores and fallback_prior are mutually exclusive")
+        fallback: np.ndarray
+        if fallback_prior is not None:
+            fallback = np.asarray(fallback_prior.scores, dtype=np.float64)
+        elif fallback_scores is None:
+            fallback = np.full(NUM_TARGETS, 0.5, dtype=np.float64)
         else:
             fallback = np.asarray(fallback_scores, dtype=np.float64)
             if fallback.shape != (NUM_TARGETS,) or not np.isfinite(fallback).all():
                 raise ValueError(f"fallback_scores must contain {NUM_TARGETS} finite values")
-            if (fallback < 0.0).any() or (fallback > 1.0).any():
-                raise ValueError("fallback_scores must be within [0, 1]")
-        self.fallback_scores = fallback
+        if (fallback < 0.0).any() or (fallback > 1.0).any():
+            raise ValueError("fallback_scores must be within [0, 1]")
+        self.fallback_scores = fallback.copy()
+        self.fallback_prior = fallback_prior
 
     def _predict_packed(self, packed: PackedStudy) -> np.ndarray:
         images = torch.from_numpy(packed.images).unsqueeze(0).to(self.device)

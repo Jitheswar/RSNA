@@ -57,6 +57,14 @@ from .series_cache import (
     SeriesCacheLockError,
     SeriesCacheResult,
 )
+from .recovery import (
+    DEFAULT_SMOOTHING_ALPHA,
+    RECOVERY_POLICY_VERSION,
+    RecoveryConfigurationError,
+    ReferenceFallbackPrior,
+    compute_laplace_smoothed_reference_priors,
+    default_reference_fallback_prior,
+)
 from .real_inference import (
     DEFAULT_REAL_DECODER_POLICY,
     DEFAULT_REAL_GEOMETRY_POLICY,
@@ -197,6 +205,12 @@ __all__ = [
     "SeriesCacheIntegrityError",
     "SeriesCacheLockError",
     "SeriesCacheResult",
+    "DEFAULT_SMOOTHING_ALPHA",
+    "RECOVERY_POLICY_VERSION",
+    "RecoveryConfigurationError",
+    "ReferenceFallbackPrior",
+    "compute_laplace_smoothed_reference_priors",
+    "default_reference_fallback_prior",
     "SubmissionError",
     "validate_predictions",
     "write_submission",

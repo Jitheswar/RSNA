@@ -15,6 +15,7 @@ from rsna_knee.dicom import DecoderPolicy
 from rsna_knee.geometry import GeometryPolicy
 from rsna_knee.preprocessing import PreprocessConfig
 from rsna_knee.inventory import inventory_archive, select_representative_batch, write_inventory_reports, write_selection_reports
+from rsna_knee.targets import NUM_TARGETS
 from rsna_knee.real_inference import (
     IntegrationManifest,
     IntegrationSeries,
@@ -24,6 +25,7 @@ from rsna_knee.real_inference import (
     load_real_study,
     run_real_inference,
     build_integration_manifest,
+    main as real_inference_main,
     write_integration_manifest,
 )
 
@@ -81,6 +83,23 @@ def _manifest(study_uid: str, series: tuple[IntegrationSeries, ...]) -> Integrat
             geometry_policy=geometry,
         ),
         studies=(IntegrationStudy(study_uid, series),),
+    )
+
+
+def _manifest_for_studies(studies: tuple[IntegrationStudy, ...]) -> IntegrationManifest:
+    geometry = GeometryPolicy(minimum_usable_slices=3)
+    return IntegrationManifest(
+        source_version="fixture-real-v1",
+        archive_fingerprint="fixture-fingerprint",
+        geometry_policy=geometry,
+        decoder_policy=DecoderPolicy(require_modality=True),
+        preprocess_config=PreprocessConfig(
+            image_size=(8, 8),
+            max_slices=8,
+            max_series=4,
+            geometry_policy=geometry,
+        ),
+        studies=studies,
     )
 
 
@@ -330,6 +349,204 @@ def test_real_inference_records_geometry_rejection_and_keeps_the_study_row(tmp_p
     assert evidence["counts"]["fallback_studies"] == 1
     assert evidence["counts"]["prediction_rejected_series"] == 1
     assert evidence["counts"]["output_rows"] == 1
+
+
+def test_real_inference_recovers_a_partially_corrupt_series_and_logs_each_attempt_privately(
+    tmp_path: Path,
+) -> None:
+    study_uid = "1.2.826.0.1.3680043.8.498.61"
+    series_uid = "1.2.826.0.1.3680043.8.498.62"
+    entries = tuple(
+        _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(4)
+    )
+    (tmp_path / entries[-1]).unlink()
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(
+        _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
+        manifest_path,
+    )
+    private_evidence_path = tmp_path / "private" / "recovery.json"
+
+    evidence = run_real_inference(
+        manifest_path,
+        tmp_path,
+        tmp_path / "submission.csv",
+        private_evidence_path=private_evidence_path,
+        evidence_ticket="07",
+        allow_local_smoke=True,
+    )
+
+    assert evidence["ticket"] == "07"
+    assert evidence["counts"]["fallback_studies"] == 0
+    assert evidence["counts"]["output_rows"] == 1
+    assert evidence["recovery"]["full_study_fallback"]["numerator"] == 0
+    assert evidence["recovery"]["full_study_fallback"]["denominator"] == 1
+    assert evidence["recovery"]["slice_loss"]["expected"] == 4
+    assert evidence["recovery"]["slice_loss"]["decoded"] == 3
+    assert evidence["recovery"]["series_loss"]["usable"] == 1
+
+    private = json.loads(private_evidence_path.read_text(encoding="utf-8"))
+    series = private["studies"][0]["series"][0]
+    assert series["status"] == "accepted_partial"
+    assert series["decoded_slice_count"] == 3
+    assert series["failures"][0]["source_entry_name"] == entries[-1]
+    assert series["failures"][0]["decoder"] == "pydicom"
+    assert series["failures"][0]["attempts"] == ["pydicom"]
+    assert series["failures"][0]["recovery"] == "skip_damaged_input_continue_with_survivors"
+    assert private["studies"][0]["recovery"]["remaining_usable_series"] == 1
+    assert private["studies"][0]["recovery"]["used_fallback"] is False
+
+
+def test_real_inference_keeps_rows_for_missing_series_and_all_invalid_studies_using_reference_priors(
+    tmp_path: Path,
+) -> None:
+    valid_uid = "1.2.826.0.1.3680043.8.498.71"
+    missing_uid = "1.2.826.0.1.3680043.8.498.72"
+    empty_uid = "1.2.826.0.1.3680043.8.498.73"
+    series_uid = "1.2.826.0.1.3680043.8.498.74"
+    entries = tuple(
+        _write_slice(tmp_path, valid_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(3)
+    )
+    missing_series_uid = "1.2.826.0.1.3680043.8.498.75"
+    missing_entries = tuple(
+        f"train_series/{missing_uid}/{missing_series_uid}/missing-{index}.dcm"
+        for index in range(3)
+    )
+    studies = (
+        IntegrationStudy(valid_uid, (IntegrationSeries(valid_uid, series_uid, entries=entries),)),
+        IntegrationStudy(
+            missing_uid,
+            (IntegrationSeries(missing_uid, missing_series_uid, entries=missing_entries),),
+        ),
+        IntegrationStudy(empty_uid, ()),
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(_manifest_for_studies(studies), manifest_path)
+    fallback_reference_labels = {
+        "gold": (1,) + (0,) * (NUM_TARGETS - 1),
+        "weak-report": (0,) * NUM_TARGETS,
+    }
+    output_path = tmp_path / "submission.csv"
+    private_evidence_path = tmp_path / "private" / "recovery.json"
+
+    evidence = run_real_inference(
+        manifest_path,
+        tmp_path,
+        output_path,
+        private_evidence_path=private_evidence_path,
+        fallback_reference_labels=fallback_reference_labels,
+        fallback_eligible_study_uids=("gold",),
+        allow_local_smoke=True,
+    )
+
+    with output_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.reader(handle))
+    assert len(rows) == 4
+    assert evidence["counts"]["fallback_studies"] == 2
+    assert evidence["recovery"]["full_study_fallback"]["numerator"] == 2
+    assert evidence["recovery"]["full_study_fallback"]["denominator"] == 3
+    assert evidence["recovery"]["full_study_fallback"]["rate"] == pytest.approx(2 / 3)
+    assert evidence["recovery"]["series_loss"]["expected"] == 2
+    assert evidence["recovery"]["series_loss"]["usable"] == 1
+    assert evidence["fallback_prior"]["targets"]["ACL"]["score"] == pytest.approx(2 / 3)
+    assert evidence["fallback_prior"]["targets"]["MCL"]["score"] == pytest.approx(1 / 3)
+
+    private = json.loads(private_evidence_path.read_text(encoding="utf-8"))
+    assert private["fallback_prior"]["eligible_study_uids"] == ["gold"]
+    by_uid = {item["StudyInstanceUID"]: item for item in private["studies"]}
+    assert by_uid[missing_uid]["recovery"]["used_fallback"] is True
+    assert by_uid[missing_uid]["recovery"]["remaining_usable_series"] == 0
+    assert by_uid[empty_uid]["recovery"]["used_fallback"] is True
+    assert by_uid[empty_uid]["recovery"]["manifest_series_count"] == 0
+
+
+def test_unexpected_decoder_programming_failure_is_not_converted_to_study_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    study_uid = "1.2.826.0.1.3680043.8.498.81"
+    series_uid = "1.2.826.0.1.3680043.8.498.82"
+    entries = tuple(
+        _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(3)
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(
+        _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
+        manifest_path,
+    )
+
+    def fail_unexpectedly(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("programming failure")
+
+    monkeypatch.setattr("rsna_knee.real_inference.decode_stream", fail_unexpectedly)
+    with pytest.raises(RuntimeError, match="programming failure"):
+        run_real_inference(
+            manifest_path,
+            tmp_path,
+            tmp_path / "submission.csv",
+            allow_local_smoke=True,
+        )
+
+
+def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Path) -> None:
+    study_uid = "1.2.826.0.1.3680043.8.498.91"
+    series_uid = "1.2.826.0.1.3680043.8.498.92"
+    entries = tuple(
+        _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(3)
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(
+        _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
+        manifest_path,
+    )
+    labels_path = tmp_path / "private" / "fold-manifest.json"
+    labels_path.parent.mkdir()
+    labels_path.write_text(
+        json.dumps(
+            {
+                "memberships": [
+                    {
+                        "StudyInstanceUID": "gold",
+                        "cohort": "gold",
+                        "reference_labels": [1] + [0] * (NUM_TARGETS - 1),
+                    },
+                    {
+                        "StudyInstanceUID": "weak-report",
+                        "cohort": "report_only",
+                        "reference_labels": [0] * NUM_TARGETS,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    private_evidence_path = tmp_path / "private" / "evidence.json"
+
+    exit_code = real_inference_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--source",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "submission.csv"),
+            "--private-evidence",
+            str(private_evidence_path),
+            "--evidence-ticket",
+            "07",
+            "--fallback-reference-labels",
+            str(labels_path),
+            "--allow-local-smoke",
+        ]
+    )
+
+    assert exit_code == 0
+    private = json.loads(private_evidence_path.read_text(encoding="utf-8"))
+    assert private["fallback_prior"]["eligible_study_uids"] == ["gold"]
 
 
 def test_cache_benchmark_proves_sampling_reuses_materialized_series(tmp_path: Path) -> None:
