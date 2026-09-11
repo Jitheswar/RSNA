@@ -300,3 +300,43 @@ progress, checkpoint compatibility, fold isolation, AUC behavior, and the
 CPU preflight. No private ticket-08 training allocation or real-corpus AUC is
 claimed by the source implementation; those require the authorized Slurm
 run and unresolved V07/V09/V14 evidence.
+
+## Ticket 09 interrupted-training recovery
+
+`rsna_knee.training` resumes a fixed-budget run only from a complete
+`latest_resumable` checkpoint whose semantic fingerprint still matches the
+data, fold, labels, preprocessing, architecture, initialization, seeds,
+optimizer, schedule, loss, augmentation, and budget. Operational changes such
+as a new Slurm allocation or checkpoint cadence do not change the scientific
+run ID. A mismatch is rejected; `fork_training_run` starts a fresh run with
+explicit parent-checkpoint provenance.
+
+Each checkpoint contains model, optimizer, scheduler, optional AMP scaler,
+progress, best metric, RNG states, configuration, fold, semantic identity,
+sampler continuation, and checkpoint version. Latest checkpoints are written
+atomically and copied into an immutable history. Epoch boundaries and the
+15-minute recovery interval are both checkpoint triggers. `final_selected` is
+kept separate from `latest_resumable`, and every execution attempt owns its
+own log plus immutable start and completion/failure records.
+The loader also validates and migrates complete ticket-08 v1 checkpoints in
+memory, preserving their original scientific run identity before the next
+checkpoint is published in the v2 format.
+
+After an interruption, rerun the bounded adapter with the same output,
+manifests, source version, and configuration. It defaults to
+`<output>/checkpoints/latest.pt` and creates a new attempt without overwriting
+earlier evidence:
+
+```bash
+export RSNA_TICKET09_INTEGRATION_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json
+export RSNA_TICKET09_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET09_FOLD_MANIFEST=/private/path/ticket-04-folds/private/fold-manifest.json
+export RSNA_TICKET09_FOLD=0
+export RSNA_TICKET09_OUTPUT=/private/path/ticket-08-fold-0
+export RSNA_TICKET09_SOURCE_VERSION=rsna-2026-08-04
+sbatch --wait slurm/run_ticket09_resume_training.sbatch
+```
+
+The public recovery evidence is synthetic and does not claim a private
+Slurm execution, real-corpus rollback duration, GPU compatibility, or a
+competition result.
