@@ -1637,6 +1637,11 @@ def _parser() -> Any:
         default=None,
         help="derive eligible and held-out gold rows from this fold in a private fold manifest",
     )
+    parser.add_argument(
+        "--fallback-final-refit",
+        action="store_true",
+        help="explicitly use all trusted reference rows for final-refit fallback inference",
+    )
     parser.add_argument("--fallback-alpha", type=float, default=1.0)
     parser.add_argument("--evidence-ticket", default="05")
     parser.add_argument(
@@ -1669,7 +1674,22 @@ def main(argv: list[str] | None = None) -> int:
             fallback_eligible_study_uids = _load_study_uid_list_json(args.fallback_eligible_study_uids)
         if args.fallback_held_out_study_uids is not None:
             fallback_held_out_study_uids = _load_study_uid_list_json(args.fallback_held_out_study_uids)
-        if args.fallback_held_out_fold is not None:
+        if args.fallback_final_refit:
+            if fallback_reference_labels is None:
+                raise RealIntegrationError(
+                    "--fallback-final-refit requires a reference-label file"
+                )
+            if args.fallback_held_out_fold is not None:
+                raise RealIntegrationError(
+                    "--fallback-final-refit and --fallback-held-out-fold are mutually exclusive"
+                )
+            if fallback_eligible_study_uids is not None or fallback_held_out_study_uids is not None:
+                raise RealIntegrationError(
+                    "--fallback-final-refit cannot be combined with explicit study partitions"
+                )
+            fallback_eligible_study_uids = tuple(sorted(fallback_reference_labels))
+            fallback_held_out_study_uids = ()
+        elif args.fallback_held_out_fold is not None:
             if fallback_reference_labels is None or fallback_label_folds is None:
                 raise RealIntegrationError(
                     "--fallback-held-out-fold requires a fold-shaped reference-label file"
@@ -1712,13 +1732,23 @@ def main(argv: list[str] | None = None) -> int:
                 )
             fallback_eligible_study_uids = derived_eligible
             fallback_held_out_study_uids = derived_held_out
-        elif fallback_reference_labels is not None and fallback_eligible_study_uids is None:
-            if fallback_label_folds is None:
+        elif fallback_reference_labels is not None:
+            if fallback_label_folds is None and fallback_eligible_study_uids is None:
                 raise RealIntegrationError(
                     "--fallback-eligible-study-uids is required for reference labels "
                     "without fold assignments"
                 )
-            fallback_eligible_study_uids = tuple(sorted(fallback_reference_labels))
+            if (
+                fallback_label_folds is not None
+                and (
+                    fallback_eligible_study_uids is None
+                    or fallback_held_out_study_uids is None
+                )
+            ):
+                raise RealIntegrationError(
+                    "fold-shaped fallback labels require a held-out fold, explicit "
+                    "eligible and held-out lists, or --fallback-final-refit"
+                )
         evidence = run_real_inference(
             args.manifest,
             args.source,

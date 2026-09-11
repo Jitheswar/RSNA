@@ -63,6 +63,9 @@ claiming it unavoidable. Model, cache, and unexpected decoder failures remain
 fatal. Ticket-05 strict series admission is preserved unless ticket-07 recovery
 is selected, and canonical fold manifests are checksum-validated before their
 gold rows are used.
+Fold-shaped CLI inputs no longer default to admitting every fold; final-refit
+use requires an explicit opt-in, and precomputed fallback priors must agree
+with their Laplace-smoothed counts.
 
 Final local verification: 89 tests passed, mypy passed, the recovery Slurm
 adapter parsed with `bash -n`, and `git diff --check` passed. No private Slurm

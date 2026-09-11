@@ -239,7 +239,8 @@ when the label file has no fold assignments, an explicit
 `RSNA_TICKET07_FALLBACK_ELIGIBLE_STUDIES` list is required. For a fold-shaped
 manifest, select one held-out fold with
 `RSNA_TICKET07_FALLBACK_HELD_OUT_FOLD` (or provide explicit eligible and
-held-out lists):
+held-out lists). For final-refit inference, use the explicit
+`RSNA_TICKET07_FALLBACK_FINAL_REFIT=1` opt-in instead:
 
 ```bash
 export RSNA_TICKET07_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json

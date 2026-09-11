@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from rsna_knee.recovery import compute_laplace_smoothed_reference_priors
+from rsna_knee.recovery import ReferenceFallbackPrior, compute_laplace_smoothed_reference_priors
 from rsna_knee.targets import NUM_TARGETS
 
 
@@ -67,3 +67,13 @@ def test_reference_priors_reject_held_out_eligibility_and_invalid_labels() -> No
 def test_reference_priors_require_an_explicit_eligible_set_for_nonempty_inputs() -> None:
     with pytest.raises(ValueError, match="eligible_study_uids is required"):
         compute_laplace_smoothed_reference_priors({"study": _labels(acl=1)})
+
+
+def test_precomputed_reference_prior_must_match_its_laplace_counts() -> None:
+    with pytest.raises(ValueError, match="Laplace-smoothed counts"):
+        ReferenceFallbackPrior(
+            scores=np.full(NUM_TARGETS, 0.75),
+            positive_counts=(0,) * NUM_TARGETS,
+            negative_counts=(0,) * NUM_TARGETS,
+            eligible_study_count=0,
+        )

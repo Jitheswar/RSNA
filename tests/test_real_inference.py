@@ -573,6 +573,22 @@ def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Pat
         private_path=labels_path,
         public_path=tmp_path / "public" / "fold-evidence.json",
     )
+    rejected_without_partition = real_inference_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--source",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "rejected.csv"),
+            "--evidence-ticket",
+            "07",
+            "--fallback-reference-labels",
+            str(labels_path),
+            "--allow-local-smoke",
+        ]
+    )
+    assert rejected_without_partition == 1
     private_evidence_path = tmp_path / "private" / "evidence.json"
 
     exit_code = real_inference_main(
@@ -607,6 +623,31 @@ def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Pat
         item.study_instance_uid
         for item in fold_manifest.gold_memberships
         if item.fold == 1
+    )
+
+    final_private_evidence_path = tmp_path / "private" / "final-refit-evidence.json"
+    final_refit_exit_code = real_inference_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--source",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "final-refit.csv"),
+            "--private-evidence",
+            str(final_private_evidence_path),
+            "--evidence-ticket",
+            "07",
+            "--fallback-reference-labels",
+            str(labels_path),
+            "--fallback-final-refit",
+            "--allow-local-smoke",
+        ]
+    )
+    assert final_refit_exit_code == 0
+    final_private = json.loads(final_private_evidence_path.read_text(encoding="utf-8"))
+    assert final_private["fallback_prior"]["eligible_study_uids"] == sorted(
+        item.study_instance_uid for item in fold_manifest.gold_memberships
     )
 
 

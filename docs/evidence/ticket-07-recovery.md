@@ -35,7 +35,8 @@ inventory-shaped JSON and admits only complete gold or reference rows from
 those formats; report-only memberships are ignored.
 For non-fold label files, the eligible study list is mandatory. A fold-shaped
 manifest can derive the training-reference set and held-out exclusion from an
-explicit `--fallback-held-out-fold` selection.
+explicit `--fallback-held-out-fold` selection. Using all trusted references is
+available only through the explicit `--fallback-final-refit` opt-in.
 
 ## Demonstrated scope
 

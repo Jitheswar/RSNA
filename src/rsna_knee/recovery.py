@@ -114,6 +114,27 @@ class ReferenceFallbackPrior:
             raise RecoveryConfigurationError("smoothing_alpha must be positive and finite") from exc
         if not valid_alpha:
             raise RecoveryConfigurationError("smoothing_alpha must be positive and finite")
+        known_counts = tuple(
+            positive + negative
+            for positive, negative in zip(self.positive_counts, self.negative_counts)
+        )
+        if any(known > self.eligible_study_count for known in known_counts):
+            raise RecoveryConfigurationError(
+                "fallback prior known-label counts exceed eligible_study_count"
+            )
+        expected_scores = np.asarray(
+            [
+                (positive + self.smoothing_alpha) / (known + 2.0 * self.smoothing_alpha)
+                if known
+                else 0.5
+                for positive, known in zip(self.positive_counts, known_counts)
+            ],
+            dtype=np.float64,
+        )
+        if not np.allclose(values, expected_scores, rtol=0.0, atol=1e-12):
+            raise RecoveryConfigurationError(
+                "fallback prior scores do not match Laplace-smoothed counts"
+            )
         if self.policy_version != RECOVERY_POLICY_VERSION:
             raise RecoveryConfigurationError(f"unsupported recovery policy {self.policy_version!r}")
         if not self.source.strip():
