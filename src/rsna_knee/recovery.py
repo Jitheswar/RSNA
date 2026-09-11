@@ -120,6 +120,8 @@ class ReferenceFallbackPrior:
         object.__setattr__(self, "eligible_study_uids", uids)
         object.__setattr__(self, "positive_counts", tuple(int(value) for value in self.positive_counts))
         object.__setattr__(self, "negative_counts", tuple(int(value) for value in self.negative_counts))
+        object.__setattr__(self, "eligible_study_count", int(self.eligible_study_count))
+        object.__setattr__(self, "smoothing_alpha", float(self.smoothing_alpha))
 
     @property
     def known_label_counts(self) -> tuple[int, ...]:

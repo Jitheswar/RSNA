@@ -1343,7 +1343,7 @@ def run_real_inference(
         fallback_status = "zero_preferred_achieved"
     elif fallback_rate < 0.005:
         fallback_status = "investigation_required_before_promotion"
-    elif fallback_rate < 0.01:
+    elif fallback_rate <= 0.01:
         fallback_status = "normally_blocks_promotion"
     else:
         fallback_status = "blocks_promotion"
@@ -1536,7 +1536,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_local_smoke=args.allow_local_smoke,
         )
     except (OSError, RuntimeError, ValueError) as exc:
-        print(f"ticket-05 real inference failed: {exc}", file=sys.stderr)
+        print(f"real inference failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(evidence, indent=2, sort_keys=True))
     return 0
