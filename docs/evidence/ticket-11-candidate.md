@@ -91,6 +91,12 @@ execution environment is unknown, and the candidate has not run in Kaggle.
 - Actual approved Kaggle execution, hidden full-workload timing, owner final
   selection, export, upload, and competition submission remain pending. No
   approval-dependent gate is marked passed by this document.
+- Candidate save/reload and immutable publication were verified, and the real
+  runner supports damaged-input recovery, but no interrupted-process resume
+  demonstration or executed offline notebook session was run. The metadata
+  checks are structural checks of the frozen manifest, OOF record and
+  notebook; they do not replace a future owner audit of all private delivery
+  metadata and notebook outputs.
 
 The machine-readable public/private evidence and submission are ignored
 execution artifacts under `artifacts/private/`; the private record remains
