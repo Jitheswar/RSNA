@@ -63,5 +63,5 @@ if [[ -n "${long_tail_studies}" ]]; then
   benchmark_args+=(--long-tail-studies "${long_tail_studies}")
 fi
 
-export PYTHONPATH="${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="${candidate}/code:${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${project_dir}/.venv/bin/python" -m rsna_knee.candidate_cli "${benchmark_args[@]}"
