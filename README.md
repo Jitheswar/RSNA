@@ -435,3 +435,24 @@ than two ticket-10 fold jobs active. The aggregation adapter uses one such
 node, two CPUs, 8 GB and one hour. See
 [`docs/evidence/ticket-10-oof.md`](docs/evidence/ticket-10-oof.md) for the
 synthetic seam and real-corpus execution evidence.
+
+## Ticket 11 locally validated offline candidate
+
+`rsna_knee.candidate` packages the exact MRI-only inference path, three
+selected fold checkpoints, the inference configuration, separate cluster and
+offline runtime locks, a network-free notebook, corrected OOF evidence, and a
+checksum-covered immutable manifest. Candidate validation excludes training
+orchestration and report dependencies, verifies the exact thirteen-column
+submission contract, and preserves candidate state outside execution output.
+
+The bounded real runner is
+`slurm/run_ticket11_candidate.sbatch`. It requests one non-exclusive
+`cluster1-cpu` node, 16 CPUs, 64 GB and six hours. Its final representative
+execution processed 158 studies, 965 series and 31,486 slices with zero
+fallbacks, losses, decode failures or warnings. It produced 158 exact rows
+with finite bounded scores and projected 4,973.767 seconds at 1,300 studies;
+the projection is below the engineering target but is not hidden-scale proof.
+The candidate remains locally validated until an approved Kaggle execution
+and owner selection. See
+[`docs/evidence/ticket-11-candidate.md`](docs/evidence/ticket-11-candidate.md)
+for the full scope, checksums, runtime evidence and limitations.
