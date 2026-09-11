@@ -17,6 +17,7 @@ inventory_path="${RSNA_TICKET05_INVENTORY:?set RSNA_TICKET05_INVENTORY to the pr
 selection_path="${RSNA_TICKET05_SELECTION:?set RSNA_TICKET05_SELECTION to the private ticket-03 selection.json}"
 output_dir="${RSNA_TICKET05_OUTPUT:?set RSNA_TICKET05_OUTPUT to a private ticket-05 output directory}"
 manifest_path="${RSNA_TICKET05_MANIFEST:-${output_dir}/private/integration-manifest.json}"
+cache_root="${RSNA_TICKET05_CACHE_ROOT:-}"
 cd "${project_dir}"
 mkdir -p artifacts "${output_dir}/private" "${output_dir}/public"
 
@@ -48,5 +49,8 @@ real_args=(
   --selection "${selection_path}"
   --require-slurm
 )
+if [[ -n "${cache_root}" ]]; then
+  real_args+=(--cache-root "${cache_root}")
+fi
 
 exec "${project_dir}/.venv/bin/python" -m rsna_knee.real_inference_cli "${real_args[@]}"

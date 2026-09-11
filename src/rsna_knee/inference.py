@@ -19,6 +19,7 @@ from .preprocessing import (
     pack_study,
     prepare_study,
 )
+from .series_cache import SeriesCache
 from .submission import write_submission
 from .targets import NUM_TARGETS
 
@@ -59,6 +60,7 @@ class InferenceEngine:
         device: str | torch.device = "cpu",
         fallback_scores: Sequence[float] | None = None,
         packing_config: PackingConfig | None = None,
+        series_cache: SeriesCache | None = None,
     ) -> None:
         if tuple(model.config.image_size) != tuple(preprocess_config.image_size):
             raise ValueError("model and preprocessing image sizes must agree")
@@ -66,6 +68,7 @@ class InferenceEngine:
         self.model.eval()
         self.preprocess_config = preprocess_config
         self.packing_config = packing_config or preprocess_config.packing_config()
+        self.series_cache = series_cache
         self.device = torch.device(device)
         if fallback_scores is None:
             fallback: np.ndarray = np.full(NUM_TARGETS, 0.5, dtype=np.float64)
@@ -99,7 +102,11 @@ class InferenceEngine:
     ) -> StudyPrediction:
         """Predict one study, retaining partial-input diagnostics and rows."""
 
-        prepared = prepare_study(study, self.preprocess_config)
+        prepared = (
+            self.series_cache.prepare_study(study, self.preprocess_config)
+            if self.series_cache is not None
+            else prepare_study(study, self.preprocess_config)
+        )
         packed = pack_study(
             study,
             prepared.series,

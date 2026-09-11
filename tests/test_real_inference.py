@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, UID
 
+from rsna_knee.cache_benchmark import run_cache_benchmark
 from rsna_knee.dicom import DecoderPolicy
 from rsna_knee.geometry import GeometryPolicy
 from rsna_knee.preprocessing import PreprocessConfig
@@ -120,6 +122,9 @@ def test_private_manifest_round_trip_and_loader_preserve_source_mapping(tmp_path
     assert loaded.series_results[0].decoded_slice_count == 3
     assert loaded.series_results[0].complete is True
     assert loaded.study.series[0].slices[0].filename.endswith(".dcm")
+    assert loaded.study.series[0].slices[0].source_content_sha256 == hashlib.sha256(
+        (tmp_path / entries[0]).read_bytes()
+    ).hexdigest()
     assert loaded_manifest.manifest_checksum
 
     with pytest.raises(RealIntegrationError, match="source ZIP"):
@@ -170,6 +175,7 @@ def test_real_inference_uses_shared_model_path_and_writes_public_safe_evidence(t
         tmp_path,
         output_path,
         evidence_path=evidence_path,
+        cache_root=tmp_path / "cache",
         allow_local_smoke=True,
     )
 
@@ -181,6 +187,7 @@ def test_real_inference_uses_shared_model_path_and_writes_public_safe_evidence(t
     assert evidence["counts"]["fallback_studies"] == 0
     assert evidence["counts"]["scores_finite"] is True
     assert evidence["counts"]["scores_bounded"] is True
+    assert evidence["cache_boundary"]["series_cache_enabled"] is True
     public_text = evidence_path.read_text(encoding="utf-8")
     assert study_uid not in public_text
     assert series_uid not in public_text
@@ -323,3 +330,31 @@ def test_real_inference_records_geometry_rejection_and_keeps_the_study_row(tmp_p
     assert evidence["counts"]["fallback_studies"] == 1
     assert evidence["counts"]["prediction_rejected_series"] == 1
     assert evidence["counts"]["output_rows"] == 1
+
+
+def test_cache_benchmark_proves_sampling_reuses_materialized_series(tmp_path: Path) -> None:
+    study_uid = "1.2.826.0.1.3680043.8.498.51"
+    series_uid = "1.2.826.0.1.3680043.8.498.52"
+    entries = tuple(
+        _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(3)
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(
+        _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
+        manifest_path,
+    )
+
+    evidence = run_cache_benchmark(
+        manifest_path,
+        tmp_path,
+        tmp_path / "cache",
+        tmp_path / "public" / "cache-evidence.json",
+        workers=2,
+        allow_local_smoke=True,
+    )
+
+    assert evidence["counts"]["accepted_series"] == 1
+    assert evidence["counts"]["sampling_key_equivalence"] == 1
+    assert evidence["runs"]["eight_slice_materialization"]["cache_misses"] == 1
+    assert evidence["runs"]["sixteen_slice_reuse"]["cache_hits"] == 1

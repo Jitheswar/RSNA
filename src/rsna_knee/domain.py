@@ -42,6 +42,7 @@ class DicomSlice:
     pixel_representation: int = 0
     image_type_values: tuple[str, ...] = ()
     series_description: str = ""
+    source_content_sha256: Optional[str] = None
 
 
 @dataclass(frozen=True)

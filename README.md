@@ -173,3 +173,39 @@ without exclusive allocation. It writes the private manifest, submission, and
 diagnostics below `private/`, plus identifier-free aggregate evidence below
 `public/`. The bounded real run and its limitations are recorded in
 [`docs/evidence/ticket-05-real-inference.md`](docs/evidence/ticket-05-real-inference.md).
+
+## Ticket 06 incremental series cache
+
+`rsna_knee.series_cache.SeriesCache` stores every accepted, deterministically
+preprocessed slice in a private disposable cache. Each entry records the
+source identity and content hash for every slice, preprocessing policy and
+schema versions, geometry order, shape, warnings, NumPy checksum, and metadata
+checksum. Sampling remains a packing concern, so changing from eight to
+sixteen slices reuses the same materialized entry. A changed source slice or
+materialization policy gets a new key; unrelated series are unaffected.
+
+Cache publication uses a per-key lock, a same-directory staging directory, and
+an atomic directory rename. Readers validate completion state, both checksums,
+source identity, policy, dtype, shape, and slice membership before accepting a
+hit. `InferenceEngine` and the real runner accept an optional `series_cache`
+or `--cache-root`; the cache root must be a private disposable path, separate
+from raw data, reports, folds, checkpoints, and candidate bundles. The cache
+creates a private mode-0700 root marker and refuses to initialize a populated
+or non-private unmarked directory.
+
+The mechanics benchmark is available as `SeriesCache.benchmark(...,
+workers=N)`. It reports cold/warm hits, bytes read and written, and the
+temporary atomic-write footprint. Run it on the authorized Slurm CPU
+allocation before increasing worker counts or cache scope; local tests do not
+constitute the ticket's NFS throughput or peak-storage evidence.
+
+For an admitted private integration manifest, the bounded adapter runs both
+sampling variants and writes aggregate-only evidence:
+
+```bash
+export RSNA_TICKET06_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json
+export RSNA_TICKET06_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET06_CACHE_ROOT=/private/path/ticket-06-cache
+export RSNA_TICKET06_OUTPUT=/private/path/ticket-06/public/cache-evidence.json
+sbatch --wait slurm/run_ticket06_cache_benchmark.sbatch
+```

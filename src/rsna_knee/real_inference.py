@@ -17,7 +17,7 @@ import sys
 import time
 import zipfile
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Iterator, Mapping, Sequence, cast
 
@@ -46,6 +46,7 @@ from .preprocessing import (
 )
 from .submission import write_submission
 from .series_policy import has_non_diagnostic_token
+from .series_cache import SeriesCache
 from .targets import NUM_TARGETS
 
 
@@ -684,9 +685,29 @@ class _SourceReader:
         if self.archive is not None:
             self.archive.close()
 
+    @staticmethod
+    def _hash_stream(stream: BinaryIO) -> str:
+        digest = hashlib.sha256()
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+        return digest.hexdigest()
+
     def decode(self, entry_name: str, policy: DecoderPolicy) -> DicomSlice:
         safe = safe_member_path(entry_name)
         if self.archive is not None:
+            try:
+                hash_stream = self.archive.open(safe.as_posix(), "r")
+            except (KeyError, OSError, EOFError, zipfile.BadZipFile) as exc:
+                raise DamagedDicomError(f"source entry is missing: {entry_name}") from exc
+            except (NotImplementedError, RuntimeError) as exc:
+                raise UnsupportedSourceEntryError(
+                    f"archive compression is unsupported for {entry_name}"
+                ) from exc
+            try:
+                with hash_stream:
+                    source_content_sha256 = self._hash_stream(cast(BinaryIO, hash_stream))
+            except (EOFError, OSError, RuntimeError, zipfile.BadZipFile, zlib.error) as exc:
+                raise DamagedDicomError(f"archive integrity failed for {entry_name}") from exc
             try:
                 stream = self.archive.open(safe.as_posix(), "r")
             except (KeyError, OSError, EOFError, zipfile.BadZipFile) as exc:
@@ -698,9 +719,7 @@ class _SourceReader:
             try:
                 with stream:
                     decoded = decode_stream(cast(BinaryIO, stream), filename=entry_name, policy=policy)
-                    while stream.read(1024 * 1024):
-                        pass
-                    return decoded
+                    return replace(decoded, source_content_sha256=source_content_sha256)
             except (EOFError, OSError, RuntimeError, zipfile.BadZipFile, zlib.error) as exc:
                 raise DamagedDicomError(f"archive integrity failed for {entry_name}") from exc
         if self.root is None:
@@ -711,8 +730,11 @@ class _SourceReader:
         except ValueError as exc:
             raise RealIntegrationError(f"source entry escapes the source root: {entry_name}") from exc
         try:
+            with target.open("rb") as hash_stream:
+                source_content_sha256 = self._hash_stream(hash_stream)
             with target.open("rb") as stream:
-                return decode_stream(stream, filename=entry_name, policy=policy)
+                decoded = decode_stream(stream, filename=entry_name, policy=policy)
+                return replace(decoded, source_content_sha256=source_content_sha256)
         except (FileNotFoundError, OSError) as exc:
             raise DamagedDicomError(f"source entry is missing: {entry_name}") from exc
 
@@ -1059,6 +1081,7 @@ def run_real_inference(
     model: HierarchicalStudyModel | None = None,
     model_seed: int = 20260911,
     device: str | torch.device = "cpu",
+    cache_root: str | Path | None = None,
     require_slurm: bool = False,
     allow_local_smoke: bool = False,
 ) -> dict[str, object]:
@@ -1074,11 +1097,13 @@ def run_real_inference(
     if model is None:
         torch.manual_seed(model_seed)
         model = HierarchicalStudyModel(ModelConfig(image_size=manifest.preprocess_config.image_size))
+    series_cache = SeriesCache(cache_root) if cache_root is not None else None
     engine = InferenceEngine(
         model,
         manifest.preprocess_config,
         device=device,
         packing_config=manifest.packing_config,
+        series_cache=series_cache,
     )
 
     started = time.perf_counter()
@@ -1192,6 +1217,7 @@ def run_real_inference(
             "cache_configuration": manifest.preprocess_config.cache_config(),
             "sampling_is_post_cache": True,
             "model_architecture_is_not_in_cache_identity": True,
+            "series_cache_enabled": series_cache is not None,
         },
     }
     destinations = [Path(output_path)]
@@ -1237,6 +1263,7 @@ def _parser() -> Any:
     parser.add_argument("--inventory", type=Path, default=None)
     parser.add_argument("--selection", type=Path, default=None)
     parser.add_argument("--model-seed", type=int, default=20260911)
+    parser.add_argument("--cache-root", type=Path, default=None)
     parser.add_argument("--require-slurm", action="store_true")
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
@@ -1256,6 +1283,7 @@ def main(argv: list[str] | None = None) -> int:
             evidence_path=args.evidence,
             private_evidence_path=args.private_evidence,
             model_seed=args.model_seed,
+            cache_root=args.cache_root,
             require_slurm=args.require_slurm,
             allow_local_smoke=args.allow_local_smoke,
         )

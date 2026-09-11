@@ -47,6 +47,16 @@ from .preprocessing import (
     prepare_series,
     prepare_study,
 )
+from .series_cache import (
+    SERIES_CACHE_SCHEMA_VERSION,
+    CacheBenchmark,
+    CacheCleanupReport,
+    SeriesCache,
+    SeriesCacheError,
+    SeriesCacheIntegrityError,
+    SeriesCacheLockError,
+    SeriesCacheResult,
+)
 from .real_inference import (
     DEFAULT_REAL_DECODER_POLICY,
     DEFAULT_REAL_GEOMETRY_POLICY,
@@ -68,6 +78,7 @@ from .real_inference import (
     run_real_inference,
     write_integration_manifest,
 )
+from .cache_benchmark import run_cache_benchmark
 from .submission import SubmissionError, validate_predictions, write_submission
 from .targets import NUM_TARGETS, SUBMISSION_COLUMNS, TARGET_COLUMNS
 from .inventory import (
@@ -178,6 +189,14 @@ __all__ = [
     "pack_study",
     "prepare_series",
     "prepare_study",
+    "SERIES_CACHE_SCHEMA_VERSION",
+    "CacheBenchmark",
+    "CacheCleanupReport",
+    "SeriesCache",
+    "SeriesCacheError",
+    "SeriesCacheIntegrityError",
+    "SeriesCacheLockError",
+    "SeriesCacheResult",
     "SubmissionError",
     "validate_predictions",
     "write_submission",
@@ -254,4 +273,5 @@ __all__ = [
     "load_real_study",
     "iter_real_studies",
     "run_real_inference",
+    "run_cache_benchmark",
 ]
