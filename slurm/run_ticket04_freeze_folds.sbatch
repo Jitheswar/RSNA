@@ -34,13 +34,26 @@ export PYTHONPATH="${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
 freeze_args=(
   --inventory "${inventory_path}"
   --output-dir "${output_dir}"
-  --seed-name "${RSNA_TICKET04_SEED_NAME:-ticket-04-fold-freeze-v1}"
-  --seed "${RSNA_TICKET04_SEED:-20260911}"
   --repeat-name "${RSNA_TICKET04_REPEAT_NAME:-repeat-1}"
   --require-slurm
 )
+# Without explicit values the named seed is inherited from the superseded
+# manifest, or defaults to ticket-04-fold-freeze-v1 / 20260911.
+if [[ -n "${RSNA_TICKET04_SEED_NAME:-}" ]]; then
+  freeze_args+=(--seed-name "${RSNA_TICKET04_SEED_NAME}")
+fi
+if [[ -n "${RSNA_TICKET04_SEED:-}" ]]; then
+  freeze_args+=(--seed "${RSNA_TICKET04_SEED}")
+fi
 if [[ -n "${RSNA_TICKET04_REPEAT_JUSTIFICATION:-}" ]]; then
   freeze_args+=(--repeat-justification "${RSNA_TICKET04_REPEAT_JUSTIFICATION}")
+fi
+if [[ -n "${RSNA_TICKET04_SUPERSEDES_MANIFEST:-}" ]]; then
+  if [[ ! -f "${RSNA_TICKET04_SUPERSEDES_MANIFEST}" ]]; then
+    echo "superseded fold manifest does not exist: ${RSNA_TICKET04_SUPERSEDES_MANIFEST}" >&2
+    exit 1
+  fi
+  freeze_args+=(--supersedes-manifest "${RSNA_TICKET04_SUPERSEDES_MANIFEST}")
 fi
 if [[ -n "${RSNA_TICKET04_GROUPING_EVIDENCE:-}" ]]; then
   freeze_args+=(--grouping-evidence "${RSNA_TICKET04_GROUPING_EVIDENCE}")

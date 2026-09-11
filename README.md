@@ -116,6 +116,24 @@ explicitly attested reliable grouping key is respected across both cohorts and
 is never split. Without such an assessment, the manifest records study-level
 splitting and the limitation that repeated-patient leakage cannot be ruled out.
 
+The canonical generator is version 2 (`rsna-knee-fold-manifest-v2`):
+
+- **Phase-2 scoring.** Each remaining gold study goes to the fold with the
+  smallest change in total imbalance.
+- **Size cap.** When every gold group is one study, each fold holds
+  `floor(N/3)` or `ceil(N/3)` gold studies.
+- **Gates.** A manifest is produced only when gold fold-size balance,
+  per-target class balance, both-class support and deterministic regeneration
+  all pass.
+
+Version-1 manifests, whose phase-2 greedy could starve a fold down to its
+support-seed studies, still load with their original checksum. They are
+marked superseded, and the training and OOF CLIs refuse them unless
+`--allow-superseded-fold-manifest` is given for historical replay. A
+correction is published with `RSNA_TICKET04_SUPERSEDES_MANIFEST`. It records
+the superseded checksum and is refused unless source, grouping evidence, named
+seed and repeat are unchanged.
+
 Every source study receives exactly one fold membership. The private manifest
 contains identifiers and reference labels, while the public evidence contains
 only generation metadata, checksums, cohort totals, and all twelve positive /
@@ -144,6 +162,24 @@ silently chooses that path. The adapter requests one
 Both output paths are immutable: rerunning with an existing manifest refuses
 to overwrite it. Identifier-bearing output belongs below a private ignored
 path; `public/fold-evidence.json` is safe for aggregate evidence only.
+
+V14 is verified by a separate read-only job. It reloads the manifest, joins it
+to the inventory, regenerates it independently from the recorded parameters,
+recomputes every gate, and writes one immutable identifier-free evidence file:
+
+```bash
+export RSNA_TICKET04_V14_MANIFEST=/private/path/ticket-04-real-v2/private/fold-manifest.json
+export RSNA_TICKET04_V14_PUBLIC_EVIDENCE=/private/path/ticket-04-real-v2/public/fold-evidence.json
+export RSNA_TICKET04_INVENTORY=/private/path/ticket-03-inventory/private/inventory.json
+export RSNA_TICKET04_GROUPING_EVIDENCE=/private/path/ticket-04-grouping.json
+export RSNA_TICKET04_SUPERSEDES_MANIFEST=/private/path/ticket-04-real/private/fold-manifest.json
+export RSNA_TICKET04_EXPECTED_GOLD_COUNT=58
+export RSNA_TICKET04_V14_OUTPUT=/private/path/ticket-04-real-v2-v14/public/v14-evidence.json
+sbatch --wait slurm/run_ticket04_verify_v14.sbatch
+```
+
+The version-2 correction, V14 result and superseded-manifest comparison are
+recorded in [`docs/evidence/ticket-04-folds.md`](docs/evidence/ticket-04-folds.md).
 
 ## Ticket 05 real-DICOM integration
 
@@ -357,6 +393,19 @@ macro resamples explicitly. An OOF result records its frozen repeat name and
 is labeled development cross-validation for model selection, not an untouched
 internal test or clinical-generalization proof.
 
+Every OOF evaluation also carries fold-structure diagnostics:
+
+- **Pair decomposition.** Each target's pooled pairs are split exactly into
+  within-fold and cross-fold pairs, reported with the pair-weighted within-fold
+  macro and its bootstrap interval.
+- **Prevalence baseline.** A training-prevalence-only predictor that uses no
+  images.
+- **Fold score scale.** Per-fold means and SDs, their correlation with fold
+  training prevalence, and a fold-standardized diagnostic macro.
+- **Signal test.** A seeded within-fold label-permutation test of the
+  within-fold macro. Its pre-specified rule claims measurable image signal
+  only when the one-sided p-value is below 0.05.
+
 `rsna_knee.oof` loads one atomic `run.json` per fold plus its required
 configuration, metrics and checkpoint evidence, independently checks
 fold/configuration/membership/source-label joins, and refuses incomplete or
@@ -369,14 +418,14 @@ source run directories. The bounded adapters are
 ```bash
 export RSNA_TICKET10_INTEGRATION_MANIFEST=/private/path/ticket-05-real-training-input/private/integration-manifest.json
 export RSNA_TICKET10_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
-export RSNA_TICKET10_FOLD_MANIFEST=/private/path/ticket-04-real/private/fold-manifest.json
-export RSNA_TICKET10_RUN_ROOT=/private/path/ticket-10-real
+export RSNA_TICKET10_FOLD_MANIFEST=/private/path/ticket-04-real-v2/private/fold-manifest.json
+export RSNA_TICKET10_RUN_ROOT=/private/path/ticket-10-real-v2
 export RSNA_TICKET10_SOURCE_VERSION=rsna-2026-08-04
 export RSNA_TICKET10_FOLD=0
 sbatch --wait slurm/run_ticket10_fold.sbatch
 
 export RSNA_TICKET10_INVENTORY=/private/path/ticket-03-inventory-run/private/inventory.json
-export RSNA_TICKET10_OUTPUT=/private/path/ticket-10-oof
+export RSNA_TICKET10_OUTPUT=/private/path/ticket-10-real-v2-oof
 sbatch --wait slurm/run_ticket10_aggregate.sbatch
 ```
 

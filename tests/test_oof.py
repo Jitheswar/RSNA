@@ -8,7 +8,12 @@ import pytest
 
 from rsna_knee.folds import FoldManifest, freeze_folds
 from rsna_knee.inventory import SourceManifest, SourceStudy
-from rsna_knee.oof import OOFArtifactError, aggregate_oof_run_records, write_oof_reports
+from rsna_knee.oof import (
+    OOFArtifactError,
+    aggregate_oof_run_records,
+    render_oof_comparison,
+    write_oof_reports,
+)
 from rsna_knee.targets import TARGET_COLUMNS
 
 
@@ -230,3 +235,61 @@ def test_write_oof_reports_rejects_source_run_destination(tmp_path: Path) -> Non
             public_path=paths[0] / "run.json",
             source_run_paths=paths,
         )
+
+
+def test_aggregation_refuses_superseded_v1_manifest_unless_replaying_history(tmp_path: Path) -> None:
+    source = SourceManifest(
+        "train",
+        tuple(
+            SourceStudy(
+                f"gold-{index}",
+                True,
+                tuple((index + target_index) % 2 for target_index in range(len(TARGET_COLUMNS))),
+            )
+            for index in range(12)
+        ),
+        (),
+    )
+    legacy = freeze_folds(source, source_version="oof-artifact-v1", seed=31, generation_version=1)
+    paths = []
+    for fold in (0, 1, 2):
+        path = tmp_path / f"fold-{fold}"
+        _write_run(path, legacy, fold)
+        paths.append(path)
+
+    with pytest.raises(OOFArtifactError, match="superseded version-1 generator"):
+        aggregate_oof_run_records(paths, legacy)
+    historical = aggregate_oof_run_records(paths, legacy, allow_superseded_fold_manifest=True)
+
+    assert historical.fold_manifest_superseded is True
+    assert historical.to_public_dict()["fold_manifest_superseded"] is True
+
+
+def test_comparison_view_reports_within_fold_baseline_and_score_scale(tmp_path: Path) -> None:
+    manifest = _manifest()
+    paths = []
+    for fold in (0, 1, 2):
+        path = tmp_path / f"fold-{fold}"
+        _write_run(path, manifest, fold)
+        paths.append(path)
+
+    result = aggregate_oof_run_records(
+        paths,
+        manifest,
+        bootstrap_resamples=16,
+        bootstrap_seed=3,
+        permutation_resamples=200,
+        permutation_seed=4,
+    )
+    comparison = render_oof_comparison(result)
+    public = result.to_public_dict()
+
+    assert result.diagnostics is not None
+    assert result.diagnostics.within_fold_macro_auc == 1.0
+    assert public["fold_manifest_superseded"] is False
+    assert public["diagnostics"]["within_fold_permutation_test"]["resamples"] == 200
+    assert "Pair-weighted within-fold macro ROC-AUC: `1.000000`" in comparison
+    assert "Training-prevalence-only pooled macro ROC-AUC" in comparison
+    assert "## Fold score scale" in comparison
+    assert "measurable image signal: `true`" in comparison
+    assert "gold-" not in comparison

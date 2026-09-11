@@ -22,6 +22,8 @@ output_root="${RSNA_TICKET10_OUTPUT:?set RSNA_TICKET10_OUTPUT to a private OOF o
 bootstrap_resamples="${RSNA_TICKET10_BOOTSTRAP_RESAMPLES:-2000}"
 bootstrap_seed="${RSNA_TICKET10_BOOTSTRAP_SEED:-20260911}"
 bootstrap_unit="${RSNA_TICKET10_BOOTSTRAP_UNIT:-auto}"
+permutation_resamples="${RSNA_TICKET10_PERMUTATION_RESAMPLES:-10000}"
+permutation_seed="${RSNA_TICKET10_PERMUTATION_SEED:-20260911}"
 
 cd "${project_dir}"
 mkdir -p artifacts "${output_root}/private" "${output_root}/public"
@@ -49,8 +51,14 @@ for fold_id in 1 2; do
   fi
 done
 
+history_args=()
+# Historical replay of runs on a superseded version-1 fold manifest only.
+if [[ "${RSNA_TICKET10_ALLOW_SUPERSEDED_FOLD_MANIFEST:-0}" == "1" ]]; then
+  history_args+=(--allow-superseded-fold-manifest)
+fi
+
 export PYTHONPATH="${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
-exec "${project_dir}/.venv/bin/python" -m rsna_knee.oof_cli \
+exec "${project_dir}/.venv/bin/python" -m rsna_knee.oof_cli ${history_args[@]+"${history_args[@]}"} \
   --fold-manifest "${fold_manifest}" \
   --inventory "${inventory}" \
   --run "${fold0_run}" \
@@ -62,4 +70,6 @@ exec "${project_dir}/.venv/bin/python" -m rsna_knee.oof_cli \
   --expected-gold-count 58 \
   --bootstrap-resamples "${bootstrap_resamples}" \
   --bootstrap-seed "${bootstrap_seed}" \
-  --bootstrap-unit "${bootstrap_unit}"
+  --bootstrap-unit "${bootstrap_unit}" \
+  --permutation-resamples "${permutation_resamples}" \
+  --permutation-seed "${permutation_seed}"

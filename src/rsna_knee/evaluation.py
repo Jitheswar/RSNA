@@ -20,6 +20,22 @@ class EvaluationError(ValueError):
     """Raised when reference predictions cannot be evaluated safely."""
 
 
+def _average_ranks(values: np.ndarray) -> np.ndarray:
+    """Return one-based ranks with tied values sharing their average rank."""
+
+    order = np.argsort(values, kind="mergesort")
+    sorted_values = values[order]
+    ranks = np.empty(values.size, dtype=np.float64)
+    index = 0
+    while index < sorted_values.size:
+        end = index + 1
+        while end < sorted_values.size and sorted_values[end] == sorted_values[index]:
+            end += 1
+        ranks[order[index:end]] = (index + 1 + end) / 2.0
+        index = end
+    return ranks
+
+
 def roc_auc_score(labels: Sequence[int], scores: Sequence[float]) -> float | None:
     """Return rank-based ROC-AUC, or ``None`` when one class is unavailable.
 
@@ -41,16 +57,7 @@ def roc_auc_score(labels: Sequence[int], scores: Sequence[float]) -> float | Non
     negatives = int(np.sum(label_array == 0))
     if positives == 0 or negatives == 0:
         return None
-    order = np.argsort(score_array, kind="mergesort")
-    sorted_scores = score_array[order]
-    ranks = np.empty(score_array.size, dtype=np.float64)
-    index = 0
-    while index < sorted_scores.size:
-        end = index + 1
-        while end < sorted_scores.size and sorted_scores[end] == sorted_scores[index]:
-            end += 1
-        ranks[order[index:end]] = (index + 1 + end) / 2.0
-        index = end
+    ranks = _average_ranks(score_array)
     positive_rank_sum = float(ranks[label_array == 1].sum())
     return (positive_rank_sum - positives * (positives + 1) / 2.0) / (positives * negatives)
 
@@ -147,6 +154,7 @@ class BootstrapSummary:
     confidence_level: float
     targets: tuple[BootstrapMetric, ...]
     macro_auc: BootstrapMetric
+    within_fold_macro_auc: BootstrapMetric | None = None
 
     def __post_init__(self) -> None:
         if self.unit not in {"study", "group"}:
@@ -163,6 +171,9 @@ class BootstrapSummary:
             raise EvaluationError("bootstrap targets must use competition order")
         if any(item.resamples != self.resamples for item in self.targets) or (
             self.macro_auc.resamples != self.resamples
+        ) or (
+            self.within_fold_macro_auc is not None
+            and self.within_fold_macro_auc.resamples != self.resamples
         ):
             raise EvaluationError("bootstrap metrics must use the summary resample count")
 
@@ -176,6 +187,250 @@ class BootstrapSummary:
             "interval_method": "percentile_on_defined_resamples_only",
             "targets": [item.to_dict() for item in self.targets],
             "macro_auc": self.macro_auc.to_dict(),
+            "within_fold_macro_auc": (
+                self.within_fold_macro_auc.to_dict()
+                if self.within_fold_macro_auc is not None
+                else None
+            ),
+        }
+
+
+WITHIN_FOLD_SIGNAL_ALPHA = 0.05
+WITHIN_FOLD_SIGNAL_RULE = (
+    "Measurable image signal is claimed only if a one-sided within-fold label-permutation test "
+    "of the pair-weighted within-fold macro AUC gives p < 0.05. Whole label vectors are permuted "
+    "among the studies of each held-out fold, so fold-level score shifts cannot create signal."
+)
+
+
+@dataclass(frozen=True)
+class TargetPairDecomposition:
+    """Exact split of one target's pooled OOF pairs into within- and cross-fold pairs.
+
+    ``pooled_auc`` equals the pair-count-weighted combination of the two
+    components.  Cross-fold pairs compare scores from different fold models,
+    so they also reward or penalize differences in fold score scale.
+    """
+
+    target: str
+    blocks: tuple[tuple[int, int, float, int], ...]
+
+    def __post_init__(self) -> None:
+        if self.target not in TARGET_COLUMNS:
+            raise EvaluationError(f"unknown target {self.target!r}")
+        if tuple((positive, negative) for positive, negative, _, _ in self.blocks) != tuple(
+            (positive, negative) for positive in FOLD_IDS for negative in FOLD_IDS
+        ):
+            raise EvaluationError("pair decomposition must contain every fold block in order")
+
+    def _sum(self, within: bool) -> tuple[float, int]:
+        wins = sum(item[2] for item in self.blocks if (item[0] == item[1]) == within)
+        pairs = sum(item[3] for item in self.blocks if (item[0] == item[1]) == within)
+        return wins, pairs
+
+    @property
+    def within_fold_pairs(self) -> int:
+        return self._sum(True)[1]
+
+    @property
+    def cross_fold_pairs(self) -> int:
+        return self._sum(False)[1]
+
+    @property
+    def pooled_pairs(self) -> int:
+        return self.within_fold_pairs + self.cross_fold_pairs
+
+    @property
+    def within_fold_auc(self) -> float | None:
+        wins, pairs = self._sum(True)
+        return wins / pairs if pairs else None
+
+    @property
+    def cross_fold_auc(self) -> float | None:
+        wins, pairs = self._sum(False)
+        return wins / pairs if pairs else None
+
+    @property
+    def pooled_auc(self) -> float | None:
+        pairs = self.pooled_pairs
+        return (self._sum(True)[0] + self._sum(False)[0]) / pairs if pairs else None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "target": self.target,
+            "pooled_auc": self.pooled_auc,
+            "pooled_pairs": self.pooled_pairs,
+            "within_fold_auc": self.within_fold_auc,
+            "within_fold_pairs": self.within_fold_pairs,
+            "within_fold_pair_share": (
+                self.within_fold_pairs / self.pooled_pairs if self.pooled_pairs else None
+            ),
+            "cross_fold_auc": self.cross_fold_auc,
+            "cross_fold_pairs": self.cross_fold_pairs,
+            "cross_fold_pair_share": (
+                self.cross_fold_pairs / self.pooled_pairs if self.pooled_pairs else None
+            ),
+            "blocks": [
+                {
+                    "positive_fold": positive_fold,
+                    "negative_fold": negative_fold,
+                    "auc": wins / pairs if pairs else None,
+                    "pairs": pairs,
+                }
+                for positive_fold, negative_fold, wins, pairs in self.blocks
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class PrevalenceBaseline:
+    """Metrics for scoring every held-out study with its fold's training prevalence.
+
+    The baseline has no image input.  Its pooled AUC measures how much of a
+    pooled metric can arise from fold-level base rates alone; within a fold
+    its scores are constant, so fold and within-fold AUCs are 0.5 when defined.
+    """
+
+    targets: tuple[TargetEvaluation, ...]
+    macro_auc: float | None
+    fold_macro_aucs: tuple[float | None, ...]
+    within_fold_macro_auc: float | None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "definition": (
+                "score = prevalence of the target among the gold studies used to train the "
+                "held-out study's fold; no image input"
+            ),
+            "targets": [item.to_dict() for item in self.targets],
+            "pooled_macro_auc": self.macro_auc,
+            "fold_macro_aucs": list(self.fold_macro_aucs),
+            "pair_weighted_within_fold_macro_auc": self.within_fold_macro_auc,
+        }
+
+
+@dataclass(frozen=True)
+class FoldScoreScale:
+    """Location and spread of one fold model's held-out scores for one target."""
+
+    fold: int
+    target: str
+    mean_score: float
+    sd_score: float
+    training_prevalence: float
+    held_out_prevalence: float
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "fold": self.fold,
+            "target": self.target,
+            "mean_score": self.mean_score,
+            "sd_score": self.sd_score,
+            "training_prevalence": self.training_prevalence,
+            "held_out_prevalence": self.held_out_prevalence,
+        }
+
+
+@dataclass(frozen=True)
+class WithinFoldPermutationTest:
+    """Label-permutation null for the pair-weighted within-fold macro AUC."""
+
+    observed: float
+    resamples: int
+    seed: int
+    null_mean: float
+    null_sd: float
+    null_quantile_95: float
+    p_upper: float
+    p_two_sided: float
+
+    @property
+    def rejects_no_signal(self) -> bool:
+        return self.p_upper < WITHIN_FOLD_SIGNAL_ALPHA
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "statistic": "pair_weighted_within_fold_macro_auc",
+            "permutation_unit": "whole reference-label vectors within each held-out fold",
+            "observed": self.observed,
+            "resamples": self.resamples,
+            "seed": self.seed,
+            "null_mean": self.null_mean,
+            "null_sd": self.null_sd,
+            "null_quantile_95": self.null_quantile_95,
+            "p_upper": self.p_upper,
+            "p_two_sided": self.p_two_sided,
+            "p_value_definition": "(1 + resamples at least as extreme) / (1 + resamples)",
+            "alpha": WITHIN_FOLD_SIGNAL_ALPHA,
+            "rule": WITHIN_FOLD_SIGNAL_RULE,
+            "measurable_image_signal": self.rejects_no_signal,
+        }
+
+
+@dataclass(frozen=True)
+class OOFDiagnostics:
+    """Fold-structure diagnostics that qualify a pooled OOF macro AUC."""
+
+    pair_decomposition: tuple[TargetPairDecomposition, ...]
+    within_fold_macro_auc: float | None
+    cross_fold_macro_auc: float | None
+    prevalence_baseline: PrevalenceBaseline
+    fold_score_scale: tuple[FoldScoreScale, ...]
+    mean_score_vs_training_prevalence_pearson: float | None
+    mean_score_vs_training_prevalence_spearman: float | None
+    mean_score_vs_held_out_prevalence_pearson: float | None
+    between_fold_to_within_fold_sd_ratio: tuple[float | None, ...]
+    fold_standardized_macro_auc: float | None
+    permutation_test: WithinFoldPermutationTest | None
+
+    def __post_init__(self) -> None:
+        if tuple(item.target for item in self.pair_decomposition) != TARGET_COLUMNS:
+            raise EvaluationError("pair decomposition must use competition order")
+        if len(self.between_fold_to_within_fold_sd_ratio) != len(TARGET_COLUMNS):
+            raise EvaluationError("score-scale ratios must cover every target")
+
+    @property
+    def mean_within_fold_pair_share(self) -> float | None:
+        shares = [
+            item.within_fold_pairs / item.pooled_pairs
+            for item in self.pair_decomposition
+            if item.pooled_pairs
+        ]
+        return float(np.mean(shares)) if shares else None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "pair_weighted_within_fold_macro_auc": self.within_fold_macro_auc,
+            "cross_fold_macro_auc": self.cross_fold_macro_auc,
+            "mean_within_fold_pair_share": self.mean_within_fold_pair_share,
+            "pair_weighted_within_fold_definition": (
+                "per target, AUC over positive/negative pairs whose studies share a held-out fold, "
+                "pooled across folds by pair count; macro = unweighted mean of the twelve targets"
+            ),
+            "pair_decomposition": [item.to_dict() for item in self.pair_decomposition],
+            "training_prevalence_baseline": self.prevalence_baseline.to_dict(),
+            "fold_score_scale": {
+                "cells": [item.to_dict() for item in self.fold_score_scale],
+                "mean_score_vs_training_prevalence": {
+                    "pearson": self.mean_score_vs_training_prevalence_pearson,
+                    "spearman": self.mean_score_vs_training_prevalence_spearman,
+                    "cells": "fold x target",
+                },
+                "mean_score_vs_held_out_prevalence_pearson": (
+                    self.mean_score_vs_held_out_prevalence_pearson
+                ),
+                "between_fold_sd_of_means_over_mean_within_fold_sd": {
+                    target: ratio
+                    for target, ratio in zip(TARGET_COLUMNS, self.between_fold_to_within_fold_sd_ratio)
+                },
+                "fold_standardized_pooled_macro_auc": self.fold_standardized_macro_auc,
+                "fold_standardized_definition": (
+                    "diagnostic only: pooled AUC after z-scoring each fold's scores per target"
+                ),
+            },
+            "within_fold_permutation_test": (
+                self.permutation_test.to_dict() if self.permutation_test is not None else None
+            ),
         }
 
 
@@ -244,6 +499,9 @@ class OOFEvaluation:
     fold_macro_auc_max: float | None
     bootstrap: BootstrapSummary | None = None
     run_ids: tuple[str, ...] = ()
+    diagnostics: OOFDiagnostics | None = None
+    fold_generation_method: str | None = None
+    fold_manifest_superseded: bool = False
 
     def __post_init__(self) -> None:
         if not self.repeat_name.strip() or not self.fold_manifest_checksum.strip():
@@ -292,9 +550,11 @@ class OOFEvaluation:
 
     def to_public_dict(self) -> dict[str, object]:
         return {
-            "schema_version": "rsna-knee-oof-evaluation-v1",
+            "schema_version": "rsna-knee-oof-evaluation-v2",
             "repeat_name": self.repeat_name,
             "fold_manifest_checksum": self.fold_manifest_checksum,
+            "fold_generation_method": self.fold_generation_method,
+            "fold_manifest_superseded": self.fold_manifest_superseded,
             "prediction_count": self.prediction_count,
             "macro_auc": self.pooled_macro_auc,
             "defined_target_macro_auc": self.defined_target_macro_auc,
@@ -315,6 +575,7 @@ class OOFEvaluation:
                 "std_definition": "population_over_three_folds_when_all_defined",
             },
             "bootstrap": self.bootstrap.to_dict() if self.bootstrap is not None else None,
+            "diagnostics": self.diagnostics.to_dict() if self.diagnostics is not None else None,
             "undefined_auc_is_not_imputed": True,
             "oof_is_development_cv_not_untouched_internal_test": True,
             "clinical_generalization_not_established": True,
@@ -391,6 +652,252 @@ def _macro_values(metrics: Sequence[TargetEvaluation]) -> tuple[float | None, fl
     return macro, defined_macro
 
 
+def _oof_arrays(
+    study_instance_uids: Sequence[str],
+    memberships: Mapping[str, FoldMembership],
+    values: Mapping[str, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return label, score and fold arrays in the given study order."""
+
+    labels = np.array(
+        [memberships[uid].reference_labels for uid in study_instance_uids], dtype=np.int64
+    ).reshape(len(study_instance_uids), NUM_TARGETS)
+    scores = np.array([values[uid] for uid in study_instance_uids], dtype=np.float64).reshape(
+        len(study_instance_uids), NUM_TARGETS
+    )
+    folds = np.array([memberships[uid].fold for uid in study_instance_uids], dtype=np.int64)
+    return labels, scores, folds
+
+
+def _pair_wins(positive: np.ndarray, negative: np.ndarray) -> tuple[float, int]:
+    """Count positive-over-negative orderings, with ties as half, and all pairs."""
+
+    if positive.size == 0 or negative.size == 0:
+        return 0.0, 0
+    difference = positive[:, None] - negative[None, :]
+    wins = np.count_nonzero(difference > 0) + 0.5 * np.count_nonzero(difference == 0)
+    return float(wins), int(difference.size)
+
+
+def _array_target_evaluations(labels: np.ndarray, scores: np.ndarray) -> tuple[TargetEvaluation, ...]:
+    metrics: list[TargetEvaluation] = []
+    for index, target in enumerate(TARGET_COLUMNS):
+        auc = roc_auc_score(labels[:, index].tolist(), scores[:, index].tolist())
+        metrics.append(
+            TargetEvaluation(
+                target=target,
+                auc=auc,
+                positive_count=int(np.sum(labels[:, index] == 1)),
+                negative_count=int(np.sum(labels[:, index] == 0)),
+                status="defined" if auc is not None else "undefined_one_class",
+            )
+        )
+    return tuple(metrics)
+
+
+def _within_fold_macro(labels: np.ndarray, scores: np.ndarray, folds: np.ndarray) -> float | None:
+    """Pair-weighted within-fold macro AUC; undefined when a target has no within-fold pair."""
+
+    terms: list[float] = []
+    for index in range(NUM_TARGETS):
+        wins = 0.0
+        pairs = 0
+        for fold in FOLD_IDS:
+            rows = folds == fold
+            fold_wins, fold_pairs = _pair_wins(
+                scores[rows & (labels[:, index] == 1), index],
+                scores[rows & (labels[:, index] == 0), index],
+            )
+            wins += fold_wins
+            pairs += fold_pairs
+        if pairs == 0:
+            return None
+        terms.append(wins / pairs)
+    return float(np.mean(terms))
+
+
+def _pair_decomposition(
+    labels: np.ndarray, scores: np.ndarray, folds: np.ndarray
+) -> tuple[TargetPairDecomposition, ...]:
+    decomposition: list[TargetPairDecomposition] = []
+    for index, target in enumerate(TARGET_COLUMNS):
+        blocks: list[tuple[int, int, float, int]] = []
+        for positive_fold in FOLD_IDS:
+            positive = scores[(folds == positive_fold) & (labels[:, index] == 1), index]
+            for negative_fold in FOLD_IDS:
+                negative = scores[(folds == negative_fold) & (labels[:, index] == 0), index]
+                wins, pairs = _pair_wins(positive, negative)
+                blocks.append((positive_fold, negative_fold, wins, pairs))
+        decomposition.append(TargetPairDecomposition(target=target, blocks=tuple(blocks)))
+    return tuple(decomposition)
+
+
+def _correlation(left: np.ndarray, right: np.ndarray) -> float | None:
+    if left.size < 2 or np.std(left) == 0.0 or np.std(right) == 0.0:
+        return None
+    return float(np.corrcoef(left, right)[0, 1])
+
+
+def _within_fold_permutation_test(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    folds: np.ndarray,
+    *,
+    resamples: int,
+    seed: int,
+) -> WithinFoldPermutationTest | None:
+    """Permute whole label vectors within each fold and recompute the within-fold macro.
+
+    Within-fold ranks of every score column are fixed under the null, so each
+    resample needs only the permuted positive rank sums.
+    """
+
+    if resamples <= 0:
+        raise EvaluationError("permutation resamples must be positive")
+    if seed < 0:
+        raise EvaluationError("permutation seed must be non-negative")
+    rng = np.random.default_rng(seed)
+    null_u = np.zeros((resamples, NUM_TARGETS), dtype=np.float64)
+    observed_u = np.zeros(NUM_TARGETS, dtype=np.float64)
+    denominators = np.zeros(NUM_TARGETS, dtype=np.float64)
+    chunk = 1024
+    for fold in FOLD_IDS:
+        rows = np.flatnonzero(folds == fold)
+        if rows.size == 0:
+            continue
+        fold_labels = labels[rows].astype(np.float64)
+        ranks = np.column_stack(
+            [_average_ranks(scores[rows, index]) for index in range(NUM_TARGETS)]
+        )
+        positives = fold_labels.sum(axis=0)
+        offset = positives * (positives + 1.0) / 2.0
+        denominators += positives * (rows.size - positives)
+        observed_u += (fold_labels * ranks).sum(axis=0) - offset
+        for start in range(0, resamples, chunk):
+            count = min(chunk, resamples - start)
+            permutations = np.argsort(rng.random((count, rows.size)), axis=1)
+            permuted = fold_labels[permutations]
+            null_u[start : start + count] += np.einsum("rnt,nt->rt", permuted, ranks) - offset
+    if np.any(denominators == 0.0):
+        return None
+    observed = float(np.mean(observed_u / denominators))
+    null = (null_u / denominators).mean(axis=1)
+    tolerance = 1e-12
+    return WithinFoldPermutationTest(
+        observed=observed,
+        resamples=resamples,
+        seed=seed,
+        null_mean=float(np.mean(null)),
+        null_sd=float(np.std(null)),
+        null_quantile_95=float(np.quantile(null, 0.95)),
+        p_upper=float((1 + np.count_nonzero(null >= observed - tolerance)) / (resamples + 1)),
+        p_two_sided=float(
+            (1 + np.count_nonzero(np.abs(null - 0.5) >= abs(observed - 0.5) - tolerance))
+            / (resamples + 1)
+        ),
+    )
+
+
+def compute_oof_diagnostics(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    folds: np.ndarray,
+    *,
+    permutation_resamples: int | None = None,
+    permutation_seed: int = 20260911,
+) -> OOFDiagnostics:
+    """Qualify a pooled OOF AUC by fold structure, base rates and fold score scale."""
+
+    if labels.shape != scores.shape or labels.shape[1:] != (NUM_TARGETS,):
+        raise EvaluationError("diagnostics require matching study-by-target label and score arrays")
+    if folds.shape != (labels.shape[0],):
+        raise EvaluationError("diagnostics require one fold per study")
+    for fold in FOLD_IDS:
+        held_out = folds == fold
+        if not held_out.any() or held_out.all():
+            raise EvaluationError("diagnostics require held-out and training studies for every fold")
+    decomposition = _pair_decomposition(labels, scores, folds)
+    within_values = tuple(item.within_fold_auc for item in decomposition)
+    cross_values = tuple(item.cross_fold_auc for item in decomposition)
+
+    baseline_scores = np.zeros(labels.shape, dtype=np.float64)
+    cells: list[FoldScoreScale] = []
+    for fold in FOLD_IDS:
+        held_out = folds == fold
+        training_prevalence = labels[~held_out].mean(axis=0)
+        baseline_scores[held_out] = training_prevalence
+        for index, target in enumerate(TARGET_COLUMNS):
+            fold_scores = scores[held_out, index]
+            cells.append(
+                FoldScoreScale(
+                    fold=fold,
+                    target=target,
+                    mean_score=float(fold_scores.mean()),
+                    sd_score=float(fold_scores.std()),
+                    training_prevalence=float(training_prevalence[index]),
+                    held_out_prevalence=float(labels[held_out, index].mean()),
+                )
+            )
+    baseline_targets = _array_target_evaluations(labels, baseline_scores)
+    baseline = PrevalenceBaseline(
+        targets=baseline_targets,
+        macro_auc=_macro_values(baseline_targets)[0],
+        fold_macro_aucs=tuple(
+            _macro_values(
+                _array_target_evaluations(labels[folds == fold], baseline_scores[folds == fold])
+            )[0]
+            for fold in FOLD_IDS
+        ),
+        within_fold_macro_auc=_within_fold_macro(labels, baseline_scores, folds),
+    )
+
+    mean_scores = np.array([item.mean_score for item in cells])
+    training_prevalences = np.array([item.training_prevalence for item in cells])
+    held_out_prevalences = np.array([item.held_out_prevalence for item in cells])
+    ratios: list[float | None] = []
+    standardized = np.zeros(scores.shape, dtype=np.float64)
+    for index in range(NUM_TARGETS):
+        fold_means = np.array([scores[folds == fold, index].mean() for fold in FOLD_IDS])
+        fold_sds = np.array([scores[folds == fold, index].std() for fold in FOLD_IDS])
+        ratios.append(float(np.std(fold_means) / np.mean(fold_sds)) if np.mean(fold_sds) > 0 else None)
+        for fold, mean, sd in zip(FOLD_IDS, fold_means, fold_sds):
+            rows = folds == fold
+            standardized[rows, index] = (scores[rows, index] - mean) / sd if sd > 0 else 0.0
+    return OOFDiagnostics(
+        pair_decomposition=decomposition,
+        within_fold_macro_auc=(
+            float(np.mean(cast(Sequence[float], within_values)))
+            if all(value is not None for value in within_values)
+            else None
+        ),
+        cross_fold_macro_auc=(
+            float(np.mean(cast(Sequence[float], cross_values)))
+            if all(value is not None for value in cross_values)
+            else None
+        ),
+        prevalence_baseline=baseline,
+        fold_score_scale=tuple(cells),
+        mean_score_vs_training_prevalence_pearson=_correlation(mean_scores, training_prevalences),
+        mean_score_vs_training_prevalence_spearman=_correlation(
+            _average_ranks(mean_scores), _average_ranks(training_prevalences)
+        ),
+        mean_score_vs_held_out_prevalence_pearson=_correlation(mean_scores, held_out_prevalences),
+        between_fold_to_within_fold_sd_ratio=tuple(ratios),
+        fold_standardized_macro_auc=_macro_values(_array_target_evaluations(labels, standardized))[0],
+        permutation_test=(
+            _within_fold_permutation_test(
+                labels,
+                scores,
+                folds,
+                resamples=permutation_resamples,
+                seed=permutation_seed,
+            )
+            if permutation_resamples
+            else None
+        ),
+    )
+
+
 def _bootstrap_metric(
     statistic: str,
     values: Sequence[float],
@@ -464,9 +971,13 @@ def bootstrap_oof_predictions(
         units = tuple(tuple(sorted(grouped[key])) for key in sorted(grouped))
     else:
         units = tuple((uid,) for uid in expected)
+    labels, scores, folds = _oof_arrays(expected, memberships, values)
+    row_by_uid = {uid: row for row, uid in enumerate(expected)}
+    unit_rows = tuple(tuple(row_by_uid[uid] for uid in unit) for unit in units)
     rng = np.random.default_rng(seed)
     target_values: list[list[float]] = [[] for _ in TARGET_COLUMNS]
     macro_values: list[float] = []
+    within_values: list[float] = []
     for _ in range(resamples):
         sampled_indices = rng.integers(0, len(units), size=len(units))
         sampled_uids = tuple(uid for index in sampled_indices for uid in units[int(index)])
@@ -477,6 +988,12 @@ def bootstrap_oof_predictions(
         macro, _ = _macro_values(metrics)
         if macro is not None:
             macro_values.append(macro)
+        rows = np.fromiter(
+            (row for index in sampled_indices for row in unit_rows[int(index)]), dtype=np.int64
+        )
+        within = _within_fold_macro(labels[rows], scores[rows], folds[rows])
+        if within is not None:
+            within_values.append(within)
     return BootstrapSummary(
         unit=cast(str, selected_unit),
         unit_count=len(units),
@@ -495,6 +1012,12 @@ def bootstrap_oof_predictions(
         macro_auc=_bootstrap_metric(
             "macro_auc",
             macro_values,
+            resamples=resamples,
+            confidence_level=confidence_level,
+        ),
+        within_fold_macro_auc=_bootstrap_metric(
+            "pair_weighted_within_fold_macro_auc",
+            within_values,
             resamples=resamples,
             confidence_level=confidence_level,
         ),
@@ -546,8 +1069,16 @@ def evaluate_oof_predictions(
     bootstrap_seed: int = 20260911,
     bootstrap_unit: str = "auto",
     bootstrap_confidence_level: float = 0.95,
+    include_diagnostics: bool = True,
+    permutation_resamples: int | None = None,
+    permutation_seed: int = 20260911,
 ) -> OOFEvaluation:
-    """Evaluate exactly one held-out prediction for every gold study in a repeat."""
+    """Evaluate exactly one held-out prediction for every gold study in a repeat.
+
+    Diagnostics decompose pooled pairs into within- and cross-fold pairs and
+    add the training-prevalence baseline and fold score-scale summaries; a
+    positive ``permutation_resamples`` also runs the within-fold signal test.
+    """
 
     expected, values = _validated_prediction_mapping(predictions, fold_manifest)
     memberships = {item.study_instance_uid: item for item in fold_manifest.gold_memberships}
@@ -584,6 +1115,16 @@ def evaluate_oof_predictions(
         if bootstrap_resamples is not None
         else None
     )
+    diagnostics = None
+    if include_diagnostics:
+        labels, scores, fold_array = _oof_arrays(expected, memberships, values)
+        diagnostics = compute_oof_diagnostics(
+            labels,
+            scores,
+            fold_array,
+            permutation_resamples=permutation_resamples,
+            permutation_seed=permutation_seed,
+        )
     return OOFEvaluation(
         repeat_name=fold_manifest.repeat_name,
         fold_manifest_checksum=fold_manifest.manifest_checksum,
@@ -598,6 +1139,9 @@ def evaluate_oof_predictions(
         fold_macro_auc_min=fold_min,
         fold_macro_auc_max=fold_max,
         bootstrap=bootstrap,
+        diagnostics=diagnostics,
+        fold_generation_method=fold_manifest.generation_method,
+        fold_manifest_superseded=fold_manifest.superseded,
     )
 
 
@@ -640,9 +1184,17 @@ __all__ = [
     "BootstrapSummary",
     "EvaluationError",
     "FoldEvaluation",
+    "FoldScoreScale",
+    "OOFDiagnostics",
     "OOFEvaluation",
+    "PrevalenceBaseline",
     "TargetEvaluation",
+    "TargetPairDecomposition",
+    "WITHIN_FOLD_SIGNAL_ALPHA",
+    "WITHIN_FOLD_SIGNAL_RULE",
+    "WithinFoldPermutationTest",
     "bootstrap_oof_predictions",
+    "compute_oof_diagnostics",
     "evaluate_fold_predictions",
     "evaluate_oof_predictions",
     "predict_training_examples",

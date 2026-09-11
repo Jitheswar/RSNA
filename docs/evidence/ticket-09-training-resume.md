@@ -47,6 +47,14 @@ The bounded adapter is
 `slurm/run_ticket09_resume_training.sbatch`; it retains the ticket-08
 one-node `cluster1-cpu`, 16-CPU, 64-GB, six-hour, non-exclusive envelope.
 
+## Fold-manifest supersession
+
+This ticket's evidence is synthetic and contains no real-corpus metric. Since
+the version-2 fold correction, the training CLI refuses a superseded version-1
+fold manifest unless `--allow-superseded-fold-manifest` is given, and that
+option exists only to replay historical runs. The ticket-09 resume adapter does
+not forward the option, so it cannot resume a run on a superseded manifest.
+
 ## Verification limits
 
 No private ticket-09 Slurm restart, real-corpus rollback measurement, or

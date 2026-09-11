@@ -2838,6 +2838,11 @@ def _parser() -> Any:
         help="resume the immutable experiment from latest.pt or a checkpoint history path",
     )
     parser.add_argument("--execution-attempt-id", default=None)
+    parser.add_argument(
+        "--allow-superseded-fold-manifest",
+        action="store_true",
+        help="replay a superseded version-1 fold manifest for historical evidence only",
+    )
     parser.add_argument("--require-slurm", action="store_true")
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
@@ -2867,6 +2872,11 @@ def main(argv: list[str] | None = None) -> int:
         from .real_inference import iter_real_studies, load_integration_manifest
 
         fold_manifest = load_fold_manifest(args.fold_manifest)
+        if fold_manifest.superseded and not args.allow_superseded_fold_manifest:
+            raise TrainingDataError(
+                "the fold manifest was produced by the superseded version-1 generator; "
+                "train against the version-2 manifest"
+            )
         integration_manifest = load_integration_manifest(args.integration_manifest)
         source = args.source
         if not source.exists():

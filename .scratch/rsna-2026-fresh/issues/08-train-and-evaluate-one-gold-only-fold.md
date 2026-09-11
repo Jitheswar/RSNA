@@ -57,7 +57,38 @@ checkpoint save/reload, and inference import isolation.
 The bounded adapter is `slurm/run_ticket08_train_fold.sbatch`; it requests one
 `cluster1-cpu` node, 16 CPUs, 64 GB, six hours, and no exclusive allocation.
 Public synthetic scope is recorded in
-`docs/evidence/ticket-08-training.md`. The full suite passes 101 tests and
-mypy passes. No private Slurm training allocation or real-corpus held-out AUC
-was performed; V07, V09, and V14 evidence and later promotion remain
-unresolved.
+`docs/evidence/ticket-08-training.md`. At this implementation commit, the full
+suite passed 101 tests and mypy passed. The execution limitation recorded here
+was later superseded by the reconciliation comment below; the historical
+implementation evidence is retained as written.
+
+### 2026-09-11 — Reconciled real fold-0 execution evidence
+
+A completed bounded cluster1-cpu Slurm run now exists for the real corpus. The
+identifier-free evidence records reference-only supervision, 32 training
+studies, 26 held-out fold-0 gold studies, 100 successful optimizer and
+scheduler steps, zero all-masked skips, no learned normalization, a passing
+CPU preflight, and a reloadable final checkpoint.
+
+The private run artifact contains one twelve-score prediction vector for each
+held-out study. Independent replay against the frozen fold manifest confirmed
+the canonical target order, exact held-out identity and label-count joins,
+finite scores, and non-constant values in every target column. The saved and
+recomputed macro ROC-AUC is `0.43171391044456064`. The current suite passes 112
+tests.
+
+This closes the earlier “no private run / no real-corpus AUC” documentation
+caveat. Complete three-fold OOF coverage, V09 shared-storage evidence, and all
+V14 three-fold allocation/support requirements remain unresolved; no claim of
+competitive performance, GPU compatibility, promotion, upload, or final
+selection is made.
+
+### 2026-09-11 — Superseded for comparison by the version-2 fold correction
+
+The real fold-0 run above used the version-1 fold manifest `ae81f327…d51ad3e7`,
+whose defective gold allocation held out 26 studies and trained on 32. The
+owner approved the version-2 fold correction. This run's metric
+(`0.43171391044456064`) is therefore historical evidence only and is not
+comparable with any version-2 result. The artifacts are retained unchanged.
+The corrected three-fold rerun with the same configuration and 100-step budget
+is recorded under ticket 10.

@@ -22,18 +22,43 @@ from .inventory import SourceManifest, SourceSeries, SourceStudy
 from .targets import TARGET_COLUMNS
 
 
-FOLD_SCHEMA_VERSION = "rsna-knee-fold-manifest-v1"
-PUBLIC_FOLD_SCHEMA_VERSION = "rsna-knee-fold-evidence-v1"
+FOLD_SCHEMA_VERSION = "rsna-knee-fold-manifest-v2"
+PUBLIC_FOLD_SCHEMA_VERSION = "rsna-knee-fold-evidence-v2"
+LEGACY_FOLD_SCHEMA_VERSION = "rsna-knee-fold-manifest-v1"
+LEGACY_PUBLIC_FOLD_SCHEMA_VERSION = "rsna-knee-fold-evidence-v1"
 FOLD_COUNT = 3
 FOLD_IDS: tuple[int, ...] = tuple(range(FOLD_COUNT))
+FOLD_GENERATION_VERSION = 2
+LEGACY_FOLD_GENERATION_VERSION = 1
 FOLD_GENERATION_METHOD = (
+    "gold:iterative-multilabel-greedy-v2"
+    "(support-seeded;phase2=marginal-total-imbalance;fold-size-cap);"
+    "report-only:stable-study-or-reliable-group-identifier-hash-v1;"
+    "groups:unsplit-v1"
+)
+LEGACY_FOLD_GENERATION_METHOD = (
     "gold:iterative-multilabel-greedy-v1;"
     "report-only:stable-study-or-reliable-group-identifier-hash-v1;"
     "groups:unsplit-v1"
 )
+LEGACY_GENERATION_DEFECT = (
+    "Generation v1 scored each phase-2 candidate fold by its absolute post-add imbalance "
+    "instead of the change in total imbalance and had no fold-size cap, so an under-filled "
+    "fold could keep only its support-seed studies. Its manifests are superseded for "
+    "comparison purposes and retained only as historical evidence."
+)
+# A gold fold's positive or negative count for a target may differ from its
+# fold-size-proportional expectation by at most this many studies, or by this
+# fraction of the expectation when that is larger.  Fixed before the canonical
+# v2 generation from synthetic calibration only: over 3,000 58-study datasets
+# with the public pooled positive counts the v2 allocator's worst deviation
+# was 2.53 studies, while the v1 allocator's median worst deviation was 4.6-6.3.
+CLASS_BALANCE_ABSOLUTE_TOLERANCE = 3.0
+CLASS_BALANCE_RELATIVE_TOLERANCE = 0.15
 ADAPTATION_EXCLUSIONS: tuple[str, ...] = ("images", "metadata", "reports")
 _GROUPING_STATUSES = frozenset({"reliable", "unavailable", "untrustworthy"})
 _SUPPORT_STATUSES = frozenset({"both_classes", "one_class_unavoidable"})
+_CLASS_LABELS: tuple[str, ...] = ("positive", "negative")
 
 
 class FoldFreezeError(ValueError):
@@ -375,6 +400,347 @@ class FoldSummary:
         return dict(self.target_counts)
 
 
+def _size_policy_values(total: int, largest: int) -> tuple[int, int | None, int | None]:
+    """Return ``(cap, floor, max_folds_above_floor)`` for a gold allocation."""
+
+    ceil_share = -(-total // FOLD_COUNT)
+    if largest <= 1:
+        return ceil_share, total // FOLD_COUNT, total % FOLD_COUNT
+    return ceil_share + largest - 1, None, None
+
+
+@dataclass(frozen=True)
+class GoldFoldSizePolicy:
+    """Explicit per-fold gold-study capacity for one allocation.
+
+    When every gold group is a single study, as under study-level separation,
+    each fold receives ``floor(N / 3)`` or ``ceil(N / 3)`` gold studies and at
+    most ``N mod 3`` folds exceed the floor.  Attested multi-study groups are
+    never split, so the cap then widens by the largest group minus one; greedy
+    whole-group placement always has room under that cap.
+    """
+
+    gold_study_count: int
+    largest_gold_group: int
+    cap: int
+    floor: int | None
+    max_folds_above_floor: int | None
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("gold_study_count", self.gold_study_count),
+            ("largest_gold_group", self.largest_gold_group),
+            ("cap", self.cap),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise FoldFreezeError(f"gold fold size policy {name} must be a non-negative integer")
+        if self.largest_gold_group > self.gold_study_count:
+            raise FoldFreezeError("largest gold group cannot exceed the gold study count")
+        if (self.cap, self.floor, self.max_folds_above_floor) != _size_policy_values(
+            self.gold_study_count, self.largest_gold_group
+        ):
+            raise FoldFreezeError("gold fold size policy is inconsistent with its gold study counts")
+
+    @classmethod
+    def for_group_sizes(cls, gold_group_sizes: Sequence[int]) -> "GoldFoldSizePolicy":
+        """Derive the cap from the gold-study count of every unsplittable group."""
+
+        sizes = tuple(size for size in gold_group_sizes if size > 0)
+        total = sum(sizes)
+        largest = max(sizes, default=0)
+        cap, floor, max_folds_above_floor = _size_policy_values(total, largest)
+        return cls(
+            gold_study_count=total,
+            largest_gold_group=largest,
+            cap=cap,
+            floor=floor,
+            max_folds_above_floor=max_folds_above_floor,
+        )
+
+    @property
+    def singleton_groups(self) -> bool:
+        return self.floor is not None
+
+    @property
+    def rule(self) -> str:
+        if self.singleton_groups:
+            return (
+                "every gold group is one study: each fold holds floor(N/3) or ceil(N/3) "
+                "gold studies and at most N mod 3 folds exceed floor(N/3)"
+            )
+        return "unsplit multi-study gold groups: each fold holds at most ceil(N/3) + largest group - 1"
+
+    def admits(self, loads: Sequence[int], fold: int, size: int) -> bool:
+        """Return whether ``fold`` can take ``size`` more gold studies."""
+
+        new_load = loads[fold] + size
+        if new_load > self.cap:
+            return False
+        if self.floor is not None and new_load > self.floor:
+            above = sum(
+                1 for other, load in enumerate(loads) if other != fold and load > self.floor
+            )
+            if above >= (self.max_folds_above_floor or 0):
+                return False
+        return True
+
+    def sizes_conform(self, sizes: Sequence[int]) -> bool:
+        if sum(sizes) != self.gold_study_count or any(size > self.cap for size in sizes):
+            return False
+        if self.floor is None:
+            return True
+        return min(sizes, default=0) >= self.floor and sum(
+            size > self.floor for size in sizes
+        ) <= (self.max_folds_above_floor or 0)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "gold_study_count": self.gold_study_count,
+            "largest_gold_group": self.largest_gold_group,
+            "cap": self.cap,
+            "floor": self.floor,
+            "max_folds_above_floor": self.max_folds_above_floor,
+            "rule": self.rule,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: object) -> "GoldFoldSizePolicy":
+        if not isinstance(payload, Mapping):
+            raise FoldManifestIntegrityError("gold fold size policy must be an object")
+        policy = cls(
+            gold_study_count=_required_int(payload.get("gold_study_count"), "size_policy.gold_study_count"),
+            largest_gold_group=_required_int(
+                payload.get("largest_gold_group"), "size_policy.largest_gold_group"
+            ),
+            cap=_required_int(payload.get("cap"), "size_policy.cap"),
+            floor=_optional_required_int(payload.get("floor"), "size_policy.floor"),
+            max_folds_above_floor=_optional_required_int(
+                payload.get("max_folds_above_floor"), "size_policy.max_folds_above_floor"
+            ),
+        )
+        if payload.get("rule") != policy.rule:
+            raise FoldManifestIntegrityError("gold fold size policy rule text disagrees with its values")
+        return policy
+
+
+def class_balance_tolerance(expected: float) -> float:
+    """Allowed absolute deviation of one fold/target/class count."""
+
+    return max(CLASS_BALANCE_ABSOLUTE_TOLERANCE, CLASS_BALANCE_RELATIVE_TOLERANCE * expected)
+
+
+@dataclass(frozen=True)
+class ClassBalanceCheck:
+    """One fold's gold count for one target class against its expected share."""
+
+    target: str
+    label: str
+    fold: int
+    count: int
+    expected: float
+
+    def __post_init__(self) -> None:
+        if self.target not in TARGET_COLUMNS or self.label not in _CLASS_LABELS:
+            raise FoldFreezeError("class balance check uses an unknown target or class")
+        if self.fold not in FOLD_IDS or self.count < 0 or self.expected < 0:
+            raise FoldFreezeError("class balance check has an invalid fold or count")
+
+    @property
+    def tolerance(self) -> float:
+        return class_balance_tolerance(self.expected)
+
+    @property
+    def deviation(self) -> float:
+        return abs(self.count - self.expected)
+
+    @property
+    def passed(self) -> bool:
+        return self.deviation <= self.tolerance
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "target": self.target,
+            "class": self.label,
+            "fold": self.fold,
+            "count": self.count,
+            "expected": self.expected,
+            "deviation": self.deviation,
+            "tolerance": self.tolerance,
+            "passed": self.passed,
+        }
+
+
+@dataclass(frozen=True)
+class FoldValidationGates:
+    """Generation-time gates that a canonical v2 manifest must pass.
+
+    Every gate except deterministic regeneration is a pure function of the
+    memberships and is recomputed whenever a manifest is loaded.
+    """
+
+    fold_gold_sizes: tuple[int, ...]
+    size_policy: GoldFoldSizePolicy
+    class_balance: tuple[ClassBalanceCheck, ...]
+    feasible_targets: tuple[str, ...]
+    one_class_unavoidable_targets: tuple[str, ...]
+    support_violations: tuple[str, ...]
+    deterministic_regeneration: bool
+
+    @property
+    def size_balance_passed(self) -> bool:
+        return self.size_policy.sizes_conform(self.fold_gold_sizes)
+
+    @property
+    def class_balance_passed(self) -> bool:
+        return all(item.passed for item in self.class_balance)
+
+    @property
+    def max_class_deviation(self) -> float:
+        return max((item.deviation for item in self.class_balance), default=0.0)
+
+    @property
+    def both_class_support_passed(self) -> bool:
+        return not self.support_violations
+
+    @property
+    def passed(self) -> bool:
+        return (
+            self.size_balance_passed
+            and self.class_balance_passed
+            and self.both_class_support_passed
+            and self.deterministic_regeneration
+        )
+
+    @property
+    def failed_gates(self) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name, passed in (
+                ("gold_fold_size_balance", self.size_balance_passed),
+                ("per_target_class_balance", self.class_balance_passed),
+                ("both_class_support", self.both_class_support_passed),
+                ("deterministic_generation", self.deterministic_regeneration),
+            )
+            if not passed
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "passed": self.passed,
+            "failed_gates": list(self.failed_gates),
+            "gold_fold_size_balance": {
+                "passed": self.size_balance_passed,
+                "fold_gold_sizes": list(self.fold_gold_sizes),
+                "spread": max(self.fold_gold_sizes, default=0) - min(self.fold_gold_sizes, default=0),
+                "policy": self.size_policy.to_dict(),
+            },
+            "per_target_class_balance": {
+                "passed": self.class_balance_passed,
+                "expected_count": "class total * fold gold size / gold study count",
+                "tolerance": (
+                    f"max({CLASS_BALANCE_ABSOLUTE_TOLERANCE:g} studies, "
+                    f"{CLASS_BALANCE_RELATIVE_TOLERANCE:g} * expected count)"
+                ),
+                "max_abs_deviation": self.max_class_deviation,
+                "failed_checks": sum(not item.passed for item in self.class_balance),
+                "checks": [item.to_dict() for item in self.class_balance],
+            },
+            "both_class_support": {
+                "passed": self.both_class_support_passed,
+                "feasible_targets": list(self.feasible_targets),
+                "one_class_unavoidable_targets": list(self.one_class_unavoidable_targets),
+                "violations": list(self.support_violations),
+            },
+            "deterministic_generation": {
+                "passed": self.deterministic_regeneration,
+                "method": "independent in-process regeneration produced identical memberships",
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, payload: object) -> "FoldValidationGates":
+        if not isinstance(payload, Mapping):
+            raise FoldManifestIntegrityError("fold validation gates must be an object")
+        size = _integrity_mapping(payload.get("gold_fold_size_balance"), "gold_fold_size_balance")
+        balance = _integrity_mapping(payload.get("per_target_class_balance"), "per_target_class_balance")
+        support = _integrity_mapping(payload.get("both_class_support"), "both_class_support")
+        determinism = _integrity_mapping(payload.get("deterministic_generation"), "deterministic_generation")
+        checks_value = balance.get("checks")
+        if not isinstance(checks_value, list):
+            raise FoldManifestIntegrityError("class balance checks must be a list")
+        checks: list[ClassBalanceCheck] = []
+        for item in checks_value:
+            row = _integrity_mapping(item, "class balance check")
+            expected_value = row.get("expected")
+            if isinstance(expected_value, bool) or not isinstance(expected_value, (int, float)):
+                raise FoldManifestIntegrityError("class balance expected count must be numeric")
+            checks.append(
+                ClassBalanceCheck(
+                    target=str(row.get("target", "")),
+                    label=str(row.get("class", "")),
+                    fold=_required_int(row.get("fold"), "class_balance.fold"),
+                    count=_required_int(row.get("count"), "class_balance.count"),
+                    expected=float(expected_value),
+                )
+            )
+        deterministic = determinism.get("passed")
+        if not isinstance(deterministic, bool):
+            raise FoldManifestIntegrityError("deterministic generation gate must be boolean")
+        gates = cls(
+            fold_gold_sizes=_required_int_tuple(size.get("fold_gold_sizes"), "fold_gold_sizes"),
+            size_policy=GoldFoldSizePolicy.from_dict(size.get("policy")),
+            class_balance=tuple(checks),
+            feasible_targets=_string_tuple(support.get("feasible_targets"), "feasible_targets"),
+            one_class_unavoidable_targets=_string_tuple(
+                support.get("one_class_unavoidable_targets"), "one_class_unavoidable_targets"
+            ),
+            support_violations=_string_tuple(support.get("violations"), "support violations"),
+            deterministic_regeneration=deterministic,
+        )
+        if gates.to_dict() != payload:
+            raise FoldManifestIntegrityError("fold validation gate evidence is not self-consistent")
+        return gates
+
+
+@dataclass(frozen=True)
+class SupersededManifestReference:
+    """Checksum identity of a historical manifest that a new version replaces."""
+
+    manifest_checksum: str
+    schema_version: str
+    generation_method: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (self.manifest_checksum, self.schema_version, self.generation_method, self.reason)
+        ):
+            raise FoldFreezeError("superseded manifest reference fields must be non-empty")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "manifest_checksum": self.manifest_checksum,
+            "schema_version": self.schema_version,
+            "generation_method": self.generation_method,
+            "reason": self.reason,
+            "retained_as_historical_evidence": True,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: object) -> "SupersededManifestReference":
+        mapping = _integrity_mapping(payload, "superseded manifest reference")
+        reference = cls(
+            manifest_checksum=str(mapping.get("manifest_checksum", "")),
+            schema_version=str(mapping.get("schema_version", "")),
+            generation_method=str(mapping.get("generation_method", "")),
+            reason=str(mapping.get("reason", "")),
+        )
+        if reference.to_dict() != mapping:
+            raise FoldManifestIntegrityError("superseded manifest reference is not self-consistent")
+        return reference
+
+
 @dataclass(frozen=True)
 class FoldManifest:
     """Self-checking private fold manifest.
@@ -383,6 +749,11 @@ class FoldManifest:
     membership row, grouping assignment, generation parameter, and support
     count.  Public evidence is derived from this object without membership
     identifiers.
+
+    Version-2 manifests also carry the explicit gold fold-size policy and the
+    validation gates they passed.  Version-1 manifests remain loadable with
+    their original checksum so that superseded evidence can be audited, but
+    they are marked :attr:`superseded`.
     """
 
     schema_version: str
@@ -403,10 +774,26 @@ class FoldManifest:
     adaptation_exclusions: tuple[str, ...]
     manifest_checksum: str
     input_inventory_reconciled: bool | None = None
+    gold_fold_size_policy: GoldFoldSizePolicy | None = None
+    validation_gates: FoldValidationGates | None = None
+    supersedes: SupersededManifestReference | None = None
 
     def __post_init__(self) -> None:
-        if self.schema_version != FOLD_SCHEMA_VERSION:
+        if self.schema_version not in (FOLD_SCHEMA_VERSION, LEGACY_FOLD_SCHEMA_VERSION):
             raise FoldManifestIntegrityError("unexpected fold manifest schema version")
+        if self.superseded:
+            if any(
+                value is not None
+                for value in (self.gold_fold_size_policy, self.validation_gates, self.supersedes)
+            ):
+                raise FoldManifestIntegrityError("version-1 fold manifests carry no version-2 fields")
+        else:
+            if self.generation_method != FOLD_GENERATION_METHOD:
+                raise FoldManifestIntegrityError("version-2 fold manifests must record the v2 method")
+            if self.gold_fold_size_policy is None or self.validation_gates is None:
+                raise FoldManifestIntegrityError(
+                    "version-2 fold manifests require a size policy and validation gates"
+                )
         if self.source_split != "train":
             raise FoldManifestIntegrityError("fold manifests must be generated from the train split")
         if not self.source_version.strip():
@@ -433,8 +820,26 @@ class FoldManifest:
             )
         self._validate_membership_shape()
         self._validate_summary_shape()
+        if not self.superseded:
+            self._validate_generation_gates()
         if self.manifest_checksum and self.manifest_checksum != _json_sha256(self._checksum_payload()):
             raise FoldManifestIntegrityError("fold manifest checksum does not match its contents")
+
+    def _validate_generation_gates(self) -> None:
+        stored = cast(FoldValidationGates, self.validation_gates)
+        recomputed = evaluate_fold_validation_gates(
+            self.memberships,
+            self.grouping,
+            deterministic_regeneration=stored.deterministic_regeneration,
+        )
+        if recomputed != stored or recomputed.size_policy != self.gold_fold_size_policy:
+            raise FoldManifestIntegrityError(
+                "fold validation gates do not match the manifest memberships"
+            )
+        if not stored.passed:
+            raise FoldManifestIntegrityError(
+                f"version-2 fold manifest records failed gates: {list(stored.failed_gates)}"
+            )
 
     def _validate_membership_shape(self) -> None:
         uids = [item.study_instance_uid for item in self.memberships]
@@ -537,7 +942,7 @@ class FoldManifest:
                     )
 
     def _checksum_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "source_split": self.source_split,
             "source_version": self.source_version,
@@ -556,6 +961,12 @@ class FoldManifest:
             "adaptation_exclusions": list(self.adaptation_exclusions),
             "input_inventory_reconciled": self.input_inventory_reconciled,
         }
+        if not self.superseded:
+            payload["generation_version"] = FOLD_GENERATION_VERSION
+            payload["gold_fold_size_policy"] = cast(GoldFoldSizePolicy, self.gold_fold_size_policy).to_dict()
+            payload["validation_gates"] = cast(FoldValidationGates, self.validation_gates).to_dict()
+            payload["supersedes"] = self.supersedes.to_dict() if self.supersedes is not None else None
+        return payload
 
     def to_private_dict(self) -> dict[str, object]:
         """Return the identifier-bearing manifest for a private path."""
@@ -568,8 +979,19 @@ class FoldManifest:
     def to_public_dict(self) -> dict[str, object]:
         """Return generation evidence without study, series, or group identifiers."""
 
-        return {
-            "schema_version": PUBLIC_FOLD_SCHEMA_VERSION,
+        generation: dict[str, object] = {
+            "fold_count": self.fold_count,
+            "fold_ids": list(self.fold_ids),
+            "repeat_name": self.repeat_name,
+            "repeat_justification": self.repeat_justification,
+            "method": self.generation_method,
+            "seed_name": self.seed_name,
+            "seed": self.seed,
+        }
+        payload: dict[str, object] = {
+            "schema_version": (
+                LEGACY_PUBLIC_FOLD_SCHEMA_VERSION if self.superseded else PUBLIC_FOLD_SCHEMA_VERSION
+            ),
             "ticket": "04",
             "source": {
                 "split": self.source_split,
@@ -578,15 +1000,7 @@ class FoldManifest:
                 "source_fingerprint": self.source_fingerprint,
                 "input_inventory_reconciled": self.input_inventory_reconciled,
             },
-            "generation": {
-                "fold_count": self.fold_count,
-                "fold_ids": list(self.fold_ids),
-                "repeat_name": self.repeat_name,
-                "repeat_justification": self.repeat_justification,
-                "method": self.generation_method,
-                "seed_name": self.seed_name,
-                "seed": self.seed,
-            },
+            "generation": generation,
             "grouping": self.grouping.to_public_dict(),
             "counts": {
                 "eligible_training_studies": len(self.memberships),
@@ -602,6 +1016,17 @@ class FoldManifest:
             },
             "manifest_checksum": self.manifest_checksum,
         }
+        if self.superseded:
+            payload["superseded"] = {"superseded": True, "reason": LEGACY_GENERATION_DEFECT}
+        else:
+            generation["generation_version"] = FOLD_GENERATION_VERSION
+            generation["gold_fold_size_policy"] = cast(
+                GoldFoldSizePolicy, self.gold_fold_size_policy
+            ).to_dict()
+            payload["fold_gold_sizes"] = list(self.fold_gold_sizes)
+            payload["validation_gates"] = cast(FoldValidationGates, self.validation_gates).to_dict()
+            payload["supersedes"] = self.supersedes.to_dict() if self.supersedes is not None else None
+        return payload
 
     @classmethod
     def from_private_dict(cls, payload: Mapping[str, object]) -> "FoldManifest":
@@ -619,6 +1044,16 @@ class FoldManifest:
             raise FoldManifestIntegrityError("private fold manifest grouping must be an object")
         if not isinstance(exclusions_value, list):
             raise FoldManifestIntegrityError("private fold manifest adaptation exclusions must be a list")
+        schema_version = str(payload.get("schema_version", ""))
+        version_two = schema_version == FOLD_SCHEMA_VERSION
+        if version_two and payload.get("generation_version") != FOLD_GENERATION_VERSION:
+            raise FoldManifestIntegrityError("version-2 fold manifest has the wrong generation version")
+        if not version_two and any(
+            key in payload
+            for key in ("generation_version", "gold_fold_size_policy", "validation_gates", "supersedes")
+        ):
+            raise FoldManifestIntegrityError("version-1 fold manifests carry no version-2 fields")
+        supersedes_value = payload.get("supersedes")
         candidate = cls(
             schema_version=str(payload.get("schema_version", "")),
             source_split=str(payload.get("source_split", "")),
@@ -638,10 +1073,39 @@ class FoldManifest:
             adaptation_exclusions=tuple(str(item) for item in exclusions_value),
             manifest_checksum=str(payload.get("manifest_checksum", "")),
             input_inventory_reconciled=_optional_bool(payload.get("input_inventory_reconciled")),
+            gold_fold_size_policy=(
+                GoldFoldSizePolicy.from_dict(payload.get("gold_fold_size_policy"))
+                if version_two
+                else None
+            ),
+            validation_gates=(
+                FoldValidationGates.from_dict(payload.get("validation_gates")) if version_two else None
+            ),
+            supersedes=(
+                SupersededManifestReference.from_dict(supersedes_value)
+                if version_two and supersedes_value is not None
+                else None
+            ),
         )
         if not candidate.manifest_checksum:
             raise FoldManifestIntegrityError("private fold manifest has no checksum")
         return candidate
+
+    @property
+    def superseded(self) -> bool:
+        """Whether this manifest came from the defective version-1 generator."""
+
+        return self.schema_version == LEGACY_FOLD_SCHEMA_VERSION
+
+    @property
+    def generation_version(self) -> int:
+        return LEGACY_FOLD_GENERATION_VERSION if self.superseded else FOLD_GENERATION_VERSION
+
+    @property
+    def fold_gold_sizes(self) -> tuple[int, ...]:
+        return tuple(
+            sum(item.fold == fold for item in self.gold_memberships) for fold in FOLD_IDS
+        )
 
     @property
     def study_to_fold(self) -> dict[str, int]:
@@ -817,6 +1281,67 @@ def _target_fold_counts(
     )
 
 
+def evaluate_fold_validation_gates(
+    memberships: Sequence[FoldMembership],
+    grouping: GroupingAssessment,
+    *,
+    deterministic_regeneration: bool,
+) -> FoldValidationGates:
+    """Evaluate gold size, class balance and support gates from memberships alone."""
+
+    gold = tuple(item for item in memberships if item.cohort == "gold")
+    group_by_study = {
+        item.study_instance_uid: (
+            item.group_key or item.study_instance_uid if grouping.reliable else item.study_instance_uid
+        )
+        for item in memberships
+    }
+    group_sizes: dict[str, int] = defaultdict(int)
+    for item in gold:
+        group_sizes[group_by_study[item.study_instance_uid]] += 1
+    policy = GoldFoldSizePolicy.for_group_sizes(tuple(group_sizes[key] for key in sorted(group_sizes)))
+    fold_sizes = tuple(sum(item.fold == fold for item in gold) for fold in FOLD_IDS)
+    checks: list[ClassBalanceCheck] = []
+    feasible_targets: list[str] = []
+    unavoidable_targets: list[str] = []
+    violations: list[str] = []
+    for index, target in enumerate(TARGET_COLUMNS):
+        by_class = {
+            "positive": tuple(item for item in gold if item.reference_labels[index] == 1),
+            "negative": tuple(item for item in gold if item.reference_labels[index] == 0),
+        }
+        feasible = all(
+            len(rows) >= FOLD_COUNT
+            and len({group_by_study[item.study_instance_uid] for item in rows}) >= FOLD_COUNT
+            for rows in by_class.values()
+        )
+        (feasible_targets if feasible else unavoidable_targets).append(target)
+        for label in _CLASS_LABELS:
+            rows = by_class[label]
+            for fold in FOLD_IDS:
+                count = sum(item.fold == fold for item in rows)
+                checks.append(
+                    ClassBalanceCheck(
+                        target=target,
+                        label=label,
+                        fold=fold,
+                        count=count,
+                        expected=(len(rows) * fold_sizes[fold] / len(gold)) if gold else 0.0,
+                    )
+                )
+                if feasible and count == 0:
+                    violations.append(f"{target}:{label}:fold-{fold}")
+    return FoldValidationGates(
+        fold_gold_sizes=fold_sizes,
+        size_policy=policy,
+        class_balance=tuple(checks),
+        feasible_targets=tuple(feasible_targets),
+        one_class_unavoidable_targets=tuple(unavoidable_targets),
+        support_violations=tuple(violations),
+        deterministic_regeneration=deterministic_regeneration,
+    )
+
+
 def _required_int(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise FoldManifestIntegrityError(f"private fold manifest {field} must be an integer")
@@ -827,6 +1352,22 @@ def _required_int_tuple(value: object, field: str) -> tuple[int, ...]:
     if not isinstance(value, list):
         raise FoldManifestIntegrityError(f"private fold manifest {field} must be a list")
     return tuple(_required_int(item, field) for item in value)
+
+
+def _optional_required_int(value: object, field: str) -> int | None:
+    return None if value is None else _required_int(value, field)
+
+
+def _integrity_mapping(value: object, field: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise FoldManifestIntegrityError(f"private fold manifest {field} must be an object")
+    return cast(Mapping[str, object], value)
+
+
+def _string_tuple(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise FoldManifestIntegrityError(f"private fold manifest {field} must be a list of strings")
+    return tuple(value)
 
 
 def _reference_labels(value: object, field: str) -> tuple[int | None, ...]:
@@ -1071,17 +1612,70 @@ def load_grouping_assessment(path: str | Path) -> GroupingAssessment:
     )
 
 
+def _superseded_reference(
+    previous: FoldManifest,
+    *,
+    source: InventorySource,
+    grouping: GroupingAssessment,
+    seed_name: str,
+    seed: int,
+    repeat_name: str,
+    repeat_justification: str | None,
+) -> SupersededManifestReference:
+    """Allow a correction only when the generation method is the sole change."""
+
+    if not previous.superseded:
+        raise FoldFreezeError("only a version-1 manifest can be superseded by the v2 correction")
+    mismatches = [
+        name
+        for name, before, after in (
+            (
+                "source manifest checksum",
+                previous.source_manifest_checksum,
+                source_manifest_checksum(source.source_manifest),
+            ),
+            ("source version", previous.source_version, source.source_version),
+            ("source fingerprint", previous.source_fingerprint, source.source_fingerprint),
+            ("grouping evidence", previous.grouping.to_private_dict(), grouping.to_private_dict()),
+            ("seed name", previous.seed_name, seed_name.strip()),
+            ("seed", previous.seed, seed),
+            ("repeat name", previous.repeat_name, repeat_name.strip()),
+            ("repeat justification", previous.repeat_justification, repeat_justification),
+        )
+        if before != after
+    ]
+    if mismatches:
+        raise FoldFreezeError(
+            "a generation-method correction must reuse the superseded manifest's source, grouping, "
+            f"named seed and repeat; seed search is not permitted (differs: {', '.join(mismatches)})"
+        )
+    return SupersededManifestReference(
+        manifest_checksum=previous.manifest_checksum,
+        schema_version=previous.schema_version,
+        generation_method=previous.generation_method,
+        reason=LEGACY_GENERATION_DEFECT,
+    )
+
+
 def run_fold_freeze(
     inventory_path: str | Path,
     output_dir: str | Path,
     *,
     grouping_path: str | Path | None = None,
-    seed_name: str = "ticket-04-fold-freeze-v1",
-    seed: int = 20260911,
+    seed_name: str | None = None,
+    seed: int | None = None,
     repeat_name: str = "repeat-1",
     repeat_justification: str | None = None,
+    supersedes_manifest_path: str | Path | None = None,
 ) -> dict[str, object]:
-    """Freeze folds from ticket-03's private inventory and publish both reports."""
+    """Freeze folds from ticket-03's private inventory and publish both reports.
+
+    Only the version-2 generator publishes manifests.  With
+    ``supersedes_manifest_path`` the new manifest records the checksum of the
+    version-1 manifest it corrects, inherits that manifest's named seed when
+    none is given, and is refused unless source, grouping, seed and repeat are
+    unchanged.  The superseded manifest itself is never modified.
+    """
 
     source = load_inventory_source(inventory_path)
     if not source.full_corpus_reconciled:
@@ -1093,16 +1687,31 @@ def run_fold_freeze(
             "explicit grouping evidence is required; record reliable-key or study-only V02 evidence"
         )
     grouping = load_grouping_assessment(grouping_path)
+    supersedes: SupersededManifestReference | None = None
+    if supersedes_manifest_path is not None:
+        previous = load_fold_manifest(supersedes_manifest_path)
+        seed_name = previous.seed_name if seed_name is None else seed_name
+        seed = previous.seed if seed is None else seed
+        supersedes = _superseded_reference(
+            previous,
+            source=source,
+            grouping=grouping,
+            seed_name=seed_name,
+            seed=seed,
+            repeat_name=repeat_name,
+            repeat_justification=repeat_justification,
+        )
     manifest = freeze_folds(
         source.source_manifest,
         source_version=source.source_version,
         source_fingerprint=source.source_fingerprint,
         input_inventory_reconciled=source.full_corpus_reconciled,
         grouping=grouping,
-        seed_name=seed_name,
-        seed=seed,
+        seed_name="ticket-04-fold-freeze-v1" if seed_name is None else seed_name,
+        seed=20260911 if seed is None else seed,
         repeat_name=repeat_name,
         repeat_justification=repeat_justification,
+        supersedes=supersedes,
     )
     validate_fold_manifest_against_source(manifest, source.source_manifest)
     destination = Path(output_dir)
@@ -1141,10 +1750,25 @@ def _fold_parser() -> object:
     parser.add_argument("--inventory", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--grouping-evidence", type=Path, default=None)
-    parser.add_argument("--seed-name", default="ticket-04-fold-freeze-v1")
-    parser.add_argument("--seed", type=int, default=20260911)
+    parser.add_argument(
+        "--seed-name",
+        default=None,
+        help="named seed (default: the superseded manifest's, else ticket-04-fold-freeze-v1)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="seed value (default: the superseded manifest's, else 20260911)",
+    )
     parser.add_argument("--repeat-name", default="repeat-1")
     parser.add_argument("--repeat-justification", default=None)
+    parser.add_argument(
+        "--supersedes-manifest",
+        type=Path,
+        default=None,
+        help="version-1 private manifest corrected by this generation; it is read, never modified",
+    )
     parser.add_argument("--require-slurm", action="store_true")
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
@@ -1165,6 +1789,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             repeat_name=args.repeat_name,
             repeat_justification=args.repeat_justification,
+            supersedes_manifest_path=args.supersedes_manifest,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ticket-04 fold freeze failed: {exc}", file=sys.stderr)
@@ -1299,8 +1924,15 @@ def _support_feasibility(groups: Sequence[_StudyGroup]) -> tuple[tuple[bool, str
 def _find_support_assignments(
     groups: Sequence[_StudyGroup],
     feasible: Sequence[tuple[bool, str]],
+    *,
+    capacity: GoldFoldSizePolicy | None = None,
 ) -> dict[str, int] | None:
-    """Find a deterministic whole-group assignment satisfying support coverage."""
+    """Find a deterministic whole-group assignment satisfying support coverage.
+
+    With ``capacity`` the search never places a group in a fold that the
+    gold fold-size policy cannot accept; without it (version 1) it behaves
+    exactly as originally frozen.
+    """
 
     requirements = tuple(
         (target_index, required_positive)
@@ -1323,12 +1955,19 @@ def _find_support_assignments(
         for requirement in requirements
     }
     assignments: dict[str, int] = {}
+    loads = [0] * FOLD_COUNT
 
     def is_covered(requirement: tuple[int, bool], fold: int) -> bool:
         return any(
             assignments.get(group.key) == fold
             for group in supporting_groups[requirement]
         )
+
+    def can_place(group: _StudyGroup, fold: int) -> bool:
+        current = assignments.get(group.key)
+        if current is not None:
+            return current == fold
+        return capacity is None or capacity.admits(loads, fold, len(group.gold_studies))
 
     def search() -> dict[str, int] | None:
         unmet = [
@@ -1342,8 +1981,7 @@ def _find_support_assignments(
         options: list[tuple[int, int, tuple[int, bool], int]] = []
         for requirement, fold in unmet:
             candidate_count = sum(
-                assignments.get(group.key) in (None, fold)
-                for group in supporting_groups[requirement]
+                can_place(group, fold) for group in supporting_groups[requirement]
             )
             options.append((candidate_count, len(supporting_groups[requirement]), requirement, fold))
         _, _, requirement, destination = min(
@@ -1353,7 +1991,7 @@ def _find_support_assignments(
         candidate_groups = [
             group
             for group in supporting_groups[requirement]
-            if assignments.get(group.key) in (None, destination)
+            if can_place(group, destination)
         ]
         unmet_before = set(unmet)
         candidate_groups.sort(
@@ -1376,29 +2014,69 @@ def _find_support_assignments(
             previous = assignments.get(group.key)
             if previous is None:
                 assignments[group.key] = destination
+                loads[destination] += len(group.gold_studies)
             result = search()
             if result is not None:
                 return result
             if previous is None:
                 del assignments[group.key]
+                loads[destination] -= len(group.gold_studies)
         return None
 
     return search()
+
+
+def _fold_imbalance(
+    positive: Sequence[int],
+    negative: Sequence[int],
+    gold_count: int,
+    *,
+    target_positive: Sequence[float],
+    target_negative: Sequence[float],
+    target_gold: float,
+) -> float:
+    """Squared relative deviation of one fold from equal-thirds class and size targets."""
+
+    balance = 0.0
+    for index in range(len(TARGET_COLUMNS)):
+        balance += ((positive[index] - target_positive[index]) / max(1.0, target_positive[index])) ** 2
+        balance += ((negative[index] - target_negative[index]) / max(1.0, target_negative[index])) ** 2
+    balance += 0.05 * ((gold_count - target_gold) / max(1.0, target_gold)) ** 2
+    return balance
 
 
 def _allocate_gold_groups(
     groups: Sequence[_StudyGroup],
     *,
     config: FoldGenerationConfig,
+    generation_version: int = FOLD_GENERATION_VERSION,
 ) -> dict[str, int]:
+    """Assign every gold group to a fold.
+
+    Phase 1 places the fewest groups that give every feasible target both
+    classes in every fold.  Phase 2 places the remaining groups greedily.
+    Version 2 scores a candidate fold by the change in total imbalance and
+    never exceeds the gold fold-size cap.  Version 1 scored the absolute
+    post-add imbalance of the candidate fold, which kept choosing the fold
+    nearest its target and starved under-filled folds; it is retained only
+    to replay superseded manifests.
+    """
+
+    if generation_version not in (FOLD_GENERATION_VERSION, LEGACY_FOLD_GENERATION_VERSION):
+        raise FoldFreezeError(f"unknown fold generation version {generation_version}")
     gold_groups = tuple(group for group in groups if group.has_gold)
     if not gold_groups:
         return {}
+    capacity = (
+        GoldFoldSizePolicy.for_group_sizes(tuple(len(group.gold_studies) for group in gold_groups))
+        if generation_version == FOLD_GENERATION_VERSION
+        else None
+    )
     feasible = _support_feasibility(groups)
-    assignments = _find_support_assignments(gold_groups, feasible)
+    assignments = _find_support_assignments(gold_groups, feasible, capacity=capacity)
     if assignments is None:
         raise FoldFreezeError(
-            "grouping constraints prevent both-class support for a feasible target; "
+            "grouping or fold-size constraints prevent both-class support for a feasible target; "
             "revise the fold design before freezing it"
         )
     total_positive = [sum(group.positive_count(index) for group in gold_groups) for index in range(len(TARGET_COLUMNS))]
@@ -1449,24 +2127,49 @@ def _allocate_gold_groups(
     target_negative = [value / FOLD_COUNT for value in total_negative]
     target_gold = len(tuple(item for group in gold_groups for item in group.gold_studies)) / FOLD_COUNT
 
+    def imbalance(positive: Sequence[int], negative: Sequence[int], gold_count: int) -> float:
+        return _fold_imbalance(
+            positive,
+            negative,
+            gold_count,
+            target_positive=target_positive,
+            target_negative=target_negative,
+            target_gold=target_gold,
+        )
+
     for group in ordered_groups:
         if group.key in assigned_groups:
             continue
+        group_positive = [group.positive_count(index) for index in range(len(TARGET_COLUMNS))]
+        group_negative = [group.negative_count(index) for index in range(len(TARGET_COLUMNS))]
         candidate_scores: list[tuple[float, int]] = []
         for fold in FOLD_IDS:
-            support_gain = 0
-            balance = 0.0
-            for index in range(len(TARGET_COLUMNS)):
-                new_positive = fold_positive[fold][index] + group.positive_count(index)
-                new_negative = fold_negative[fold][index] + group.negative_count(index)
-                if feasible[index][0]:
-                    support_gain += int(fold_positive[fold][index] == 0 and group.positive_count(index) > 0)
-                    support_gain += int(fold_negative[fold][index] == 0 and group.negative_count(index) > 0)
-                balance += ((new_positive - target_positive[index]) / max(1.0, target_positive[index])) ** 2
-                balance += ((new_negative - target_negative[index]) / max(1.0, target_negative[index])) ** 2
-            new_gold_count = fold_gold_counts[fold] + len(group.gold_studies)
-            balance += 0.05 * ((new_gold_count - target_gold) / max(1.0, target_gold)) ** 2
-            candidate_scores.append((balance - 100.0 * support_gain, fold))
+            if capacity is not None and not capacity.admits(
+                fold_gold_counts, fold, len(group.gold_studies)
+            ):
+                continue
+            support_gain = sum(
+                int(fold_positive[fold][index] == 0 and group_positive[index] > 0)
+                + int(fold_negative[fold][index] == 0 and group_negative[index] > 0)
+                for index in range(len(TARGET_COLUMNS))
+                if feasible[index][0]
+            )
+            after = imbalance(
+                [fold_positive[fold][index] + group_positive[index] for index in range(len(TARGET_COLUMNS))],
+                [fold_negative[fold][index] + group_negative[index] for index in range(len(TARGET_COLUMNS))],
+                fold_gold_counts[fold] + len(group.gold_studies),
+            )
+            if generation_version == LEGACY_FOLD_GENERATION_VERSION:
+                score = after
+            else:
+                # Placing a group changes only the receiving fold's term, so this
+                # difference is the change in the total imbalance over all folds.
+                score = after - imbalance(
+                    fold_positive[fold], fold_negative[fold], fold_gold_counts[fold]
+                )
+            candidate_scores.append((score - 100.0 * support_gain, fold))
+        if not candidate_scores:
+            raise FoldFreezeError("no fold can accept a gold group under the fold-size cap")
         _, selected_fold = min(candidate_scores, key=lambda value: (value[0], value[1]))
         assignments[group.key] = selected_fold
         fold_gold_counts[selected_fold] += len(group.gold_studies)
@@ -1517,43 +2220,18 @@ def _summarize_memberships(
     return tuple(summaries)
 
 
-def freeze_folds(
+def _generate_memberships(
     source_manifest: SourceManifest,
-    *,
-    source_version: str,
-    source_fingerprint: str | None = None,
-    input_inventory_reconciled: bool | None = None,
-    grouping: GroupingAssessment | None = None,
-    seed_name: str = "ticket-04-fold-freeze-v1",
-    seed: int = 20260911,
-    repeat_name: str = "repeat-1",
-    repeat_justification: str | None = None,
-) -> FoldManifest:
-    """Generate one deterministic three-fold manifest for every train study."""
-
-    if source_manifest.split != "train":
-        raise FoldFreezeError("ticket 04 only freezes folds for the train split")
-    if not source_version.strip():
-        raise FoldFreezeError("source_version must be non-empty")
-    seed_name = seed_name.strip()
-    repeat_name = repeat_name.strip()
-    config = FoldGenerationConfig(
-        seed_name=seed_name,
-        seed=seed,
-        repeat_name=repeat_name,
-        repeat_justification=repeat_justification.strip() if repeat_justification else None,
-    )
-    if source_fingerprint is not None and not source_fingerprint.strip():
-        raise FoldFreezeError("source_fingerprint must be non-empty when present")
-    if input_inventory_reconciled is not None and not isinstance(input_inventory_reconciled, bool):
-        raise FoldFreezeError("input_inventory_reconciled must be boolean or null")
-    if grouping is None:
-        grouping = GroupingAssessment.no_reliable_key()
+    grouping: GroupingAssessment,
+    config: FoldGenerationConfig,
+    generation_version: int,
+) -> tuple[tuple[_StudyGroup, ...], tuple[tuple[bool, str], ...], tuple[FoldMembership, ...]]:
     groups = _build_groups(source_manifest, grouping)
     feasibility = _support_feasibility(groups)
     group_assignments = _allocate_gold_groups(
         groups,
         config=config,
+        generation_version=generation_version,
     )
     for group in groups:
         if group.key not in group_assignments:
@@ -1572,9 +2250,102 @@ def freeze_folds(
         for group in groups
         for study in group.studies
     )
-    memberships = tuple(sorted(memberships, key=lambda item: item.study_instance_uid))
+    return groups, feasibility, tuple(sorted(memberships, key=lambda item: item.study_instance_uid))
+
+
+def _describe_failed_gates(gates: FoldValidationGates) -> str:
+    details: list[str] = []
+    if not gates.size_balance_passed:
+        details.append(
+            f"gold fold sizes {list(gates.fold_gold_sizes)} violate cap {gates.size_policy.cap}"
+            + (
+                f" / floor {gates.size_policy.floor}"
+                if gates.size_policy.floor is not None
+                else ""
+            )
+        )
+    if not gates.class_balance_passed:
+        worst = max(gates.class_balance, key=lambda item: item.deviation - item.tolerance)
+        details.append(
+            f"{sum(not item.passed for item in gates.class_balance)} class-balance checks fail; "
+            f"worst {worst.target} {worst.label} fold {worst.fold}: count {worst.count}, "
+            f"expected {worst.expected:.2f}, tolerance {worst.tolerance:.2f}"
+        )
+    if not gates.both_class_support_passed:
+        details.append(f"feasible support missing: {list(gates.support_violations[:6])}")
+    if not gates.deterministic_regeneration:
+        details.append("independent regeneration produced different memberships")
+    return "; ".join(details)
+
+
+def freeze_folds(
+    source_manifest: SourceManifest,
+    *,
+    source_version: str,
+    source_fingerprint: str | None = None,
+    input_inventory_reconciled: bool | None = None,
+    grouping: GroupingAssessment | None = None,
+    seed_name: str = "ticket-04-fold-freeze-v1",
+    seed: int = 20260911,
+    repeat_name: str = "repeat-1",
+    repeat_justification: str | None = None,
+    generation_version: int = FOLD_GENERATION_VERSION,
+    supersedes: SupersededManifestReference | None = None,
+) -> FoldManifest:
+    """Generate one deterministic three-fold manifest for every train study.
+
+    Version 2 is the canonical generator: the manifest is produced only when
+    gold fold-size balance, per-target class balance, both-class support and
+    independent in-process regeneration all pass.  ``generation_version=1``
+    reproduces the superseded generator for audit replay only.
+    """
+
+    if source_manifest.split != "train":
+        raise FoldFreezeError("ticket 04 only freezes folds for the train split")
+    if not source_version.strip():
+        raise FoldFreezeError("source_version must be non-empty")
+    if generation_version not in (FOLD_GENERATION_VERSION, LEGACY_FOLD_GENERATION_VERSION):
+        raise FoldFreezeError(f"unknown fold generation version {generation_version}")
+    if supersedes is not None and generation_version != FOLD_GENERATION_VERSION:
+        raise FoldFreezeError("only a version-2 manifest can record the manifest it supersedes")
+    seed_name = seed_name.strip()
+    repeat_name = repeat_name.strip()
+    config = FoldGenerationConfig(
+        seed_name=seed_name,
+        seed=seed,
+        repeat_name=repeat_name,
+        repeat_justification=repeat_justification.strip() if repeat_justification else None,
+    )
+    if source_fingerprint is not None and not source_fingerprint.strip():
+        raise FoldFreezeError("source_fingerprint must be non-empty when present")
+    if input_inventory_reconciled is not None and not isinstance(input_inventory_reconciled, bool):
+        raise FoldFreezeError("input_inventory_reconciled must be boolean or null")
+    if grouping is None:
+        grouping = GroupingAssessment.no_reliable_key()
+    groups, feasibility, memberships = _generate_memberships(
+        source_manifest, grouping, config, generation_version
+    )
+    policy: GoldFoldSizePolicy | None = None
+    gates: FoldValidationGates | None = None
+    if generation_version == FOLD_GENERATION_VERSION:
+        _, _, regenerated = _generate_memberships(source_manifest, grouping, config, generation_version)
+        gates = evaluate_fold_validation_gates(
+            memberships,
+            grouping,
+            deterministic_regeneration=regenerated == memberships,
+        )
+        if not gates.passed:
+            raise FoldFreezeError(
+                "fold validation gates failed; the manifest was not produced and no other "
+                f"seed may be substituted: {_describe_failed_gates(gates)}"
+            )
+        policy = gates.size_policy
     candidate = FoldManifest(
-        schema_version=FOLD_SCHEMA_VERSION,
+        schema_version=(
+            FOLD_SCHEMA_VERSION
+            if generation_version == FOLD_GENERATION_VERSION
+            else LEGACY_FOLD_SCHEMA_VERSION
+        ),
         source_split=source_manifest.split,
         source_version=source_version.strip(),
         source_manifest_checksum=source_manifest_checksum(source_manifest),
@@ -1583,7 +2354,11 @@ def freeze_folds(
         fold_ids=FOLD_IDS,
         repeat_name=config.repeat_name,
         repeat_justification=config.repeat_justification,
-        generation_method=FOLD_GENERATION_METHOD,
+        generation_method=(
+            FOLD_GENERATION_METHOD
+            if generation_version == FOLD_GENERATION_VERSION
+            else LEGACY_FOLD_GENERATION_METHOD
+        ),
         seed_name=config.seed_name,
         seed=config.seed,
         grouping=grouping,
@@ -1592,6 +2367,9 @@ def freeze_folds(
         adaptation_exclusions=ADAPTATION_EXCLUSIONS,
         manifest_checksum="",
         input_inventory_reconciled=input_inventory_reconciled,
+        gold_fold_size_policy=policy,
+        validation_gates=gates,
+        supersedes=supersedes,
     )
     return replace(candidate, manifest_checksum=_json_sha256(candidate._checksum_payload()))
 
@@ -1642,21 +2420,35 @@ def assert_comparable_fold_manifests(
 
 __all__ = [
     "ADAPTATION_EXCLUSIONS",
+    "CLASS_BALANCE_ABSOLUTE_TOLERANCE",
+    "CLASS_BALANCE_RELATIVE_TOLERANCE",
     "FOLD_COUNT",
     "FOLD_GENERATION_METHOD",
+    "FOLD_GENERATION_VERSION",
     "FOLD_IDS",
     "FOLD_SCHEMA_VERSION",
+    "LEGACY_FOLD_GENERATION_METHOD",
+    "LEGACY_FOLD_GENERATION_VERSION",
+    "LEGACY_FOLD_SCHEMA_VERSION",
+    "LEGACY_GENERATION_DEFECT",
+    "LEGACY_PUBLIC_FOLD_SCHEMA_VERSION",
     "PUBLIC_FOLD_SCHEMA_VERSION",
+    "ClassBalanceCheck",
     "FoldFreezeError",
     "FoldManifestIntegrityError",
+    "FoldValidationGates",
+    "GoldFoldSizePolicy",
     "ImmutableArtifactExistsError",
     "FoldGenerationConfig",
     "GroupingAssessment",
     "FoldMembership",
+    "SupersededManifestReference",
     "TargetFoldCounts",
     "FoldSummary",
     "FoldManifest",
     "InventorySource",
+    "class_balance_tolerance",
+    "evaluate_fold_validation_gates",
     "source_manifest_checksum",
     "freeze_folds",
     "write_fold_reports",

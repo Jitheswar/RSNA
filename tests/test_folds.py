@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 
+import numpy as np
 import pytest
 
+import rsna_knee.folds as folds_module
 from rsna_knee.folds import (
     assert_comparable_fold_manifests,
+    FOLD_GENERATION_METHOD,
     FoldManifestIntegrityError,
     ImmutableArtifactExistsError,
     FoldFreezeError,
+    GoldFoldSizePolicy,
     GroupingAssessment,
+    LEGACY_FOLD_GENERATION_METHOD,
+    LEGACY_FOLD_SCHEMA_VERSION,
+    evaluate_fold_validation_gates,
     freeze_folds,
     load_fold_manifest,
     load_inventory_source,
@@ -19,6 +27,41 @@ from rsna_knee.folds import (
 )
 from rsna_knee.inventory import SourceManifest, SourceStudy
 from rsna_knee.targets import TARGET_COLUMNS
+
+# Public pooled positive counts of the 58 reference studies; synthetic cohorts
+# reuse only these margins, never real label vectors.
+_REFERENCE_POSITIVE_COUNTS = (24, 9, 26, 23, 15, 11, 21, 35, 27, 12, 19, 18)
+
+
+def _reference_margin_source(study_count: int, seed: int) -> SourceManifest:
+    rng = np.random.default_rng(seed)
+    labels = np.zeros((study_count, len(TARGET_COLUMNS)), dtype=int)
+    for target_index, positives in enumerate(_REFERENCE_POSITIVE_COUNTS):
+        count = min(study_count - 3, max(3, round(positives * study_count / 58)))
+        labels[rng.permutation(study_count)[:count], target_index] = 1
+    return SourceManifest(
+        "train",
+        tuple(
+            SourceStudy(f"gold-{index:03d}", True, tuple(int(value) for value in labels[index]))
+            for index in range(study_count)
+        ),
+        (),
+    )
+
+
+def _random_multilabel_source(study_count: int, seed: int) -> SourceManifest:
+    rng = np.random.default_rng(seed)
+    prevalence = np.linspace(0.1, 0.65, len(TARGET_COLUMNS))
+    labels = (rng.random((study_count, len(TARGET_COLUMNS))) < prevalence).astype(int)
+    studies = [
+        SourceStudy(f"gold-{index:03d}", True, tuple(int(value) for value in labels[index]))
+        for index in range(study_count)
+    ]
+    studies.extend(
+        SourceStudy(f"report-{index:03d}", True, (None,) * len(TARGET_COLUMNS))
+        for index in range(study_count // 3)
+    )
+    return SourceManifest("train", tuple(studies), ())
 
 
 def _source_manifest() -> SourceManifest:
@@ -323,3 +366,255 @@ def test_run_fold_freeze_consumes_ticket03_private_inventory_without_publishing_
     public_text = (tmp_path / "folds/public/fold-evidence.json").read_text(encoding="utf-8")
     assert "study-00" not in public_text
     assert "report-00" not in public_text
+
+
+def _assert_folds_pass_every_gate(manifest) -> None:
+    gates = manifest.validation_gates
+    gold_count = len(manifest.gold_memberships)
+    sizes = manifest.fold_gold_sizes
+
+    assert manifest.generation_method == FOLD_GENERATION_METHOD
+    assert gates is not None and gates.passed and not gates.failed_gates
+    assert sorted(sizes) == sorted(
+        [gold_count // 3 + (1 if fold < gold_count % 3 else 0) for fold in range(3)]
+    )
+    assert max(sizes) - min(sizes) <= 1
+    assert max(sizes) <= manifest.gold_fold_size_policy.cap
+    assert all(check.deviation <= check.tolerance for check in gates.class_balance)
+    for index, target in enumerate(TARGET_COLUMNS):
+        if target in gates.feasible_targets:
+            for fold in range(3):
+                labels = {
+                    item.reference_labels[index]
+                    for item in manifest.gold_memberships
+                    if item.fold == fold
+                }
+                assert labels == {0, 1}, (target, fold)
+
+
+def test_v1_seed_only_fold_failure_is_reproduced_and_corrected_by_v2() -> None:
+    # A 58-study cohort with the reference cohort's positive counts reproduces
+    # the frozen v1 failure: phase 2 never selects one fold, which keeps only
+    # the studies placed there to seed both-class support.
+    source = _reference_margin_source(58, seed=1)
+
+    legacy = freeze_folds(source, source_version="synthetic-regression", generation_version=1)
+    starved = min(range(3), key=lambda fold: legacy.fold_gold_sizes[fold])
+    starved_rows = [item for item in legacy.gold_memberships if item.fold == starved]
+    legacy_gates = evaluate_fold_validation_gates(
+        legacy.memberships, legacy.grouping, deterministic_regeneration=True
+    )
+
+    assert legacy.schema_version == LEGACY_FOLD_SCHEMA_VERSION
+    assert legacy.generation_method == LEGACY_FOLD_GENERATION_METHOD
+    assert legacy.superseded is True
+    assert sorted(legacy.fold_gold_sizes) == [4, 27, 27]
+    assert all(
+        {item.reference_labels[index] for item in starved_rows} == {0, 1}
+        for index in range(len(TARGET_COLUMNS))
+    )
+    assert "gold_fold_size_balance" in legacy_gates.failed_gates
+    assert "per_target_class_balance" in legacy_gates.failed_gates
+
+    corrected = freeze_folds(source, source_version="synthetic-regression")
+
+    assert corrected.superseded is False
+    assert sorted(corrected.fold_gold_sizes) == [19, 19, 20]
+    _assert_folds_pass_every_gate(corrected)
+
+
+@pytest.mark.parametrize("study_count", [36, 58, 90, 300])
+def test_random_multilabel_cohorts_pass_every_v2_gate(study_count: int) -> None:
+    source = _random_multilabel_source(study_count, seed=20260911 + study_count)
+
+    manifest = freeze_folds(source, source_version="synthetic-random", seed=5)
+    repeated = freeze_folds(source, source_version="synthetic-random", seed=5)
+    legacy = freeze_folds(source, source_version="synthetic-random", seed=5, generation_version=1)
+    legacy_gates = evaluate_fold_validation_gates(
+        legacy.memberships, legacy.grouping, deterministic_regeneration=True
+    )
+
+    _assert_folds_pass_every_gate(manifest)
+    assert manifest.validation_gates.deterministic_regeneration is True
+    assert repeated.manifest_checksum == manifest.manifest_checksum
+    assert repeated.memberships == manifest.memberships
+    assert len(manifest.report_only_memberships) == study_count // 3
+    assert "gold_fold_size_balance" in legacy_gates.failed_gates
+
+
+@pytest.mark.parametrize("study_count", [36, 58, 90, 300])
+def test_reference_margin_cohorts_pass_every_v2_gate(study_count: int) -> None:
+    manifest = freeze_folds(
+        _reference_margin_source(study_count, seed=study_count),
+        source_version="synthetic-margins",
+    )
+
+    _assert_folds_pass_every_gate(manifest)
+    assert manifest.validation_gates.max_class_deviation < 3.0
+
+
+def test_study_level_size_policy_caps_folds_at_ceil_share() -> None:
+    policy = GoldFoldSizePolicy.for_group_sizes((1,) * 58)
+
+    assert (policy.cap, policy.floor, policy.max_folds_above_floor) == (20, 19, 1)
+    assert policy.singleton_groups is True
+    assert policy.admits([19, 19, 19], 0, 1) is True
+    assert policy.admits([20, 19, 18], 1, 1) is False
+    assert policy.admits([20, 19, 18], 2, 1) is True
+    assert policy.sizes_conform((20, 19, 19)) is True
+    assert policy.sizes_conform((20, 20, 18)) is False
+    assert GoldFoldSizePolicy.for_group_sizes((1,) * 36).cap == 12
+    grouped = GoldFoldSizePolicy.for_group_sizes((3, 2, 1, 1, 1, 1))
+    assert (grouped.cap, grouped.floor) == (5, None)
+
+
+def test_reliable_multi_study_groups_stay_unsplit_under_the_widened_cap() -> None:
+    rng = np.random.default_rng(17)
+    studies: list[SourceStudy] = []
+    study_to_group: dict[str, str] = {}
+    for group_index in range(40):
+        for member in range(int(rng.integers(1, 4))):
+            uid = f"gold-{group_index:02d}-{member}"
+            labels = tuple(int(value) for value in rng.random(len(TARGET_COLUMNS)) < 0.4)
+            studies.append(SourceStudy(uid, True, labels))
+            study_to_group[uid] = f"patient-{group_index:02d}"
+    grouping = GroupingAssessment.reliable_key(
+        study_to_group,
+        field_name="PatientID",
+        scope="fixture-site",
+        provenance="fixture grouping audit v1",
+    )
+
+    manifest = freeze_folds(
+        SourceManifest("train", tuple(studies), ()),
+        source_version="synthetic-grouped",
+        grouping=grouping,
+    )
+    folds_by_group: dict[str, set[int]] = {}
+    for item in manifest.memberships:
+        folds_by_group.setdefault(item.group_key, set()).add(item.fold)
+
+    assert manifest.gold_fold_size_policy.singleton_groups is False
+    assert max(manifest.fold_gold_sizes) <= manifest.gold_fold_size_policy.cap
+    assert all(len(value) == 1 for value in folds_by_group.values())
+    assert manifest.validation_gates.passed is True
+
+
+def test_failed_gates_refuse_to_produce_a_manifest(monkeypatch) -> None:
+    monkeypatch.setattr(folds_module, "CLASS_BALANCE_ABSOLUTE_TOLERANCE", 0.0)
+    monkeypatch.setattr(folds_module, "CLASS_BALANCE_RELATIVE_TOLERANCE", 0.0)
+
+    with pytest.raises(FoldFreezeError, match="validation gates failed.*no other seed"):
+        freeze_folds(_reference_margin_source(58, seed=1), source_version="synthetic-refusal")
+
+
+def test_loaded_v2_manifest_recomputes_its_gates() -> None:
+    manifest = freeze_folds(_reference_margin_source(36, seed=3), source_version="synthetic-gates")
+    tampered_gates = dataclasses.replace(
+        manifest.validation_gates,
+        fold_gold_sizes=(13, 12, 11),
+    )
+
+    with pytest.raises(FoldManifestIntegrityError, match="gates"):
+        dataclasses.replace(manifest, validation_gates=tampered_gates)
+    with pytest.raises(FoldManifestIntegrityError, match="version-2"):
+        dataclasses.replace(manifest, generation_method=LEGACY_FOLD_GENERATION_METHOD)
+
+
+def test_legacy_v1_manifest_round_trips_unchanged_and_is_marked_superseded(tmp_path) -> None:
+    legacy = freeze_folds(_source_manifest(), source_version="fixture-v1", seed=17, generation_version=1)
+    private_path = tmp_path / "private" / "fold-manifest.json"
+    write_fold_reports(legacy, private_path=private_path, public_path=tmp_path / "public.json")
+
+    payload = json.loads(private_path.read_text(encoding="utf-8"))
+    loaded = load_fold_manifest(private_path)
+
+    assert loaded == legacy
+    assert loaded.superseded is True
+    assert loaded.generation_version == 1
+    assert payload["schema_version"] == LEGACY_FOLD_SCHEMA_VERSION
+    assert not {"generation_version", "validation_gates", "gold_fold_size_policy"} & set(payload)
+    public = json.loads((tmp_path / "public.json").read_text(encoding="utf-8"))
+    assert public["superseded"]["superseded"] is True
+
+
+def _write_inventory(path, source: SourceManifest) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "rsna-knee-inventory-v1",
+                "source_version": "fixture-v1",
+                "split": "train",
+                "archive": {"fingerprint": "archive-fingerprint"},
+                "source": {
+                    "studies": [
+                        {
+                            "StudyInstanceUID": study.study_instance_uid,
+                            "report_present": study.report_present,
+                            "reference_labels": list(study.reference_labels),
+                        }
+                        for study in source.studies
+                    ],
+                    "series": [],
+                },
+                "reconciliation": {"full_corpus_reconciled": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_v2_correction_supersedes_v1_without_changing_it_or_its_seed(tmp_path) -> None:
+    source = _reference_margin_source(58, seed=1)
+    inventory_path = tmp_path / "inventory.json"
+    _write_inventory(inventory_path, source)
+    grouping = GroupingAssessment.no_reliable_key(examined_fields=("PatientID",))
+    grouping_path = tmp_path / "grouping.json"
+    grouping_path.write_text(json.dumps(grouping.to_private_dict()), encoding="utf-8")
+    loaded = load_inventory_source(inventory_path)
+    legacy = freeze_folds(
+        loaded.source_manifest,
+        source_version=loaded.source_version,
+        source_fingerprint=loaded.source_fingerprint,
+        input_inventory_reconciled=True,
+        grouping=grouping,
+        seed_name="fixture-real-seed",
+        seed=99,
+        generation_version=1,
+    )
+    legacy_private = tmp_path / "v1" / "private" / "fold-manifest.json"
+    write_fold_reports(legacy, private_path=legacy_private, public_path=tmp_path / "v1" / "public.json")
+    legacy_bytes = legacy_private.read_bytes()
+
+    with pytest.raises(FoldFreezeError, match="seed search is not permitted"):
+        run_fold_freeze(
+            inventory_path,
+            tmp_path / "wrong-seed",
+            grouping_path=grouping_path,
+            seed=100,
+            supersedes_manifest_path=legacy_private,
+        )
+    with pytest.raises(ImmutableArtifactExistsError):
+        run_fold_freeze(
+            inventory_path,
+            tmp_path / "v1",
+            grouping_path=grouping_path,
+            supersedes_manifest_path=legacy_private,
+        )
+    summary = run_fold_freeze(
+        inventory_path,
+        tmp_path / "v2",
+        grouping_path=grouping_path,
+        supersedes_manifest_path=legacy_private,
+    )
+    corrected = load_fold_manifest(tmp_path / "v2" / "private" / "fold-manifest.json")
+
+    assert legacy_private.read_bytes() == legacy_bytes
+    assert (corrected.seed_name, corrected.seed) == ("fixture-real-seed", 99)
+    assert corrected.supersedes is not None
+    assert corrected.supersedes.manifest_checksum == legacy.manifest_checksum
+    assert corrected.manifest_checksum != legacy.manifest_checksum
+    assert summary["supersedes"]["manifest_checksum"] == legacy.manifest_checksum
+    assert summary["validation_gates"]["passed"] is True
+    assert sorted(summary["fold_gold_sizes"]) == [19, 19, 20]
+    _assert_folds_pass_every_gate(corrected)

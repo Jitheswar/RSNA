@@ -55,3 +55,33 @@ remain unresolved and are not asserted here.
 The compute-node environment record contains an explicit unavailable Git
 revision; environment and scientific identity fingerprints are retained, but
 this execution is not clean-release revision provenance.
+
+### 2026-09-11 — Superseded v1 result and corrected rerun on the v2 manifest
+
+The execution above used the version-1 fold manifest `ae81f327…d51ad3e7`
+(gold folds 26 / 4 / 28). Following the owner-approved ticket-04 correction,
+its metrics are superseded for comparison and retained unchanged as
+historical evidence.
+
+After V14 passed on the version-2 manifest `8460234d…2f287fb8` (gold folds
+20 / 19 / 19), the three folds were rerun:
+
+- **Jobs.** Folds 0, 1 and 2 ran in jobs 6943, 6944 and 6945 with the same
+  configuration fingerprint `aa832009…` and the 100-step budget. Each passed
+  its preflight, with 100 steps and zero all-masked skips.
+- **Aggregation.** Job 6947 recomputed the metrics over exactly 58 predictions.
+- **Pooled metrics.** The pooled macro AUC is `0.46431276237497293` (study
+  bootstrap 95% 0.404–0.524). Fold macros are `0.4922830053252847`,
+  `0.4211193898693899` and `0.4882014975764976`.
+- **Diagnostics.** The pair-weighted within-fold macro is `0.4673778079025743`
+  and the cross-fold macro `0.4628795537577073`. The training-prevalence-only
+  baseline reaches `0.4743534983877844`, and fold mean scores still track
+  training prevalence (Pearson 0.979).
+- **Signal test.** The pre-specified one-sided within-fold permutation test
+  gives p = 0.918, so no measurable image signal is claimed for the mechanics
+  baseline.
+
+Historical aggregation job 6946 applied the same diagnostics to the superseded
+runs and reproduced the fold audit's independent values. Evidence:
+`docs/evidence/ticket-10-oof.md`. Ticket 11 and later fold-dependent training
+were not started.

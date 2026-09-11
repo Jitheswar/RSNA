@@ -64,3 +64,37 @@ Synthetic tests and public-safe evidence are recorded in
 No private competition fold manifest was generated. V02 patient-key evidence,
 real-corpus membership/label-join verification, and V14 completion remain
 unresolved; this implementation does not claim those gates passed.
+
+### 2026-09-11 — Owner-approved version-2 fold-generation correction
+
+The owner approved the correction proposed by the fold audit. The version-1
+phase-2 greedy scored candidate folds by absolute post-add imbalance, so real
+fold 1 kept only its four support-seed studies (gold folds 26 / 4 / 28).
+
+The correction is versioned as generation v2 (`rsna-knee-fold-manifest-v2`):
+
+- **Scoring.** Phase 2 scores the change in total imbalance.
+- **Size cap.** Each fold holds `floor(N/3)` or `ceil(N/3)` gold studies under
+  study-level grouping.
+- **Gates.** Generation refuses to publish unless gold fold-size balance,
+  per-target class balance (`max(3, 0.15 × expected)`), both-class support and
+  deterministic regeneration all pass.
+- **Tests.** Regression tests reproduce the seed-only fold under v1, and random
+  multilabel tests at n = 36, 58, 90 and 300 pass every v2 gate.
+
+The corrected canonical manifest `8460234d…2f287fb8` was generated exactly once
+in Slurm job 6941. It reuses the superseded manifest's source, grouping
+evidence, named seed and repeat; no seed search was performed and no model
+score was consulted. Gold folds are 20 / 19 / 19, the worst class-count
+deviation is 1.53 studies, and all twelve targets have both classes in every
+fold.
+
+V14 was re-run in job 6942 and **passed**. The checks cover exact membership
+and label joins, the checksum, independent regeneration from the inventory,
+all balance/support gates and single-correction seed provenance; reliable-group
+overlap is not applicable because no reliable patient key exists. V02
+therefore remains the documented study-level limitation: repeated-patient
+leakage cannot be ruled out.
+
+The v1 manifest `ae81f327…d51ad3e7` is retained unchanged as superseded
+historical evidence. Evidence: `docs/evidence/ticket-04-folds.md`.

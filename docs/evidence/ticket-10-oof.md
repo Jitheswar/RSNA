@@ -47,7 +47,16 @@ jobs request one non-exclusive `cluster1-cpu` node, 16 CPUs, 64 GB and six
 hours; a shared lock and Slurm-state check cap active fold jobs at two.
 Aggregation requests one node, two CPUs, 8 GB and one hour.
 
-## Real three-fold execution
+## Real three-fold execution (superseded, historical)
+
+> **Superseded for comparison (2026-09-11).** This execution used the
+> version-1 fold manifest `ae81f327…d51ad3e7`, whose defective gold allocation
+> (26 / 4 / 28 studies) let fold-level base rates dominate the pooled metric.
+> Per-fold mean scores tracked training prevalence (Pearson 0.985 over the 36
+> fold × target cells), and a training-prevalence-only predictor reached a
+> pooled macro of 0.382. The records and metrics below are retained unchanged
+> as historical evidence and must not be compared with any version-2 result.
+> The corrected rerun is recorded at the end of this document.
 
 The real run used the pinned Python 3.11 environment, the existing verified
 ticket-03 inventory, the existing verified ticket-04 fold manifest, the
@@ -86,3 +95,88 @@ unavailable Git revision; its environment fingerprint and scientific artifact
 identities are retained privately, so this is not clean-release revision
 provenance. No competitive-performance, GPU-compatibility, Kaggle, promotion,
 upload, or final-selection claim is made.
+
+## Corrected three-fold rerun on the version-2 manifest (2026-09-11)
+
+The rerun started only after V14 passed on the corrected manifest
+`8460234d…2f287fb8` (ticket 04, jobs 6941 and 6942).
+
+- **Training runs.** Fold jobs **6943**, **6944** and **6945**
+  (cluster1-cpu, `slurm/run_ticket10_fold.sbatch`) trained folds 0, 1 and 2.
+  They used the unchanged mechanics configuration, fingerprint
+  `aa83200904398e7ffb07ba9f1f0c2f1fbb5be4d2b0dfcd885d1008cf9b5c49ea`, and the
+  100-successful-step budget.
+  - Each fold passed its CPU preflight and completed 100 optimizer and
+    scheduler steps with zero all-masked skips.
+  - Training/held-out study counts were 38/20, 39/19 and 39/19.
+- **Provenance.** The compute-node environment records the code identity
+  `git-1fdbc63+uncommitted;src-sha256=43ac40f9…3d64`.
+- **Aggregation.** Read-only aggregation job **6947** recomputed all metrics
+  from the three atomic run records. It used 2,000 study-bootstrap resamples
+  and 10,000 within-fold label permutations, both with seed `20260911`.
+
+| Metric | Version-2 rerun | Superseded v1 run (historical) |
+| --- | ---: | ---: |
+| Pooled twelve-target macro AUC | **0.464313** | 0.384180 |
+| Study-bootstrap 95% interval (pooled macro) | 0.404–0.524 | 0.335–0.439 |
+| Fold macro AUCs | 0.492283 / 0.421119 / 0.488201 | 0.431714 / 0.493056 / 0.494266 |
+| Pair-weighted within-fold macro AUC | **0.467378** (95% 0.411–0.523) | 0.489341 |
+| Cross-fold macro AUC | 0.462880 | 0.310796 |
+| Mean within-fold pair share | 0.332 | 0.418 |
+| Training-prevalence-only pooled macro (no images) | **0.474353** | 0.382168 |
+| Fold mean score vs training prevalence (Pearson, 36 cells) | 0.979 | 0.985 |
+| Within-fold permutation p (one-sided) | **0.918** | 0.672 |
+
+Pooled and within-fold target AUCs for the version-2 rerun:
+
+| Target | Pooled | Within-fold | Cross-fold | Prevalence baseline |
+| --- | ---: | ---: | ---: | ---: |
+| ACL | 0.462010 | 0.553903 | 0.416819 | 0.443015 |
+| MCL | 0.351474 | 0.360544 | 0.346939 | 0.493197 |
+| Medial Meniscus | 0.443510 | 0.393502 | 0.468468 | 0.476562 |
+| Lateral Meniscus | 0.427329 | 0.467925 | 0.407407 | 0.437888 |
+| Medial OA | 0.480620 | 0.446512 | 0.497674 | 0.492248 |
+| Lateral OA | 0.411992 | 0.331395 | 0.452174 | 0.462282 |
+| PF OA | 0.465894 | 0.471042 | 0.463320 | 0.490991 |
+| Effusion | 0.577640 | 0.638060 | 0.547486 | 0.475776 |
+| Synovitis | 0.445639 | 0.476534 | 0.430357 | 0.453405 |
+| Baker's | 0.467391 | 0.413043 | 0.494565 | 0.492754 |
+| Contusion | 0.497976 | 0.506073 | 0.493927 | 0.482456 |
+| Fracture | 0.540278 | 0.550000 | 0.535417 | 0.491667 |
+
+All twelve pooled and all 36 fold-target AUCs are defined. One of 2,000
+bootstrap resamples had an undefined macro (one MCL draw), and it is counted
+rather than dropped.
+
+**Interpretation.** The correction removed the fold-imbalance artifact: cross-
+and within-fold AUCs now agree (0.463 vs 0.467), where the v1 values were 0.311
+vs 0.489. It did not reveal image signal.
+
+- Every fold model still outputs essentially its training prevalence. Fold
+  mean scores track training prevalence (r = 0.979), and within-fold score SDs
+  are 0.0001–0.010.
+- The pre-specified test is a one-sided within-fold permutation test of the
+  pair-weighted within-fold macro, with measurable signal only if p < 0.05. It
+  gives p = 0.918 (null mean 0.500, SD 0.024), so **no measurable image signal
+  is claimed**.
+- The pooled macro's 95% interval contains 0.5, and the pooled macro sits
+  below the no-image prevalence baseline.
+- Single-target values such as Effusion (within-fold 0.638) are
+  unadjusted and are not evidence of signal on their own.
+
+This remains mechanics-baseline development CV for model selection. It is not
+an untouched internal test and establishes no clinical or competitive claim.
+
+**Cross-check against the audit.** Historical aggregation job **6946** re-read
+the superseded v1 runs with `RSNA_TICKET10_ALLOW_SUPERSEDED_FOLD_MANIFEST=1`
+and wrote to a separate directory. The new diagnostics reproduced the fold
+audit's independent computations exactly:
+
+- pooled 0.384180;
+- within-fold 0.489341 and cross-fold 0.310796;
+- prevalence baseline 0.382168;
+- Pearson 0.985055;
+- fold-standardized 0.493776.
+
+All 76 superseded ticket 04/08/10 evidence files were verified byte-identical
+after the rerun.

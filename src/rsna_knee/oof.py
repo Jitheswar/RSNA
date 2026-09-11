@@ -14,6 +14,7 @@ from .archive import atomic_json_write
 from .evaluation import OOFEvaluation, evaluate_oof_predictions
 from .folds import FOLD_IDS, FoldManifest, validate_fold_manifest_against_source
 from .inventory import SourceManifest
+from .targets import TARGET_COLUMNS
 
 
 class OOFArtifactError(ValueError):
@@ -301,9 +302,17 @@ def aggregate_oof_run_records(
     bootstrap_seed: int = 20260911,
     bootstrap_unit: str = "auto",
     bootstrap_confidence_level: float = 0.95,
+    permutation_resamples: int | None = None,
+    permutation_seed: int = 20260911,
+    allow_superseded_fold_manifest: bool = False,
 ) -> OOFEvaluation:
     """Recompute an OOF comparison view from one atomic record per fold."""
 
+    if fold_manifest.superseded and not allow_superseded_fold_manifest:
+        raise OOFArtifactError(
+            "the fold manifest was produced by the superseded version-1 generator; its OOF "
+            "results are historical evidence only"
+        )
     if expected_gold_count is not None and expected_gold_count <= 0:
         raise OOFArtifactError("expected_gold_count must be positive")
     expected_gold = len(fold_manifest.gold_memberships)
@@ -350,6 +359,8 @@ def aggregate_oof_run_records(
         bootstrap_seed=bootstrap_seed,
         bootstrap_unit=bootstrap_unit,
         bootstrap_confidence_level=bootstrap_confidence_level,
+        permutation_resamples=permutation_resamples,
+        permutation_seed=permutation_seed,
     )
     return replace(result, run_ids=tuple(record.run_id for record in ordered))
 
@@ -404,32 +415,117 @@ def _format_metric(value: float | None) -> str:
     return "undefined" if value is None else f"{value:.6f}"
 
 
+def _table_row(values: Sequence[str]) -> str:
+    return "| " + " | ".join(values) + " |"
+
+
 def render_oof_comparison(evaluation: OOFEvaluation) -> str:
     """Render an identifier-free Markdown comparison view."""
 
+    diagnostics = evaluation.diagnostics
     lines = [
         "# Gold-only OOF comparison",
         "",
         f"- Repeat: `{evaluation.repeat_name}`",
+        f"- Fold manifest checksum: `{evaluation.fold_manifest_checksum}`",
+        f"- Fold generation method: `{evaluation.fold_generation_method}`",
+        f"- Fold manifest superseded: `{str(evaluation.fold_manifest_superseded).lower()}`",
         f"- Held-out predictions: `{evaluation.prediction_count}`",
         f"- Pooled macro ROC-AUC: `{_format_metric(evaluation.pooled_macro_auc)}`",
+        "- Fold macro ROC-AUCs: "
+        + ", ".join(f"`{_format_metric(fold.macro_auc)}`" for fold in evaluation.folds),
         f"- Mean fold macro ROC-AUC: `{_format_metric(evaluation.mean_fold_macro_auc)}`",
         f"- Fold macro standard deviation: `{_format_metric(evaluation.fold_macro_auc_std)}`",
-        "",
-        "| Target | Pooled AUC | Positives | Negatives | Fold 0 | Fold 1 | Fold 2 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    if diagnostics is not None:
+        baseline = diagnostics.prevalence_baseline
+        lines.extend(
+            [
+                "- Pair-weighted within-fold macro ROC-AUC: "
+                f"`{_format_metric(diagnostics.within_fold_macro_auc)}`",
+                f"- Cross-fold macro ROC-AUC: `{_format_metric(diagnostics.cross_fold_macro_auc)}`",
+                "- Mean within-fold pair share: "
+                f"`{_format_metric(diagnostics.mean_within_fold_pair_share)}`",
+                "- Training-prevalence-only pooled macro ROC-AUC: "
+                f"`{_format_metric(baseline.macro_auc)}`",
+            ]
+        )
+        if diagnostics.permutation_test is not None:
+            test = diagnostics.permutation_test
+            lines.append(
+                "- Within-fold permutation test: "
+                f"p_upper `{test.p_upper:.6f}` over `{test.resamples}` resamples "
+                f"(null mean `{test.null_mean:.6f}`, 95th percentile `{test.null_quantile_95:.6f}`); "
+                f"measurable image signal: `{str(test.rejects_no_signal).lower()}`"
+            )
+    if evaluation.bootstrap is not None:
+        macro = evaluation.bootstrap.macro_auc
+        lines.append(
+            f"- {evaluation.bootstrap.unit.title()} bootstrap pooled macro "
+            f"{evaluation.bootstrap.confidence_level:.0%} interval: "
+            f"`{_format_metric(macro.lower)}` to `{_format_metric(macro.upper)}` "
+            f"({macro.undefined_resamples} undefined of {macro.resamples})"
+        )
+        within = evaluation.bootstrap.within_fold_macro_auc
+        if within is not None:
+            lines.append(
+                f"- {evaluation.bootstrap.unit.title()} bootstrap within-fold macro "
+                f"{evaluation.bootstrap.confidence_level:.0%} interval: "
+                f"`{_format_metric(within.lower)}` to `{_format_metric(within.upper)}` "
+                f"({within.undefined_resamples} undefined of {within.resamples})"
+            )
+    lines.extend(
+        [
+            "",
+            _table_row(
+                (
+                    "Target",
+                    "Pooled AUC",
+                    "Within-fold AUC",
+                    "Cross-fold AUC",
+                    "Within share",
+                    "Prevalence baseline",
+                    "Positives",
+                    "Negatives",
+                    "Fold 0",
+                    "Fold 1",
+                    "Fold 2",
+                )
+            ),
+            _table_row(("---", *(("---:",) * 10))),
+        ]
+    )
     fold_targets = {
         fold.fold: {item.target: item for item in fold.targets}
         for fold in evaluation.folds
     }
+    decomposition = (
+        {item.target: item for item in diagnostics.pair_decomposition}
+        if diagnostics is not None
+        else {}
+    )
+    baseline_targets = (
+        {item.target: item for item in diagnostics.prevalence_baseline.targets}
+        if diagnostics is not None
+        else {}
+    )
     for target in evaluation.pooled_targets:
+        pairs = decomposition.get(target.target)
         lines.append(
-            "| "
-            + " | ".join(
+            _table_row(
                 (
                     target.target,
                     _format_metric(target.auc),
+                    _format_metric(pairs.within_fold_auc if pairs else None),
+                    _format_metric(pairs.cross_fold_auc if pairs else None),
+                    _format_metric(
+                        pairs.within_fold_pairs / pairs.pooled_pairs
+                        if pairs and pairs.pooled_pairs
+                        else None
+                    ),
+                    _format_metric(
+                        baseline_targets[target.target].auc if target.target in baseline_targets else None
+                    ),
                     str(target.positive_count),
                     str(target.negative_count),
                     *(
@@ -438,13 +534,53 @@ def render_oof_comparison(evaluation: OOFEvaluation) -> str:
                     ),
                 )
             )
-            + " |"
         )
+    if diagnostics is not None:
+        lines.extend(
+            [
+                "",
+                "## Fold score scale",
+                "",
+                "Correlation of fold mean score with fold training prevalence over fold x target "
+                f"cells: Pearson `{_format_metric(diagnostics.mean_score_vs_training_prevalence_pearson)}`, "
+                f"Spearman `{_format_metric(diagnostics.mean_score_vs_training_prevalence_spearman)}`. "
+                "Fold-standardized pooled macro (diagnostic only): "
+                f"`{_format_metric(diagnostics.fold_standardized_macro_auc)}`.",
+                "",
+                _table_row(
+                    (
+                        "Target",
+                        *(f"Fold {fold} mean / SD" for fold in FOLD_IDS),
+                        *(f"Fold {fold} train prev." for fold in FOLD_IDS),
+                        "Between/within SD",
+                    )
+                ),
+                _table_row(("---", *(("---:",) * 7))),
+            ]
+        )
+        cells = {(item.fold, item.target): item for item in diagnostics.fold_score_scale}
+        for index, target_name in enumerate(TARGET_COLUMNS):
+            lines.append(
+                _table_row(
+                    (
+                        target_name,
+                        *(
+                            f"{cells[(fold, target_name)].mean_score:.4f} / "
+                            f"{cells[(fold, target_name)].sd_score:.4f}"
+                            for fold in FOLD_IDS
+                        ),
+                        *(f"{cells[(fold, target_name)].training_prevalence:.4f}" for fold in FOLD_IDS),
+                        _format_metric(diagnostics.between_fold_to_within_fold_sd_ratio[index]),
+                    )
+                )
+            )
     lines.extend(
         [
             "",
             "Undefined one-class AUCs remain undefined; no reduced-target macro is "
-            "used as the primary metric.",
+            "used as the primary metric. Within- and cross-fold AUCs partition the pooled "
+            "positive/negative pairs exactly; cross-fold pairs compare scores from different "
+            "fold models. The prevalence baseline uses no images.",
             "",
             "This is repeated development cross-validation for model selection. It "
             "is not an untouched internal test and does not establish clinical "
@@ -498,6 +634,13 @@ def _parser() -> Any:
     parser.add_argument("--bootstrap-seed", type=int, default=20260911)
     parser.add_argument("--bootstrap-unit", choices=("auto", "study", "group"), default="auto")
     parser.add_argument("--bootstrap-confidence-level", type=float, default=0.95)
+    parser.add_argument("--permutation-resamples", type=int, default=10000)
+    parser.add_argument("--permutation-seed", type=int, default=20260911)
+    parser.add_argument(
+        "--allow-superseded-fold-manifest",
+        action="store_true",
+        help="re-aggregate runs on a superseded version-1 manifest as historical evidence only",
+    )
     return parser
 
 
@@ -511,6 +654,9 @@ def main(argv: list[str] | None = None) -> int:
         parsed_resamples = cast(int, args.bootstrap_resamples)
         if parsed_resamples < 0:
             raise OOFArtifactError("bootstrap resamples cannot be negative")
+        permutation_resamples = cast(int, args.permutation_resamples)
+        if permutation_resamples < 0:
+            raise OOFArtifactError("permutation resamples cannot be negative")
         inventory = (
             load_inventory_source(cast(Path, args.inventory))
             if args.inventory is not None
@@ -527,6 +673,9 @@ def main(argv: list[str] | None = None) -> int:
             bootstrap_seed=cast(int, args.bootstrap_seed),
             bootstrap_unit=cast(str, args.bootstrap_unit),
             bootstrap_confidence_level=cast(float, args.bootstrap_confidence_level),
+            permutation_resamples=permutation_resamples or None,
+            permutation_seed=cast(int, args.permutation_seed),
+            allow_superseded_fold_manifest=cast(bool, args.allow_superseded_fold_manifest),
         )
         comparison_path = cast(Path | None, args.comparison_output)
         if comparison_path is None:
