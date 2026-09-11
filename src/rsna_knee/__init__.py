@@ -89,6 +89,19 @@ from .real_inference import (
 )
 from .cache_benchmark import run_cache_benchmark
 from .submission import SubmissionError, validate_predictions, write_submission
+from .submission import validate_submission_csv
+from .candidate import (
+    CANDIDATE_CONFIGURATION_SCHEMA_VERSION,
+    CANDIDATE_SCHEMA_VERSION,
+    CandidateBundle,
+    CandidateError,
+    CandidateExecution,
+    CandidateIntegrityError,
+    benchmark_candidate_execution,
+    freeze_candidate,
+    load_candidate,
+    run_candidate_inference,
+)
 from .targets import NUM_TARGETS, SUBMISSION_COLUMNS, TARGET_COLUMNS
 from .inventory import (
     INVENTORY_SCHEMA_VERSION,
@@ -302,7 +315,18 @@ __all__ = [
     "validate_reference_label_vector",
     "SubmissionError",
     "validate_predictions",
+    "validate_submission_csv",
     "write_submission",
+    "CANDIDATE_CONFIGURATION_SCHEMA_VERSION",
+    "CANDIDATE_SCHEMA_VERSION",
+    "CandidateBundle",
+    "CandidateError",
+    "CandidateExecution",
+    "CandidateIntegrityError",
+    "benchmark_candidate_execution",
+    "freeze_candidate",
+    "load_candidate",
+    "run_candidate_inference",
     "NUM_TARGETS",
     "SUBMISSION_COLUMNS",
     "TARGET_COLUMNS",

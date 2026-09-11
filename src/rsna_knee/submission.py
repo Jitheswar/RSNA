@@ -66,6 +66,64 @@ def validate_predictions(
     return _ordered_rows(expected_study_uids, predictions)
 
 
+def validate_submission_csv(
+    input_path: str | Path,
+    expected_study_uids: Sequence[str],
+) -> dict[str, object]:
+    """Validate an existing CSV against the complete competition contract."""
+
+    expected = tuple(expected_study_uids)
+    if not expected:
+        raise SubmissionError("at least one expected study UID is required")
+    if len(set(expected)) != len(expected) or any(not isinstance(uid, str) or not uid for uid in expected):
+        raise SubmissionError("expected study UIDs must be unique non-empty strings")
+    source = Path(input_path)
+    if not source.is_file() or source.is_symlink():
+        raise SubmissionError(f"submission CSV is not a regular file: {source}")
+    try:
+        with source.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.reader(handle))
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise SubmissionError(f"could not read submission CSV {source}") from exc
+    if not rows:
+        raise SubmissionError("submission CSV is empty")
+    if rows[0] != list(SUBMISSION_COLUMNS):
+        raise SubmissionError("submission CSV header does not match the exact target order")
+    data_rows = rows[1:]
+    if len(data_rows) != len(expected):
+        raise SubmissionError(
+            f"submission CSV contains {len(data_rows)} rows; expected {len(expected)}"
+        )
+    observed_uids: list[str] = []
+    for row in data_rows:
+        if len(row) != len(SUBMISSION_COLUMNS):
+            raise SubmissionError("submission CSV contains an incorrect number of columns")
+        uid = row[0]
+        if not uid:
+            raise SubmissionError("submission CSV contains an empty StudyInstanceUID")
+        observed_uids.append(uid)
+        try:
+            scores = np.asarray([float(value) for value in row[1:]], dtype=np.float64)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise SubmissionError(f"submission CSV scores are not numeric for {uid}") from exc
+        if scores.shape != (NUM_TARGETS,) or not np.isfinite(scores).all():
+            raise SubmissionError(f"submission CSV scores are not finite for {uid}")
+        if (scores < 0.0).any() or (scores > 1.0).any():
+            raise SubmissionError(f"submission CSV scores are outside [0, 1] for {uid}")
+    if len(set(observed_uids)) != len(observed_uids):
+        raise SubmissionError("submission CSV contains duplicate StudyInstanceUID rows")
+    if tuple(observed_uids) != expected:
+        raise SubmissionError("submission CSV StudyInstanceUID rows are not in expected order")
+    return {
+        "row_count": len(data_rows),
+        "column_count": len(rows[0]),
+        "exact_header": True,
+        "exact_uid_order": True,
+        "scores_finite": True,
+        "scores_bounded": True,
+    }
+
+
 def write_submission(
     output_path: str | Path,
     expected_study_uids: Sequence[str],
