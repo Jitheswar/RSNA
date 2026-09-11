@@ -12,5 +12,6 @@ artifacts/*
 /data/cache/
 /private/
 /manifests/private/
+/folds/private/
 /artifacts/private/
 /rsna-knee-abnormality-detection.zip

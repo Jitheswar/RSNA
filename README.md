@@ -103,3 +103,42 @@ This ticket's implementation and synthetic archive tests do not claim that
 the private competition corpus has completed its full header scan, pixel
 decoder verification, or cache admission. Those claims require the bounded
 Slurm execution and its preserved evidence.
+
+## Ticket 04 immutable fold freeze
+
+`rsna_knee.folds` freezes one three-fold development manifest from the private
+ticket-03 inventory. Reference-labelled (gold) studies use a deterministic
+multilabel-aware allocation; report-only studies use a stable StudyInstanceUID
+hash, or a reliable group-identifier hash when grouping is required. An
+explicitly attested reliable grouping key is respected across both cohorts and
+is never split. Without such an assessment, the manifest records study-level
+splitting and the limitation that repeated-patient leakage cannot be ruled out.
+
+Every source study receives exactly one fold membership. The private manifest
+contains identifiers and reference labels, while the public evidence contains
+only generation metadata, checksums, cohort totals, and all twelve positive /
+negative counts for each fold. Feasible targets must have both classes in every
+fold; mathematically unavoidable one-class targets are recorded as undefined
+support rather than filled with an invented value. Held-out images, metadata,
+and reports are the declared exclusion set for every fold's adaptation.
+
+After the private ticket-03 inventory is available, run the bounded adapter:
+
+```bash
+export RSNA_TICKET04_INVENTORY=/private/path/ticket-03-inventory/private/inventory.json
+export RSNA_TICKET04_OUTPUT=/private/path/ticket-04-folds
+export RSNA_TICKET04_GROUPING_EVIDENCE=/private/path/ticket-04-grouping.json
+sbatch --wait slurm/run_ticket04_freeze_folds.sbatch
+```
+
+The runner requires a complete ticket-03 reconciliation and an explicit V02
+JSON audit. If V02 establishes a reliable patient key, the file must include
+the audit status, examined fields, scope/provenance, missingness and
+consistency counts, and a `study_to_group` object covering every training
+study. If no reliable key exists, use `status: unavailable` with the examined
+fields and documented study-only limitation; the runner never infers a key or
+silently chooses that path. The adapter requests one
+`cluster1-cpu` node, two CPUs, 8 GB, and one hour without exclusive allocation.
+Both output paths are immutable: rerunning with an existing manifest refuses
+to overwrite it. Identifier-bearing output belongs below a private ignored
+path; `public/fold-evidence.json` is safe for aggregate evidence only.
