@@ -1,0 +1,1679 @@
+"""Reference-only training and experiment recording for the mechanics baseline.
+
+The module deliberately owns the scientific training boundary: image inputs
+are already represented by the shared ``StudyRecord``/packing interfaces,
+labels come from a frozen reference fold manifest, and report-derived
+supervision is not an accepted input.  The Slurm adapter is a thin caller of
+the functions here; it does not contain a second training implementation.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import pickle
+import platform
+import random
+import socket
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field, replace
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence, cast
+
+import numpy as np
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+from .archive import atomic_json_write
+from .domain import StudyRecord
+from .folds import FOLD_IDS, FoldManifest
+from .model import HierarchicalStudyModel, ModelConfig
+from .preprocessing import (
+    PackedStudy,
+    PackingConfig,
+    PreprocessConfig,
+    SeriesFailure,
+    pack_study,
+    prepare_study,
+)
+from .series_cache import SeriesCache
+from .targets import NUM_TARGETS
+
+if TYPE_CHECKING:
+    from .evaluation import FoldEvaluation
+
+
+TRAINING_SCHEMA_VERSION = "rsna-knee-training-v1"
+CHECKPOINT_SCHEMA_VERSION = "rsna-knee-checkpoint-v1"
+PREFLIGHT_SCHEMA_VERSION = "rsna-knee-cpu-preflight-v1"
+DEFAULT_TRAINING_SEED = 20260911
+DEFAULT_BATCH_ORDER_SEED = 20260912
+DEFAULT_SOURCE_VERSION = "synthetic-development"
+
+
+class TrainingError(RuntimeError):
+    """Base class for fixed-budget training failures."""
+
+
+class TrainingConfigurationError(ValueError):
+    """Raised when a scientific training configuration is unsafe or invalid."""
+
+
+class TrainingDataError(ValueError):
+    """Raised when a study or supervision input cannot be admitted."""
+
+
+class TrainingProgressError(TrainingError):
+    """Raised when a run cannot make supervised optimizer progress."""
+
+
+class TrainingNumericsError(TrainingError):
+    """Raised when loss, gradients, or parameters become non-finite."""
+
+
+class CheckpointError(TrainingError):
+    """Raised when a checkpoint cannot be safely written or reloaded."""
+
+
+class PreflightError(TrainingError):
+    """Raised when a real training run has not passed the CPU preflight."""
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"))
+
+
+def _json_sha256(value: object) -> str:
+    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _array_sha256(value: np.ndarray) -> str:
+    array = np.ascontiguousarray(value)
+    digest = hashlib.sha256()
+    digest.update(str(array.dtype).encode("ascii"))
+    digest.update(_canonical_json(list(array.shape)).encode("ascii"))
+    digest.update(array.tobytes(order="C"))
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class TrainingConfig:
+    """Scientific and bounded execution defaults for one mechanics run."""
+
+    image_size: tuple[int, int] = (128, 128)
+    channels: tuple[int, int, int] = (8, 16, 32)
+    input_channels: int = 1
+    max_slices: int = 8
+    max_series: int = 16
+    batch_size: int = 2
+    successful_optimizer_steps: int = 100
+    optimizer: str = "Adam"
+    learning_rate: float = 0.001
+    schedule: str = "constant"
+    seed: int = DEFAULT_TRAINING_SEED
+    batch_order_seed: int = DEFAULT_BATCH_ORDER_SEED
+    persistent_no_progress_limit: int = 100
+    checkpoint_interval_steps: int = 15
+    device: str = "cpu"
+    selection_policy: str = "final_checkpoint"
+    preprocessing_config: PreprocessConfig | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.image_size) != 2 or any(size <= 0 for size in self.image_size):
+            raise TrainingConfigurationError("image_size must contain two positive dimensions")
+        if len(self.channels) != 3 or any(channel <= 0 for channel in self.channels):
+            raise TrainingConfigurationError("channels must contain three positive widths")
+        if self.input_channels != 1:
+            raise TrainingConfigurationError("the mechanics baseline uses one grayscale channel")
+        if self.max_slices <= 0 or self.max_series <= 0:
+            raise TrainingConfigurationError("max_slices and max_series must be positive")
+        if self.batch_size != 2:
+            raise TrainingConfigurationError("the mechanics baseline requires batch_size=2")
+        if self.successful_optimizer_steps <= 0:
+            raise TrainingConfigurationError("successful_optimizer_steps must be positive")
+        if self.optimizer != "Adam":
+            raise TrainingConfigurationError("the mechanics baseline requires Adam")
+        if not np.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise TrainingConfigurationError("learning_rate must be a positive finite value")
+        if self.schedule != "constant":
+            raise TrainingConfigurationError("the mechanics baseline requires a constant schedule")
+        if self.persistent_no_progress_limit <= 0:
+            raise TrainingConfigurationError("persistent_no_progress_limit must be positive")
+        if self.checkpoint_interval_steps <= 0:
+            raise TrainingConfigurationError("checkpoint_interval_steps must be positive")
+        if not self.device.strip():
+            raise TrainingConfigurationError("device must be non-empty")
+        if self.selection_policy != "final_checkpoint":
+            raise TrainingConfigurationError("the mechanics baseline evaluates the final checkpoint")
+        if self.preprocessing_config is not None:
+            if not isinstance(self.preprocessing_config, PreprocessConfig):
+                raise TrainingConfigurationError("preprocessing_config must be a PreprocessConfig")
+            if self.preprocessing_config.image_size != self.image_size:
+                raise TrainingConfigurationError(
+                    "preprocessing and model image sizes must agree"
+                )
+            if self.preprocessing_config.max_slices != self.max_slices:
+                raise TrainingConfigurationError(
+                    "preprocessing and packing max_slices must agree"
+                )
+            if self.preprocessing_config.max_series != self.max_series:
+                raise TrainingConfigurationError(
+                    "preprocessing and packing max_series must agree"
+                )
+
+    def model_config(self) -> ModelConfig:
+        return ModelConfig(
+            image_size=self.image_size,
+            channels=self.channels,
+            input_channels=self.input_channels,
+        )
+
+    def preprocess_config(self) -> PreprocessConfig:
+        if self.preprocessing_config is not None:
+            return self.preprocessing_config
+        return PreprocessConfig(
+            image_size=self.image_size,
+            max_slices=self.max_slices,
+            max_series=self.max_series,
+        )
+
+    def packing_config(self) -> PackingConfig:
+        return PackingConfig(max_slices=self.max_slices, max_series=self.max_series)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": TRAINING_SCHEMA_VERSION,
+            "model": {
+                "image_size": list(self.image_size),
+                "channels": list(self.channels),
+                "input_channels": self.input_channels,
+                "num_targets": NUM_TARGETS,
+            },
+            "packing": self.packing_config().to_dict(),
+            "preprocessing": self.preprocess_config().cache_config(),
+            "optimization": {
+                "batch_size": self.batch_size,
+                "successful_optimizer_steps": self.successful_optimizer_steps,
+                "optimizer": self.optimizer,
+                "learning_rate": self.learning_rate,
+                "schedule": self.schedule,
+            },
+            "seeds": {
+                "initialization": self.seed,
+                "batch_order": self.batch_order_seed,
+            },
+            "progress": {
+                "persistent_no_progress_limit": self.persistent_no_progress_limit,
+                "checkpoint_interval_steps": self.checkpoint_interval_steps,
+            },
+            "device": self.device,
+            "selection_policy": self.selection_policy,
+        }
+
+    def scientific_dict(self) -> dict[str, object]:
+        """Return fields whose changes require a new scientific run identity."""
+
+        payload = self.to_dict()
+        progress = payload.get("progress")
+        if isinstance(progress, dict):
+            progress = dict(progress)
+            progress.pop("checkpoint_interval_steps", None)
+            progress.pop("persistent_no_progress_limit", None)
+            payload["progress"] = progress
+        payload.pop("device", None)
+        return payload
+
+    @property
+    def config_fingerprint(self) -> str:
+        return _json_sha256(self.scientific_dict())
+
+
+@dataclass(frozen=True)
+class SupervisionProvenance:
+    """Provenance for one target vector admitted to mechanics training."""
+
+    source_kind: str = "reference"
+    source_id: str = "frozen-fold-manifest"
+    fold: int | None = None
+    held_out_excluded: bool = True
+    eligible_study_uids: tuple[str, ...] = ()
+    excluded_study_uids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.source_kind != "reference":
+            raise TrainingDataError("ticket 08 accepts reference supervision only")
+        if not self.source_id.strip():
+            raise TrainingDataError("supervision provenance requires a source identity")
+        if self.fold is not None and self.fold not in FOLD_IDS:
+            raise TrainingDataError(f"supervision fold must be one of {FOLD_IDS}")
+        if not self.held_out_excluded:
+            raise TrainingDataError("held-out studies must be excluded from supervision provenance")
+        if len(set(self.eligible_study_uids)) != len(self.eligible_study_uids):
+            raise TrainingDataError("eligible supervision studies must be unique")
+        if len(set(self.excluded_study_uids)) != len(self.excluded_study_uids):
+            raise TrainingDataError("excluded supervision studies must be unique")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "source_kind": self.source_kind,
+            "source_id": self.source_id,
+            "fold": self.fold,
+            "held_out_excluded": self.held_out_excluded,
+            "eligible_study_uids": list(self.eligible_study_uids),
+            "excluded_study_uids": list(self.excluded_study_uids),
+        }
+
+
+@dataclass(frozen=True)
+class TrainingExample:
+    """One fixed-shape packed study and its reference target entries."""
+
+    study_instance_uid: str
+    images: np.ndarray
+    slice_mask: np.ndarray
+    series_mask: np.ndarray
+    targets: np.ndarray
+    supervision_mask: np.ndarray
+    provenance: SupervisionProvenance = SupervisionProvenance()
+    rejected_series: tuple[SeriesFailure, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.study_instance_uid.strip():
+            raise TrainingDataError("training examples require a study identifier")
+        images = np.asarray(self.images)
+        slice_mask = np.asarray(self.slice_mask)
+        series_mask = np.asarray(self.series_mask)
+        targets = np.asarray(self.targets)
+        supervision_mask = np.asarray(self.supervision_mask)
+        if images.ndim != 5 or images.shape[2] != 1:
+            raise TrainingDataError(
+                "training images must have shape (series, slices, 1, height, width)"
+            )
+        if slice_mask.shape != images.shape[:2] or series_mask.shape != (images.shape[0],):
+            raise TrainingDataError("training image and mask shapes do not agree")
+        if targets.shape != (NUM_TARGETS,) or supervision_mask.shape != (NUM_TARGETS,):
+            raise TrainingDataError(f"training targets must have shape ({NUM_TARGETS},)")
+        if images.dtype.kind not in "fiu" or not np.isfinite(images).all():
+            raise TrainingDataError("training images must be finite numeric arrays")
+        if not np.asarray(slice_mask, dtype=bool).any() or not np.asarray(series_mask, dtype=bool).any():
+            raise TrainingDataError("training examples must contain at least one valid slice and series")
+        supervised = np.asarray(supervision_mask, dtype=bool)
+        if not np.isfinite(targets[supervised]).all():
+            raise TrainingDataError("supervised target entries must be finite")
+        if np.any((targets[supervised] < 0.0) | (targets[supervised] > 1.0)):
+            raise TrainingDataError("supervised target entries must be binary values")
+        if self.provenance.source_kind != "reference":
+            raise TrainingDataError("ticket 08 accepts reference supervision only")
+
+    @classmethod
+    def from_packed(
+        cls,
+        packed: PackedStudy,
+        targets: Sequence[float | int | None],
+        *,
+        provenance: SupervisionProvenance = SupervisionProvenance(),
+        rejected_series: Sequence[SeriesFailure] = (),
+    ) -> "TrainingExample":
+        if len(targets) != NUM_TARGETS:
+            raise TrainingDataError(f"targets must contain {NUM_TARGETS} entries")
+        target_array = np.asarray(
+            [0.0 if value is None else float(value) for value in targets],
+            dtype=np.float32,
+        )
+        mask = np.asarray([value is not None for value in targets], dtype=bool)
+        return cls(
+            study_instance_uid=packed.study_instance_uid,
+            images=np.asarray(packed.images, dtype=np.float32),
+            slice_mask=np.asarray(packed.slice_mask, dtype=bool),
+            series_mask=np.asarray(packed.series_mask, dtype=bool),
+            targets=target_array,
+            supervision_mask=mask,
+            provenance=provenance,
+            rejected_series=tuple(rejected_series),
+        )
+
+
+@dataclass(frozen=True)
+class CpuPreflightResult:
+    """Machine-readable result of the bounded CPU training preflight."""
+
+    passed: bool
+    checks: Mapping[str, bool]
+    environment: Mapping[str, object]
+    details: Mapping[str, object]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": PREFLIGHT_SCHEMA_VERSION,
+            "passed": self.passed,
+            "checks": dict(self.checks),
+            "environment": dict(self.environment),
+            "details": dict(self.details),
+        }
+
+
+@dataclass(frozen=True)
+class TrainingResult:
+    """Fixed-budget outcome and, when requested, held-out evaluation."""
+
+    model: HierarchicalStudyModel
+    config: TrainingConfig
+    successful_optimizer_steps: int
+    scheduler_steps: int
+    attempted_batches: int
+    skipped_batches: int
+    loss_history: tuple[float, ...]
+    final_checkpoint_path: Path | None = None
+    latest_checkpoint_path: Path | None = None
+    run_id: str | None = None
+    fold: int | None = None
+    evaluation: FoldEvaluation | None = None
+    predictions: Mapping[str, np.ndarray] = field(default_factory=dict)
+    training_study_uids: tuple[str, ...] = ()
+    held_out_study_uids: tuple[str, ...] = ()
+    data_fingerprint: str | None = None
+
+    @property
+    def final_loss(self) -> float | None:
+        return self.loss_history[-1] if self.loss_history else None
+
+    def to_public_dict(self) -> dict[str, object]:
+        evaluation: object = None
+        if self.evaluation is not None:
+            evaluation = self.evaluation.to_public_dict()
+        return {
+            "schema_version": TRAINING_SCHEMA_VERSION,
+            "status": "completed_fixed_budget_training",
+            "run_id": self.run_id,
+            "fold": self.fold,
+            "config_fingerprint": self.config.config_fingerprint,
+            "config": self.config.to_dict(),
+            "counts": {
+                "training_studies": len(self.training_study_uids),
+                "held_out_studies": len(self.held_out_study_uids),
+                "successful_optimizer_steps": self.successful_optimizer_steps,
+                "scheduler_steps": self.scheduler_steps,
+                "attempted_batches": self.attempted_batches,
+                "skipped_all_masked_batches": self.skipped_batches,
+                "supervised_entries_per_step": NUM_TARGETS,
+            },
+            "loss": {
+                "first": self.loss_history[0] if self.loss_history else None,
+                "final": self.final_loss,
+                "finite": bool(np.isfinite(self.loss_history).all()) if self.loss_history else False,
+            },
+            "checkpoint": {
+                "final_present": self.final_checkpoint_path is not None,
+                "latest_present": self.latest_checkpoint_path is not None,
+                "final_sha256": (
+                    checkpoint_sha256(self.final_checkpoint_path)
+                    if self.final_checkpoint_path is not None and self.final_checkpoint_path.exists()
+                    else None
+                ),
+            },
+            "evaluation": evaluation,
+            "reference_supervision_only": True,
+            "held_out_inputs_excluded_from_fitting": True,
+            "learned_normalization": False,
+        }
+
+    def to_private_dict(self) -> dict[str, object]:
+        payload = self.to_public_dict()
+        payload["training_study_uids"] = list(self.training_study_uids)
+        payload["held_out_study_uids"] = list(self.held_out_study_uids)
+        payload["data_fingerprint"] = self.data_fingerprint
+        payload["predictions"] = {
+            uid: np.asarray(scores, dtype=float).tolist() for uid, scores in self.predictions.items()
+        }
+        return payload
+
+
+def masked_bce_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    supervision_mask: torch.Tensor,
+) -> Optional[torch.Tensor]:
+    """Return BCE averaged over supervised entries, or ``None`` when empty."""
+
+    if logits.shape != targets.shape or logits.shape != supervision_mask.shape:
+        raise ValueError("logits, targets, and supervision_mask must have identical shapes")
+    if logits.ndim != 2 or logits.shape[1] != NUM_TARGETS:
+        raise ValueError(f"training tensors must have shape (batch, {NUM_TARGETS})")
+    mask = supervision_mask.to(dtype=torch.bool, device=logits.device)
+    if not bool(mask.any()):
+        return None
+    selected_logits = logits[mask]
+    selected_targets = targets.to(dtype=logits.dtype, device=logits.device)[mask]
+    return F.binary_cross_entropy_with_logits(selected_logits, selected_targets, reduction="mean")
+
+
+masked_binary_cross_entropy_with_logits = masked_bce_loss
+
+
+def seed_everything(seed: int) -> None:
+    """Set every local RNG used by the mechanics run."""
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def fingerprint_training_examples(examples: Sequence[TrainingExample]) -> str:
+    """Fingerprint packed pixels, masks, reference labels, and provenance."""
+
+    rows: list[dict[str, object]] = []
+    for example in sorted(examples, key=lambda item: item.study_instance_uid):
+        rows.append(
+            {
+                "study_instance_uid": example.study_instance_uid,
+                "images": _array_sha256(example.images),
+                "slice_mask": _array_sha256(np.asarray(example.slice_mask, dtype=np.uint8)),
+                "series_mask": _array_sha256(np.asarray(example.series_mask, dtype=np.uint8)),
+                "targets": _array_sha256(np.asarray(example.targets, dtype=np.float32)),
+                "supervision_mask": _array_sha256(
+                    np.asarray(example.supervision_mask, dtype=np.uint8)
+                ),
+                "provenance": example.provenance.to_dict(),
+            }
+        )
+    return _json_sha256(rows)
+
+
+def _study_mapping(studies: Mapping[str, StudyRecord] | Sequence[StudyRecord]) -> dict[str, StudyRecord]:
+    if isinstance(studies, Mapping):
+        values = dict(studies)
+    else:
+        values = {}
+        for study in studies:
+            if study.study_instance_uid in values:
+                raise TrainingDataError(f"duplicate study input {study.study_instance_uid}")
+            values[study.study_instance_uid] = study
+    if any(key != study.study_instance_uid for key, study in values.items()):
+        raise TrainingDataError("study mapping keys must match StudyInstanceUID values")
+    return values
+
+
+def build_fold_examples(
+    studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
+    fold_manifest: FoldManifest,
+    fold: int,
+    *,
+    partition: str = "training",
+    preprocess_config: PreprocessConfig = PreprocessConfig(),
+    packing_config: PackingConfig | None = None,
+    series_cache: SeriesCache | None = None,
+    allow_partial_inputs: bool = False,
+) -> tuple[TrainingExample, ...]:
+    """Prepare only gold studies from one declared training or held-out partition.
+
+    Preprocessing is fixed and series-local; no statistics are fitted from the
+    selected studies.  Report-only memberships and arbitrary label mappings
+    cannot enter this ticket's training path.
+    """
+
+    if fold not in FOLD_IDS:
+        raise TrainingDataError(f"fold must be one of {FOLD_IDS}")
+    if partition not in {"training", "held_out"}:
+        raise TrainingDataError("partition must be 'training' or 'held_out'")
+    source = _study_mapping(studies)
+    memberships = tuple(
+        item
+        for item in fold_manifest.gold_memberships
+        if (item.fold != fold if partition == "training" else item.fold == fold)
+    )
+    if not memberships:
+        raise TrainingDataError(f"fold {fold} has no gold studies in the {partition} partition")
+    selected_uids = tuple(sorted(item.study_instance_uid for item in memberships))
+    missing = sorted(set(selected_uids) - set(source))
+    if missing:
+        raise TrainingDataError(f"{partition} study inputs are incomplete; missing {missing[:3]}")
+    if partition == "training":
+        fold_manifest.assert_adaptation_input_is_training_only(fold, selected_uids)
+    membership_by_uid = {item.study_instance_uid: item for item in memberships}
+    held_out_uids = tuple(sorted(fold_manifest.held_out_study_uids(fold)))
+    provenance = SupervisionProvenance(
+        source_kind="reference",
+        source_id=f"fold-manifest:{fold_manifest.manifest_checksum}",
+        fold=fold,
+        held_out_excluded=True,
+        eligible_study_uids=selected_uids,
+        excluded_study_uids=held_out_uids,
+    )
+    packing = packing_config or preprocess_config.packing_config()
+    examples: list[TrainingExample] = []
+    for study_uid in selected_uids:
+        study = source[study_uid]
+        prepared = (
+            series_cache.prepare_study(study, preprocess_config)
+            if series_cache is not None
+            else prepare_study(study, preprocess_config)
+        )
+        if prepared.failures and not allow_partial_inputs:
+            details = "; ".join(
+                f"{failure.series_instance_uid}: {failure.reason}" for failure in prepared.failures[:3]
+            )
+            raise TrainingDataError(
+                f"fold {fold} {partition} study {study_uid} has rejected input series: {details}"
+            )
+        if not prepared.series:
+            raise TrainingDataError(
+                f"fold {fold} {partition} study {study_uid} has no usable image series"
+            )
+        packed = pack_study(study, prepared.series, preprocess_config, packing_config=packing)
+        examples.append(
+            TrainingExample.from_packed(
+                packed,
+                membership_by_uid[study_uid].reference_labels,
+                provenance=provenance,
+                rejected_series=prepared.failures,
+            )
+        )
+    return tuple(examples)
+
+
+def build_fold_training_examples(
+    studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
+    fold_manifest: FoldManifest,
+    fold: int,
+    *,
+    preprocess_config: PreprocessConfig = PreprocessConfig(),
+    packing_config: PackingConfig | None = None,
+    series_cache: SeriesCache | None = None,
+    allow_partial_inputs: bool = False,
+) -> tuple[TrainingExample, ...]:
+    """Named convenience wrapper for the fitting partition."""
+
+    return build_fold_examples(
+        studies,
+        fold_manifest,
+        fold,
+        partition="training",
+        preprocess_config=preprocess_config,
+        packing_config=packing_config,
+        series_cache=series_cache,
+        allow_partial_inputs=allow_partial_inputs,
+    )
+
+
+def build_fold_held_out_examples(
+    studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
+    fold_manifest: FoldManifest,
+    fold: int,
+    *,
+    preprocess_config: PreprocessConfig = PreprocessConfig(),
+    packing_config: PackingConfig | None = None,
+    series_cache: SeriesCache | None = None,
+    allow_partial_inputs: bool = False,
+) -> tuple[TrainingExample, ...]:
+    """Named convenience wrapper for final-checkpoint evaluation inputs."""
+
+    return build_fold_examples(
+        studies,
+        fold_manifest,
+        fold,
+        partition="held_out",
+        preprocess_config=preprocess_config,
+        packing_config=packing_config,
+        series_cache=series_cache,
+        allow_partial_inputs=allow_partial_inputs,
+    )
+
+
+def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConfig) -> None:
+    if not examples:
+        raise TrainingDataError("at least one training example is required")
+    expected_shape = (
+        config.max_series,
+        config.max_slices,
+        config.input_channels,
+        config.image_size[0],
+        config.image_size[1],
+    )
+    seen: set[str] = set()
+    for example in examples:
+        if example.study_instance_uid in seen:
+            raise TrainingDataError(f"duplicate training study {example.study_instance_uid}")
+        seen.add(example.study_instance_uid)
+        if tuple(example.images.shape) != expected_shape:
+            raise TrainingDataError(
+                f"study {example.study_instance_uid} has shape {example.images.shape}; expected {expected_shape}"
+            )
+        if example.provenance.source_kind != "reference":
+            raise TrainingDataError("ticket 08 accepts reference supervision only")
+        if not example.provenance.held_out_excluded:
+            raise TrainingDataError("training provenance does not exclude held-out inputs")
+
+
+def _rng_state() -> dict[str, object]:
+    state: dict[str, object] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["torch_cuda"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def atomic_torch_save(
+    path: str | Path,
+    payload: object,
+    *,
+    overwrite: bool = False,
+) -> Path:
+    """Write a torch artifact atomically, leaving an old complete file intact on failure."""
+
+    destination = Path(path)
+    if not overwrite and (destination.exists() or destination.is_symlink()):
+        raise FileExistsError(f"refusing to overwrite protected checkpoint {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.partial-",
+        dir=destination.parent,
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            torch.save(payload, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, destination)
+        try:
+            directory_fd = os.open(destination.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            pass
+    except BaseException as exc:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        if isinstance(exc, (OSError, RuntimeError, TypeError, ValueError)):
+            raise CheckpointError(f"could not publish checkpoint {destination}") from exc
+        raise
+    return destination
+
+
+def checkpoint_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def save_training_checkpoint(
+    path: str | Path,
+    model: HierarchicalStudyModel,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    config: TrainingConfig,
+    *,
+    successful_optimizer_steps: int,
+    attempted_batches: int,
+    skipped_batches: int,
+    loss_history: Sequence[float],
+    fold: int | None = None,
+    run_id: str | None = None,
+    identity: Mapping[str, object] | None = None,
+    epoch: int | None = None,
+    global_step: int | None = None,
+    overwrite: bool = True,
+) -> Path:
+    """Persist complete model/optimizer/scheduler/progress state atomically."""
+
+    if successful_optimizer_steps < 0 or attempted_batches < successful_optimizer_steps:
+        raise CheckpointError("checkpoint progress counters are inconsistent")
+    if fold is not None and fold not in FOLD_IDS:
+        raise CheckpointError(f"checkpoint fold must be one of {FOLD_IDS}")
+    if not np.isfinite(np.asarray(tuple(loss_history), dtype=np.float64)).all():
+        raise CheckpointError("checkpoint loss history contains non-finite values")
+    payload: dict[str, object] = {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "config": config.to_dict(),
+        "config_fingerprint": config.config_fingerprint,
+        "identity": dict(identity or {}),
+        "fold": fold,
+        "run_id": run_id,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": scheduler.state_dict(),
+        "progress": {
+            "epoch": 0 if epoch is None else epoch,
+            "global_step": successful_optimizer_steps if global_step is None else global_step,
+            "successful_optimizer_steps": successful_optimizer_steps,
+            "scheduler_steps": successful_optimizer_steps,
+            "attempted_batches": attempted_batches,
+            "skipped_all_masked_batches": skipped_batches,
+            "loss_history": list(loss_history),
+        },
+        "rng_state": _rng_state(),
+        "selection_policy": config.selection_policy,
+    }
+    return atomic_torch_save(path, payload, overwrite=overwrite)
+
+
+def load_training_checkpoint(
+    path: str | Path,
+    *,
+    model: HierarchicalStudyModel | None = None,
+    optimizer: torch.optim.Optimizer | None = None,
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
+    expected_config: TrainingConfig | None = None,
+    expected_fold: int | None = None,
+) -> dict[str, object]:
+    """Load and validate a complete checkpoint, optionally restoring modules."""
+
+    source = Path(path)
+    try:
+        map_location: str | torch.device = "cpu"
+        if model is not None:
+            map_location = next(model.parameters()).device
+        payload = torch.load(source, map_location=map_location, weights_only=False)
+    except (OSError, RuntimeError, EOFError, ValueError, pickle.UnpicklingError) as exc:
+        raise CheckpointError(f"could not load checkpoint {source}") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
+        raise CheckpointError("checkpoint schema is unsupported")
+    checkpoint_config = payload.get("config")
+    checkpoint_fingerprint = payload.get("config_fingerprint")
+    if not isinstance(checkpoint_config, dict) or not isinstance(checkpoint_fingerprint, str):
+        raise CheckpointError("checkpoint configuration metadata is incomplete")
+    if expected_config is not None and checkpoint_fingerprint != expected_config.config_fingerprint:
+        raise TrainingConfigurationError(
+            "checkpoint scientific configuration does not match the requested run"
+        )
+    checkpoint_fold = payload.get("fold")
+    if expected_fold is not None and checkpoint_fold != expected_fold:
+        raise TrainingConfigurationError("checkpoint fold does not match the requested fold")
+    model_state = payload.get("model_state_dict")
+    optimizer_state = payload.get("optimizer_state_dict")
+    scheduler_state = payload.get("scheduler_state_dict")
+    if not isinstance(model_state, dict) or not isinstance(optimizer_state, dict) or not isinstance(
+        scheduler_state, dict
+    ):
+        raise CheckpointError("checkpoint is missing complete training state")
+    if model is not None:
+        try:
+            model.load_state_dict(model_state)
+        except (RuntimeError, ValueError) as exc:
+            raise TrainingConfigurationError("checkpoint model state is incompatible") from exc
+    if optimizer is not None:
+        optimizer.load_state_dict(optimizer_state)
+    if scheduler is not None:
+        scheduler.load_state_dict(scheduler_state)
+    if not isinstance(payload.get("rng_state"), dict):
+        raise CheckpointError("checkpoint is missing RNG state")
+    progress = payload.get("progress")
+    if not isinstance(progress, dict):
+        raise CheckpointError("checkpoint is missing progress state")
+    return payload
+
+
+def _finite_gradients(model: nn.Module) -> bool:
+    found = False
+    for parameter in model.parameters():
+        if parameter.grad is None:
+            continue
+        found = True
+        if not torch.isfinite(parameter.grad).all():
+            return False
+    return found
+
+
+def _default_run_id(identity: Mapping[str, object], config: TrainingConfig) -> str:
+    return _json_sha256({"config": config.scientific_dict(), "identity": dict(identity)})
+
+
+def _checkpoint_identity(
+    config: TrainingConfig,
+    examples: Sequence[TrainingExample],
+    *,
+    source_version: str,
+    source_fingerprint: str | None,
+    cache_fingerprint: str | None,
+    fold_manifest_checksum: str | None,
+    integration_manifest_checksum: str | None,
+    fold: int | None,
+) -> dict[str, object]:
+    return {
+        "training_schema_version": TRAINING_SCHEMA_VERSION,
+        "model_source": "local:HierarchicalStudyModel;weights=deterministic-initialization",
+        "source_version": source_version,
+        "source_fingerprint": source_fingerprint,
+        "data_fingerprint": fingerprint_training_examples(examples),
+        "cache_fingerprint": cache_fingerprint,
+        "fold_manifest_checksum": fold_manifest_checksum,
+        "integration_manifest_checksum": integration_manifest_checksum,
+        "fold": fold,
+        "label_source": "reference-only:frozen-fold-manifest",
+        "preprocessing": config.preprocess_config().cache_config(),
+        "packing": config.packing_config().to_dict(),
+        "configuration_fingerprint": config.config_fingerprint,
+        "seeds": {"initialization": config.seed, "batch_order": config.batch_order_seed},
+    }
+
+
+def _batch_indices(
+    example_count: int,
+    batch_size: int,
+    attempted_batch: int,
+    seed: int,
+) -> tuple[int, ...]:
+    """Return a reproducible shuffled batch without a stateful sampler."""
+
+    batches_per_cycle = max(1, (example_count + batch_size - 1) // batch_size)
+    cycle, batch_in_cycle = divmod(attempted_batch, batches_per_cycle)
+    order = list(range(example_count))
+    random.Random(seed + cycle).shuffle(order)
+    start = batch_in_cycle * batch_size
+    return tuple(order[(start + offset) % example_count] for offset in range(batch_size))
+
+
+def train_fixed_budget(
+    examples: Sequence[TrainingExample],
+    config: TrainingConfig = TrainingConfig(),
+    *,
+    model: HierarchicalStudyModel | None = None,
+    artifact_dir: str | Path | None = None,
+    fold: int | None = None,
+    run_id: str | None = None,
+    identity: Mapping[str, object] | None = None,
+) -> TrainingResult:
+    """Run exactly ``successful_optimizer_steps`` supervised Adam steps.
+
+    Batches are deterministic and cyclic.  A batch without any supervised
+    target entries is recorded and skipped; it never calls either
+    ``optimizer.step`` or ``scheduler.step``.  A configured consecutive skip
+    limit turns persistent no-progress into an explicit failure.
+    """
+
+    examples_tuple = tuple(examples)
+    _validate_examples(examples_tuple, config)
+    seed_everything(config.seed)
+    device = torch.device(config.device)
+    if model is None:
+        model = HierarchicalStudyModel(config.model_config())
+    elif model.config != config.model_config():
+        raise TrainingConfigurationError("provided model configuration does not match TrainingConfig")
+    model = model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+
+    output_dir = Path(artifact_dir) if artifact_dir is not None else None
+    latest_path: Path | None = None
+    final_path: Path | None = None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_dir = output_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        latest_path = checkpoint_dir / "latest.pt"
+        final_path = checkpoint_dir / "final.pt"
+    identity_payload = dict(identity or {})
+    if not identity_payload:
+        identity_payload = {
+            "data_fingerprint": fingerprint_training_examples(examples_tuple),
+            "label_source": "reference-only",
+            "fold": fold,
+        }
+    effective_run_id = run_id or _default_run_id(identity_payload, config)
+    successful_steps = 0
+    scheduler_steps = 0
+    attempted_batches = 0
+    skipped_batches = 0
+    consecutive_no_progress = 0
+    loss_history: list[float] = []
+    log_handle: Any = None
+    if output_dir is not None:
+        log_handle = (output_dir / "training.log").open("a", encoding="utf-8")
+        log_handle.write(
+            json.dumps(
+                {
+                    "event": "training_started",
+                    "run_id": effective_run_id,
+                    "fold": fold,
+                    "successful_optimizer_steps": successful_steps,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        log_handle.flush()
+
+    def publish_checkpoint(path: Path, *, overwrite: bool) -> None:
+        save_training_checkpoint(
+            path,
+            model,
+            optimizer,
+            scheduler,
+            config,
+            successful_optimizer_steps=successful_steps,
+            attempted_batches=attempted_batches,
+            skipped_batches=skipped_batches,
+            loss_history=loss_history,
+            fold=fold,
+            run_id=effective_run_id,
+            identity=identity_payload,
+            epoch=attempted_batches
+            // max(1, (len(examples_tuple) + config.batch_size - 1) // config.batch_size),
+            global_step=successful_steps,
+            overwrite=overwrite,
+        )
+
+    try:
+        while successful_steps < config.successful_optimizer_steps:
+            batch_examples = tuple(
+                examples_tuple[index]
+                for index in _batch_indices(
+                    len(examples_tuple),
+                    config.batch_size,
+                    attempted_batches,
+                    config.batch_order_seed,
+                )
+            )
+            attempted_batches += 1
+            batch_mask = np.stack([example.supervision_mask for example in batch_examples])
+            if not bool(batch_mask.any()):
+                skipped_batches += 1
+                consecutive_no_progress += 1
+                if log_handle is not None:
+                    log_handle.write(
+                        json.dumps(
+                            {
+                                "event": "batch_skipped_no_supervision",
+                                "attempted_batch": attempted_batches,
+                                "skipped_batches": skipped_batches,
+                            },
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    )
+                    log_handle.flush()
+                if consecutive_no_progress >= config.persistent_no_progress_limit:
+                    raise TrainingProgressError(
+                        "no supervised progress after "
+                        f"{consecutive_no_progress} consecutive all-masked batches"
+                    )
+                continue
+
+            images = torch.from_numpy(np.stack([example.images for example in batch_examples])).to(device)
+            slice_mask = torch.from_numpy(
+                np.stack([example.slice_mask for example in batch_examples])
+            ).to(device)
+            series_mask = torch.from_numpy(
+                np.stack([example.series_mask for example in batch_examples])
+            ).to(device)
+            targets = torch.from_numpy(np.stack([example.targets for example in batch_examples])).to(device)
+            supervision_mask = torch.from_numpy(batch_mask).to(device)
+            optimizer.zero_grad(set_to_none=True)
+            logits = model(images, slice_mask, series_mask)
+            loss = masked_bce_loss(logits, targets, supervision_mask)
+            if loss is None:
+                skipped_batches += 1
+                consecutive_no_progress += 1
+                continue
+            if not bool(torch.isfinite(loss)):
+                raise TrainingNumericsError("training loss is non-finite")
+            loss.backward()
+            if not _finite_gradients(model):
+                raise TrainingNumericsError("training gradients are missing or non-finite")
+            optimizer.step()
+            scheduler.step()
+            successful_steps += 1
+            scheduler_steps += 1
+            consecutive_no_progress = 0
+            loss_value = float(loss.detach().cpu().item())
+            if not np.isfinite(loss_value):
+                raise TrainingNumericsError("recorded training loss is non-finite")
+            loss_history.append(loss_value)
+            if log_handle is not None:
+                log_handle.write(
+                    json.dumps(
+                        {
+                            "event": "optimizer_step",
+                            "attempted_batch": attempted_batches,
+                            "successful_optimizer_steps": successful_steps,
+                            "loss": loss_value,
+                            "learning_rate": float(optimizer.param_groups[0]["lr"]),
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+                log_handle.flush()
+            if latest_path is not None and (
+                successful_steps % config.checkpoint_interval_steps == 0
+                or successful_steps == config.successful_optimizer_steps
+            ):
+                publish_checkpoint(latest_path, overwrite=True)
+        if final_path is not None:
+            publish_checkpoint(final_path, overwrite=False)
+    finally:
+        if log_handle is not None:
+            log_handle.write(
+                json.dumps(
+                    {
+                        "event": "training_finished",
+                        "successful_optimizer_steps": successful_steps,
+                        "attempted_batches": attempted_batches,
+                        "skipped_batches": skipped_batches,
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            log_handle.close()
+    return TrainingResult(
+        model=model,
+        config=config,
+        successful_optimizer_steps=successful_steps,
+        scheduler_steps=scheduler_steps,
+        attempted_batches=attempted_batches,
+        skipped_batches=skipped_batches,
+        loss_history=tuple(loss_history),
+        final_checkpoint_path=final_path,
+        latest_checkpoint_path=latest_path,
+        run_id=effective_run_id,
+        fold=fold,
+        data_fingerprint=str(identity_payload.get("data_fingerprint"))
+        if identity_payload.get("data_fingerprint") is not None
+        else None,
+    )
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
+
+
+def _code_revision() -> str | None:
+    configured = os.environ.get("RSNA_CODE_REVISION")
+    if configured and configured.strip():
+        return configured.strip()
+    repository = Path(__file__).resolve().parents[2]
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repository,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = completed.stdout.strip()
+    return revision if completed.returncode == 0 and revision else None
+
+
+def collect_environment_record() -> dict[str, object]:
+    """Capture interpreter, package, OS, and Slurm attempt identity."""
+
+    record: dict[str, object] = {
+        "python_executable": sys.executable,
+        "python_version": sys.version,
+        "python_prefix": sys.prefix,
+        "python_base_prefix": sys.base_prefix,
+        "python_isolated_venv": sys.prefix != sys.base_prefix,
+        "platform": platform.platform(),
+        "hostname": socket.gethostname(),
+        "numpy_version": np.__version__,
+        "torch_version": torch.__version__,
+        "torch_num_threads": torch.get_num_threads(),
+        "pydicom_version": _package_version("pydicom"),
+        "pytest_version": _package_version("pytest"),
+        "mypy_version": _package_version("mypy"),
+        "code_revision": _code_revision(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "slurm_job_name": os.environ.get("SLURM_JOB_NAME"),
+        "slurm_partition": os.environ.get("SLURM_JOB_PARTITION"),
+        "slurm_node_list": os.environ.get("SLURM_JOB_NODELIST"),
+        "slurm_cpus_per_task": os.environ.get("SLURM_CPUS_PER_TASK"),
+        "slurm_mem_per_node": os.environ.get("SLURM_MEM_PER_NODE"),
+        "slurm_mem_per_cpu": os.environ.get("SLURM_MEM_PER_CPU"),
+        "slurm_submit_dir": os.environ.get("SLURM_SUBMIT_DIR"),
+    }
+    record["environment_fingerprint"] = _json_sha256(record)
+    return record
+
+
+def _inference_import_check() -> tuple[bool, str]:
+    """Check the inference module in a fresh interpreter for training imports."""
+
+    code = (
+        "import sys; from rsna_knee.inference import InferenceEngine; "
+        "raise SystemExit(1 if 'rsna_knee.training' in sys.modules else 0)"
+    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", code],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    if completed.returncode != 0:
+        return False, completed.stderr.strip() or "inference import loaded training orchestration"
+    return True, "inference import completed without rsna_knee.training"
+
+
+def run_cpu_preflight(
+    *,
+    output_path: str | Path | None = None,
+    require_isolated_python: bool = True,
+    require_slurm: bool = False,
+) -> CpuPreflightResult:
+    """Run the finite-loss/checkpoint/import checks that gate real training."""
+
+    requested_threads = os.environ.get("SLURM_CPUS_PER_TASK", "1")
+    try:
+        thread_count = max(1, min(16, int(requested_threads)))
+    except ValueError:
+        thread_count = 1
+    torch.set_num_threads(thread_count)
+    environment = collect_environment_record()
+    checks: dict[str, bool] = {}
+    details: dict[str, object] = {}
+    checks["python_311"] = sys.version_info[:2] == (3, 11)
+    checks["user_environment_python"] = bool(environment["python_isolated_venv"])
+    if not require_isolated_python:
+        checks["user_environment_python"] = True
+    checks["cluster1_cpu_slurm"] = (
+        not require_slurm
+        or (bool(environment["slurm_job_id"]) and environment["slurm_partition"] == "cluster1-cpu")
+    )
+    checks["core_dependencies_import"] = False
+    checks["known_roc_auc"] = False
+    checks["finite_model_loss_and_gradients"] = False
+    checks["checkpoint_save_reload"] = False
+    checks["inference_import_isolated"] = False
+    try:
+        import pydicom  # noqa: F401
+
+        checks["core_dependencies_import"] = all(
+            item is not None
+            for item in (
+                environment["numpy_version"],
+                environment["torch_version"],
+                environment["pydicom_version"],
+            )
+        )
+        from .evaluation import roc_auc_score
+
+        known = (
+            roc_auc_score((0, 1), (0.1, 0.9)) == 1.0
+            and roc_auc_score((0, 1), (0.9, 0.1)) == 0.0
+            and roc_auc_score((0, 1), (0.5, 0.5)) == 0.5
+        )
+        checks["known_roc_auc"] = known
+        tiny_model = HierarchicalStudyModel(ModelConfig(image_size=(16, 16), channels=(2, 4, 8)))
+        tiny_optimizer = torch.optim.Adam(tiny_model.parameters(), lr=0.001)
+        tiny_scheduler = torch.optim.lr_scheduler.LambdaLR(tiny_optimizer, lr_lambda=lambda _: 1.0)
+        tiny_images = torch.rand((2, 1, 1, 1, 16, 16))
+        tiny_slice_mask = torch.ones((2, 1, 1), dtype=torch.bool)
+        tiny_series_mask = torch.ones((2, 1), dtype=torch.bool)
+        tiny_targets = torch.zeros((2, NUM_TARGETS))
+        tiny_targets[:, 0] = 1.0
+        tiny_logits = tiny_model(tiny_images, tiny_slice_mask, tiny_series_mask)
+        tiny_loss = masked_bce_loss(
+            tiny_logits,
+            tiny_targets,
+            torch.ones_like(tiny_targets, dtype=torch.bool),
+        )
+        if tiny_loss is not None and bool(torch.isfinite(tiny_loss)):
+            tiny_loss.backward()
+            checks["finite_model_loss_and_gradients"] = _finite_gradients(tiny_model)
+        with tempfile.TemporaryDirectory(prefix="rsna-ticket08-preflight-") as temporary:
+            checkpoint = Path(temporary) / "preflight.pt"
+            preflight_config = TrainingConfig(
+                image_size=(16, 16),
+                channels=(2, 4, 8),
+                max_slices=1,
+                max_series=1,
+                successful_optimizer_steps=1,
+            )
+            save_training_checkpoint(
+                checkpoint,
+                tiny_model,
+                tiny_optimizer,
+                tiny_scheduler,
+                preflight_config,
+                successful_optimizer_steps=0,
+                attempted_batches=0,
+                skipped_batches=0,
+                loss_history=(),
+                overwrite=False,
+            )
+            reloaded = HierarchicalStudyModel(ModelConfig(image_size=(16, 16), channels=(2, 4, 8)))
+            loaded = load_training_checkpoint(checkpoint, model=reloaded)
+            checks["checkpoint_save_reload"] = isinstance(loaded.get("model_state_dict"), dict)
+        isolated, message = _inference_import_check()
+        checks["inference_import_isolated"] = isolated
+        details["inference_import"] = message
+    except (ImportError, OSError, RuntimeError, TypeError, ValueError, CheckpointError) as exc:
+        details["failure"] = str(exc)
+    details["required_isolated_python"] = require_isolated_python
+    details["required_slurm"] = require_slurm
+    passed = all(checks.values())
+    result = CpuPreflightResult(passed=passed, checks=checks, environment=environment, details=details)
+    if output_path is not None:
+        atomic_json_write(output_path, result.to_dict())
+    return result
+
+
+def require_cpu_preflight(
+    result: CpuPreflightResult,
+    *,
+    require_slurm: bool = True,
+    require_isolated_python: bool = True,
+) -> None:
+    """Gate real training on a complete preflight result."""
+
+    required_checks = {
+        "python_311",
+        "user_environment_python",
+        "cluster1_cpu_slurm",
+        "core_dependencies_import",
+        "known_roc_auc",
+        "finite_model_loss_and_gradients",
+        "checkpoint_save_reload",
+        "inference_import_isolated",
+    }
+    failed = sorted(
+        name for name in required_checks if result.checks.get(name) is not True
+    )
+    if require_isolated_python and result.details.get("required_isolated_python") is not True:
+        failed.append("required_isolated_python")
+    if require_slurm and result.details.get("required_slurm") is not True:
+        failed.append("required_slurm")
+    if any(value is not True for value in result.checks.values()):
+        failed.extend(
+            name for name, passed in result.checks.items() if passed is not True and name not in failed
+        )
+    if not result.passed or failed:
+        raise PreflightError(f"CPU preflight has not passed: {', '.join(failed)}")
+
+
+def _public_run_environment() -> dict[str, object]:
+    environment = collect_environment_record()
+    return {
+        key: value
+        for key, value in environment.items()
+        if key
+        not in {
+            "python_executable",
+            "python_prefix",
+            "python_base_prefix",
+            "hostname",
+            "slurm_submit_dir",
+        }
+    }
+
+
+def train_one_fold(
+    studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
+    fold_manifest: FoldManifest,
+    fold: int,
+    output_dir: str | Path,
+    *,
+    config: TrainingConfig = TrainingConfig(),
+    source_version: str = DEFAULT_SOURCE_VERSION,
+    source_fingerprint: str | None = None,
+    cache_fingerprint: str | None = None,
+    integration_manifest_checksum: str | None = None,
+    series_cache: SeriesCache | None = None,
+    preprocess_config: PreprocessConfig | None = None,
+    packing_config: PackingConfig | None = None,
+    preflight: CpuPreflightResult | None = None,
+    require_preflight: bool = True,
+    allow_local_smoke: bool = False,
+    device: str | torch.device | None = None,
+) -> TrainingResult:
+    """Train the reference-only partition and evaluate the reloaded final checkpoint."""
+
+    if fold not in FOLD_IDS:
+        raise TrainingDataError(f"fold must be one of {FOLD_IDS}")
+    if not source_version.strip():
+        raise TrainingConfigurationError("source_version must be non-empty")
+    if require_preflight and not (source_fingerprint or "").strip():
+        raise TrainingConfigurationError(
+            "real training requires a checksum-backed source fingerprint"
+        )
+    if require_preflight and not (integration_manifest_checksum or "").strip():
+        raise TrainingConfigurationError(
+            "real training requires the checksum of its integration manifest"
+        )
+    if not require_preflight and not (
+        allow_local_smoke and source_version.startswith("synthetic-")
+    ):
+        raise PreflightError(
+            "unpreflighted fold training is limited to an explicit synthetic local smoke run"
+        )
+    if preprocess_config is not None:
+        if config.preprocessing_config is not None and config.preprocessing_config != preprocess_config:
+            raise TrainingConfigurationError(
+                "the supplied preprocessing policy conflicts with TrainingConfig"
+            )
+        config = replace(config, preprocessing_config=preprocess_config)
+    if packing_config is not None and packing_config != config.packing_config():
+        raise TrainingConfigurationError(
+            "the supplied packing policy conflicts with TrainingConfig"
+        )
+    if device is not None and str(device) != config.device:
+        config = replace(config, device=str(device))
+    if config.device != "cpu" and require_preflight:
+        raise TrainingConfigurationError(
+            "ticket 08 real training is CPU-gated; GPU runs need a separate approval"
+        )
+    if require_preflight:
+        if preflight is None:
+            raise PreflightError("a passed CPU preflight result is required before real training")
+        require_cpu_preflight(
+            preflight,
+            require_slurm=not allow_local_smoke,
+            require_isolated_python=not allow_local_smoke,
+        )
+        if not allow_local_smoke and preflight.details.get("required_slurm") is not True:
+            raise PreflightError(
+                "real training requires a CPU preflight executed with the Slurm gate enabled"
+            )
+    training_examples = build_fold_training_examples(
+        studies,
+        fold_manifest,
+        fold,
+        preprocess_config=config.preprocess_config(),
+        packing_config=config.packing_config(),
+        series_cache=series_cache,
+    )
+    held_out_examples = build_fold_held_out_examples(
+        studies,
+        fold_manifest,
+        fold,
+        preprocess_config=config.preprocess_config(),
+        packing_config=config.packing_config(),
+        series_cache=series_cache,
+    )
+    held_out_uids = tuple(example.study_instance_uid for example in held_out_examples)
+    training_uids = tuple(example.study_instance_uid for example in training_examples)
+    if set(training_uids).intersection(held_out_uids):
+        raise TrainingDataError("training and held-out study partitions overlap")
+    identity = _checkpoint_identity(
+        config,
+        training_examples,
+        source_version=source_version,
+        source_fingerprint=source_fingerprint,
+        cache_fingerprint=(
+            cache_fingerprint
+            or (
+                _json_sha256({"complete_keys": list(series_cache.list_complete_keys())})
+                if series_cache is not None
+                else "not-used"
+            )
+        ),
+        fold_manifest_checksum=fold_manifest.manifest_checksum,
+        integration_manifest_checksum=integration_manifest_checksum,
+        fold=fold,
+    )
+    identity["held_out_data_fingerprint"] = fingerprint_training_examples(held_out_examples)
+    identity["held_out_inputs_excluded_from_fitting"] = True
+    identity["learned_normalization_fit_studies"] = []
+    run_id = _default_run_id(identity, config)
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    if any(destination.iterdir()):
+        raise FileExistsError(f"refusing to overwrite existing experiment directory {destination}")
+    model_config = config.model_config()
+    atomic_json_write(
+        destination / "configuration.json",
+        {
+            "schema_version": TRAINING_SCHEMA_VERSION,
+            "run_id": run_id,
+            "fold": fold,
+            "config": config.to_dict(),
+            "scientific_configuration_fingerprint": config.config_fingerprint,
+            "identity": identity,
+            "environment": collect_environment_record(),
+            "resources": {
+                "requested_partition": "cluster1-cpu",
+                "requested_nodes": 1,
+                "requested_cpus": 16,
+                "requested_memory_gb": 64,
+                "requested_wall_time_hours": 6,
+                "exclusive": False,
+                "slurm_attempt_id": os.environ.get("SLURM_JOB_ID"),
+            },
+            "supervision": {
+                "kind": "reference",
+                "fold_manifest_checksum": fold_manifest.manifest_checksum,
+                "training_studies": list(training_uids),
+                "held_out_studies": list(held_out_uids),
+                "held_out_inputs_excluded": True,
+                "reports_used": False,
+            },
+            "inference_configuration": {
+                "model": {
+                    "image_size": list(model_config.image_size),
+                    "channels": list(model_config.channels),
+                    "input_channels": model_config.input_channels,
+                    "num_targets": model_config.num_targets,
+                },
+                "preprocessing": config.preprocess_config().cache_config(),
+                "packing": config.packing_config().to_dict(),
+                "checkpoint_selection": "final_checkpoint",
+            },
+            "preflight": preflight.to_dict() if preflight is not None else None,
+        },
+    )
+    result = train_fixed_budget(
+        training_examples,
+        config,
+        artifact_dir=destination,
+        fold=fold,
+        run_id=run_id,
+        identity=identity,
+    )
+    if result.final_checkpoint_path is None:
+        raise CheckpointError("fixed-budget run did not produce a final checkpoint")
+    load_training_checkpoint(
+        result.final_checkpoint_path,
+        model=result.model,
+        expected_config=config,
+        expected_fold=fold,
+    )
+    from .evaluation import evaluate_fold_predictions, predict_training_examples
+
+    predictions = predict_training_examples(result.model, held_out_examples, device=config.device)
+    evaluation = evaluate_fold_predictions(
+        cast(Mapping[str, Sequence[float]], predictions), fold_manifest, fold
+    )
+    completed = TrainingResult(
+        model=result.model,
+        config=result.config,
+        successful_optimizer_steps=result.successful_optimizer_steps,
+        scheduler_steps=result.scheduler_steps,
+        attempted_batches=result.attempted_batches,
+        skipped_batches=result.skipped_batches,
+        loss_history=result.loss_history,
+        final_checkpoint_path=result.final_checkpoint_path,
+        latest_checkpoint_path=result.latest_checkpoint_path,
+        run_id=run_id,
+        fold=fold,
+        evaluation=evaluation,
+        predictions=predictions,
+        training_study_uids=training_uids,
+        held_out_study_uids=held_out_uids,
+        data_fingerprint=str(identity["data_fingerprint"]),
+    )
+    atomic_json_write(destination / "metrics.json", evaluation.to_private_dict())
+    atomic_json_write(destination / "run.json", completed.to_private_dict())
+    return completed
+
+
+def _parser() -> Any:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--integration-manifest", type=Path, required=True)
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--fold-manifest", type=Path, required=True)
+    parser.add_argument("--fold", type=int, required=True, choices=FOLD_IDS)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--cache-root", type=Path, default=None)
+    parser.add_argument("--source-version", required=True)
+    parser.add_argument("--source-fingerprint", default=None)
+    parser.add_argument("--preflight-evidence", type=Path, default=None)
+    parser.add_argument("--evidence", type=Path, default=None)
+    parser.add_argument("--require-slurm", action="store_true")
+    parser.add_argument("--allow-local-smoke", action="store_true")
+    return parser
+
+
+def _check_training_execution_context(*, require_slurm: bool, allow_local_smoke: bool) -> None:
+    job_id = os.environ.get("SLURM_JOB_ID")
+    partition = os.environ.get("SLURM_JOB_PARTITION")
+    if require_slurm and (not job_id or partition != "cluster1-cpu"):
+        raise PreflightError("ticket 08 training requires a cluster1-cpu Slurm allocation")
+    if not job_id and not allow_local_smoke:
+        raise PreflightError(
+            "refusing training outside Slurm; use --allow-local-smoke only for a tiny synthetic check"
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint for the bounded ticket-08 training adapter."""
+
+    args = _parser().parse_args(argv)
+    try:
+        _check_training_execution_context(
+            require_slurm=args.require_slurm,
+            allow_local_smoke=args.allow_local_smoke,
+        )
+        from .folds import load_fold_manifest
+        from .real_inference import iter_real_studies, load_integration_manifest
+
+        fold_manifest = load_fold_manifest(args.fold_manifest)
+        integration_manifest = load_integration_manifest(args.integration_manifest)
+        source = args.source
+        if not source.exists():
+            raise TrainingDataError(f"real-DICOM source does not exist: {source}")
+        if integration_manifest.source_version != args.source_version:
+            raise TrainingDataError(
+                "source version disagrees with the integration manifest"
+            )
+        if fold_manifest.source_version != args.source_version:
+            raise TrainingDataError("source version disagrees with the fold manifest")
+        if integration_manifest.source_manifest_checksum != fold_manifest.source_manifest_checksum:
+            raise TrainingDataError(
+                "integration and fold manifests have different source-manifest checksums"
+            )
+        if (
+            args.source_fingerprint is not None
+            and args.source_fingerprint != integration_manifest.archive_fingerprint
+        ):
+            raise TrainingDataError(
+                "source fingerprint disagrees with the integration manifest"
+            )
+        required_gold = {
+            item.study_instance_uid for item in fold_manifest.gold_memberships
+        }
+        if not required_gold.issubset(set(integration_manifest.study_uids)):
+            raise TrainingDataError(
+                "integration manifest does not cover every frozen gold study"
+            )
+        preflight = run_cpu_preflight(
+            output_path=args.preflight_evidence,
+            require_isolated_python=not args.allow_local_smoke,
+            require_slurm=args.require_slurm,
+        )
+        require_cpu_preflight(preflight)
+        studies: dict[str, StudyRecord] = {}
+        for loaded in iter_real_studies(
+            integration_manifest,
+            source,
+            require_complete_series=True,
+            allow_unverified_directory=args.allow_local_smoke,
+        ):
+            studies[loaded.study.study_instance_uid] = loaded.study
+        cache = SeriesCache(args.cache_root) if args.cache_root is not None else None
+        result = train_one_fold(
+            studies,
+            fold_manifest,
+            args.fold,
+            args.output,
+            source_version=args.source_version,
+            source_fingerprint=args.source_fingerprint or integration_manifest.archive_fingerprint,
+            integration_manifest_checksum=integration_manifest.manifest_checksum,
+            series_cache=cache,
+            preprocess_config=integration_manifest.preprocess_config,
+            packing_config=integration_manifest.packing_config,
+            preflight=preflight,
+            allow_local_smoke=args.allow_local_smoke,
+        )
+        if args.evidence is not None:
+            atomic_json_write(
+                args.evidence,
+                {
+                    **result.to_public_dict(),
+                    "environment": _public_run_environment(),
+                    "source_version": args.source_version,
+                    "fold_manifest_checksum": fold_manifest.manifest_checksum,
+                    "preflight_passed": preflight.passed,
+                },
+            )
+        print(json.dumps(result.to_public_dict(), indent=2, sort_keys=True))
+    except (OSError, RuntimeError, ValueError, TrainingError) as exc:
+        print(f"ticket-08 training failed: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+__all__ = [
+    "CHECKPOINT_SCHEMA_VERSION",
+    "CpuPreflightResult",
+    "DEFAULT_BATCH_ORDER_SEED",
+    "DEFAULT_SOURCE_VERSION",
+    "DEFAULT_TRAINING_SEED",
+    "PREFLIGHT_SCHEMA_VERSION",
+    "PreflightError",
+    "SupervisionProvenance",
+    "TrainingConfig",
+    "TrainingConfigurationError",
+    "TrainingDataError",
+    "TrainingError",
+    "TrainingExample",
+    "TrainingNumericsError",
+    "TrainingProgressError",
+    "TrainingResult",
+    "atomic_torch_save",
+    "build_fold_examples",
+    "build_fold_held_out_examples",
+    "build_fold_training_examples",
+    "checkpoint_sha256",
+    "collect_environment_record",
+    "fingerprint_training_examples",
+    "load_training_checkpoint",
+    "masked_bce_loss",
+    "masked_binary_cross_entropy_with_logits",
+    "require_cpu_preflight",
+    "run_cpu_preflight",
+    "save_training_checkpoint",
+    "seed_everything",
+    "train_fixed_budget",
+    "train_one_fold",
+]

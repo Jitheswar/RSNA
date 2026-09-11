@@ -35,7 +35,12 @@ from .dicom import (
     decode_stream,
 )
 from .domain import DicomSlice, SeriesRecord, StudyRecord
-from .folds import FOLD_SCHEMA_VERSION, load_fold_manifest
+from .folds import (
+    FOLD_SCHEMA_VERSION,
+    load_fold_manifest,
+    load_inventory_source,
+    source_manifest_checksum,
+)
 from .geometry import GeometryPolicy
 from .inference import InferenceEngine, StudyPrediction
 from .model import HierarchicalStudyModel, ModelConfig
@@ -171,6 +176,7 @@ class IntegrationManifest:
     studies: tuple[IntegrationStudy, ...]
     source_split: str = "train"
     packing_config: PackingConfig = PackingConfig()
+    source_manifest_checksum: str | None = None
     schema_version: str = INTEGRATION_MANIFEST_SCHEMA_VERSION
     manifest_checksum: str = ""
 
@@ -179,6 +185,8 @@ class IntegrationManifest:
             raise RealIntegrationError(f"unexpected integration manifest schema {self.schema_version!r}")
         if not self.source_version.strip() or not self.archive_fingerprint.strip():
             raise RealIntegrationError("integration manifest requires source identity")
+        if self.source_manifest_checksum is not None and not self.source_manifest_checksum.strip():
+            raise RealIntegrationError("source manifest checksum must be non-empty when present")
         if self.source_split != "train":
             raise RealIntegrationError("real integration currently accepts only the train split")
         if self.preprocess_config.geometry_policy != self.geometry_policy:
@@ -276,6 +284,7 @@ def _manifest_payload(manifest: IntegrationManifest) -> dict[str, object]:
         "source_version": manifest.source_version,
         "source_split": manifest.source_split,
         "archive_fingerprint": manifest.archive_fingerprint,
+        "source_manifest_checksum": manifest.source_manifest_checksum,
         "policies": {
             "geometry": manifest.geometry_policy.to_dict(),
             "decoder": manifest.decoder_policy.to_dict(),
@@ -306,6 +315,12 @@ def _optional_bool(value: object, field: str) -> bool | None:
     if not isinstance(value, bool):
         raise RealIntegrationError(f"{field} must be boolean or null")
     return value
+
+
+def _optional_text(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    return _nonempty(value, field)
 
 
 def _optional_int(value: object, field: str) -> int | None:
@@ -424,6 +439,9 @@ def load_integration_manifest(path: str | Path) -> IntegrationManifest:
         studies=tuple(_integration_study_from_dict(item) for item in studies_value),
         source_split=_nonempty(root.get("source_split", ""), "source_split"),
         packing_config=packing_config,
+        source_manifest_checksum=_optional_text(
+            root.get("source_manifest_checksum"), "source_manifest_checksum"
+        ),
         schema_version=str(root.get("schema_version", "")),
         manifest_checksum=stored_checksum,
     )
@@ -564,6 +582,15 @@ def build_integration_manifest(
     archive_fingerprint = _nonempty(archive.get("fingerprint", ""), "archive fingerprint")
     if _nonempty(selection.get("archive_fingerprint", ""), "selection archive_fingerprint") != archive_fingerprint:
         raise RealIntegrationError("inventory and selection archive identities differ")
+    try:
+        inventory_source = load_inventory_source(inventory_path)
+    except (OSError, ValueError) as exc:
+        raise RealIntegrationError("could not recover the inventory source identity") from exc
+    if inventory_source.source_version != source_version:
+        raise RealIntegrationError("inventory source identity differs from its source manifest")
+    if inventory_source.source_fingerprint != archive_fingerprint:
+        raise RealIntegrationError("inventory archive identity differs from its source manifest")
+    source_checksum = source_manifest_checksum(inventory_source.source_manifest)
 
     blocked = _tuple_of_strings(selection.get("blocked_series_uids", ()), "blocked_series_uids")
     if blocked:
@@ -665,6 +692,7 @@ def build_integration_manifest(
         ),
         source_split=str(inventory.get("split", "train")),
         packing_config=packing_config or PackingConfig(),
+        source_manifest_checksum=source_checksum,
     )
     write_integration_manifest(manifest, output_path)
     return load_integration_manifest(output_path)

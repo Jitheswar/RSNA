@@ -260,3 +260,43 @@ and above 1% blocks promotion. Any nonzero run records fallback cases as
 pending operator investigation and blocks promotion until each case has an
 investigated/unavoidable disposition. A prepared adapter or synthetic fixture
 does not constitute a private full-corpus or competition verification run.
+
+## Ticket 08 fixed-budget gold-only training
+
+`rsna_knee.training` owns the first reference-only scientific run. Its
+`TrainingConfig` freezes the shared 8/16/32-channel model, 128×128 inputs,
+hierarchical masks, batch size two, Adam at 0.001, constant learning rate, and
+100 successful optimizer steps. `masked_bce_loss` averages only supervised
+target entries; an all-masked batch advances neither optimizer nor scheduler,
+and a persistent no-progress condition fails explicitly.
+
+`build_fold_training_examples` admits only complete reference rows from the
+immutable ticket-04 fold manifest. It does not fit normalization statistics,
+does not inspect reports, and rejects held-out input from the fitting
+partition. `train_one_fold` writes an immutable configuration record, complete
+atomic latest/final checkpoints, JSON training logs, private metrics and
+reloaded-final-checkpoint held-out metrics. `rsna_knee.evaluation` uses a
+dependency-free rank AUC with average ties and preserves undefined one-class
+targets instead of inventing a score.
+
+The bounded CPU adapter is `slurm/run_ticket08_train_fold.sbatch`; it requests
+one `cluster1-cpu` node, 16 CPUs, 64 GB, six hours, and no exclusive
+allocation. It requires the private ticket-04 fold manifest, ticket-05
+integration manifest/source, an admitted source version, and a passed runtime
+preflight:
+
+```bash
+export RSNA_TICKET08_INTEGRATION_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json
+export RSNA_TICKET08_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET08_FOLD_MANIFEST=/private/path/ticket-04-folds/private/fold-manifest.json
+export RSNA_TICKET08_FOLD=0
+export RSNA_TICKET08_OUTPUT=/private/path/ticket-08-fold-0
+export RSNA_TICKET08_SOURCE_VERSION=rsna-2026-08-04
+sbatch --wait slurm/run_ticket08_train_fold.sbatch
+```
+
+The public synthetic tests demonstrate finite gradients, learning, masked
+progress, checkpoint compatibility, fold isolation, AUC behavior, and the
+CPU preflight. No private ticket-08 training allocation or real-corpus AUC is
+claimed by the source implementation; those require the authorized Slurm
+run and unresolved V07/V09/V14 evidence.

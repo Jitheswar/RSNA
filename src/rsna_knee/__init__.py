@@ -145,6 +145,62 @@ from .folds import (
     verify_fold_manifest,
     write_fold_reports,
 )
+from .evaluation import (
+    EvaluationError,
+    FoldEvaluation,
+    TargetEvaluation,
+    evaluate_fold_predictions,
+    predict_training_examples,
+    roc_auc_score,
+)
+
+
+_LAZY_TRAINING_EXPORTS = {
+    "CHECKPOINT_SCHEMA_VERSION",
+    "CpuPreflightResult",
+    "DEFAULT_BATCH_ORDER_SEED",
+    "DEFAULT_SOURCE_VERSION",
+    "DEFAULT_TRAINING_SEED",
+    "PREFLIGHT_SCHEMA_VERSION",
+    "PreflightError",
+    "SupervisionProvenance",
+    "TrainingConfig",
+    "TrainingConfigurationError",
+    "TrainingDataError",
+    "TrainingError",
+    "TrainingExample",
+    "TrainingNumericsError",
+    "TrainingProgressError",
+    "TrainingResult",
+    "atomic_torch_save",
+    "build_fold_examples",
+    "build_fold_held_out_examples",
+    "build_fold_training_examples",
+    "checkpoint_sha256",
+    "collect_environment_record",
+    "fingerprint_training_examples",
+    "load_training_checkpoint",
+    "masked_bce_loss",
+    "masked_binary_cross_entropy_with_logits",
+    "require_cpu_preflight",
+    "run_cpu_preflight",
+    "save_training_checkpoint",
+    "seed_everything",
+    "train_fixed_budget",
+    "train_one_fold",
+}
+
+
+def __getattr__(name: str) -> object:
+    """Load training orchestration lazily so inference stays training-independent."""
+
+    if name in _LAZY_TRAINING_EXPORTS:
+        from . import training
+
+        value = getattr(training, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "DicomSlice",
@@ -290,4 +346,11 @@ __all__ = [
     "iter_real_studies",
     "run_real_inference",
     "run_cache_benchmark",
+    "EvaluationError",
+    "FoldEvaluation",
+    "TargetEvaluation",
+    "evaluate_fold_predictions",
+    "predict_training_examples",
+    "roc_auc_score",
+    *_LAZY_TRAINING_EXPORTS,
 ]
