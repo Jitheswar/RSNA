@@ -53,3 +53,11 @@ Public synthetic evidence is recorded in
 `docs/evidence/ticket-09-training-resume.md`. No private Slurm restart,
 real-corpus rollback measurement, GPU retry, competition result or
 approval-dependent gate is claimed by this implementation pass.
+
+### 2026-09-11 — Verification and commit record
+
+Implementation committed as `d7d74cb` (`feat: resume interrupted training safely`).
+Verification passed with 112 tests, mypy across 26 source files, Slurm shell
+syntax validation, and a clean staged diff. The public evidence remains
+synthetic; no private execution, real-corpus rollback measurement, GPU retry,
+competition result, or approval-dependent gate is marked verified.
