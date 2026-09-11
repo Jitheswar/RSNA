@@ -12,10 +12,18 @@ from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, UID
 
 from rsna_knee.cache_benchmark import run_cache_benchmark
 from rsna_knee.dicom import DecoderPolicy
+from rsna_knee.folds import freeze_folds, write_fold_reports
 from rsna_knee.geometry import GeometryPolicy
 from rsna_knee.model import HierarchicalStudyModel, ModelConfig
 from rsna_knee.preprocessing import PreprocessConfig
-from rsna_knee.inventory import inventory_archive, select_representative_batch, write_inventory_reports, write_selection_reports
+from rsna_knee.inventory import (
+    SourceManifest,
+    SourceStudy,
+    inventory_archive,
+    select_representative_batch,
+    write_inventory_reports,
+    write_selection_reports,
+)
 from rsna_knee.series_cache import SeriesCacheError
 from rsna_knee.targets import NUM_TARGETS
 from rsna_knee.real_inference import (
@@ -334,12 +342,14 @@ def test_real_inference_records_geometry_rejection_and_keeps_the_study_row(tmp_p
         tmp_path,
         tmp_path / "submission.csv",
         private_evidence_path=private_evidence_path,
+        evidence_ticket="07",
         allow_local_smoke=True,
     )
 
     assert evidence["counts"]["fallback_studies"] == 1
     assert evidence["counts"]["prediction_rejected_series"] == 1
     assert evidence["counts"]["output_rows"] == 1
+    assert evidence["recovery"]["failure_reasons"]["preprocessing_or_geometry"] == 1
     private = json.loads(private_evidence_path.read_text(encoding="utf-8"))
     rejection = private["studies"][0]["recovery"]["series_rejections"][0]
     assert rejection["affected_files"] == list(entries)
@@ -395,6 +405,33 @@ def test_real_inference_recovers_a_partially_corrupt_series_and_logs_each_attemp
     assert private["studies"][0]["recovery"]["used_fallback"] is False
 
 
+def test_ticket05_real_inference_keeps_strict_series_admission_by_default(tmp_path: Path) -> None:
+    study_uid = "1.2.826.0.1.3680043.8.498.63"
+    series_uid = "1.2.826.0.1.3680043.8.498.64"
+    entries = tuple(
+        _write_slice(tmp_path, study_uid, series_uid, f"1.2.826.0.1.3680043.8.498.{index}", float(index))
+        for index in range(3)
+    )
+    (tmp_path / entries[-1]).write_bytes(b"truncated-dicom")
+    manifest_path = tmp_path / "manifest.json"
+    write_integration_manifest(
+        _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
+        manifest_path,
+    )
+
+    evidence = run_real_inference(
+        manifest_path,
+        tmp_path,
+        tmp_path / "submission.csv",
+        allow_local_smoke=True,
+    )
+
+    assert evidence["ticket"] == "05"
+    assert evidence["counts"]["fallback_studies"] == 1
+    assert evidence["counts"]["usable_series"] == 0
+    assert evidence["counts"]["series_with_decode_failures"] == 1
+
+
 def test_real_inference_keeps_rows_for_missing_series_and_all_invalid_studies_using_reference_priors(
     tmp_path: Path,
 ) -> None:
@@ -435,6 +472,7 @@ def test_real_inference_keeps_rows_for_missing_series_and_all_invalid_studies_us
         private_evidence_path=private_evidence_path,
         fallback_reference_labels=fallback_reference_labels,
         fallback_eligible_study_uids=("gold",),
+        evidence_ticket="07",
         allow_local_smoke=True,
     )
 
@@ -447,6 +485,9 @@ def test_real_inference_keeps_rows_for_missing_series_and_all_invalid_studies_us
     assert evidence["recovery"]["full_study_fallback"]["rate"] == pytest.approx(2 / 3)
     assert evidence["recovery"]["series_loss"]["expected"] == 2
     assert evidence["recovery"]["series_loss"]["usable"] == 1
+    assert evidence["recovery"]["failure_reasons"]["damaged_input"] == 3
+    assert evidence["recovery"]["failure_reasons"]["insufficient_slices"] == 1
+    assert "preprocessing_or_geometry" not in evidence["recovery"]["failure_reasons"]
     assert evidence["fallback_prior"]["targets"]["ACL"]["score"] == pytest.approx(2 / 3)
     assert evidence["fallback_prior"]["targets"]["MCL"]["score"] == pytest.approx(1 / 3)
 
@@ -457,6 +498,12 @@ def test_real_inference_keeps_rows_for_missing_series_and_all_invalid_studies_us
     assert by_uid[missing_uid]["recovery"]["remaining_usable_series"] == 0
     assert by_uid[empty_uid]["recovery"]["used_fallback"] is True
     assert by_uid[empty_uid]["recovery"]["manifest_series_count"] == 0
+    missing_failures = by_uid[missing_uid]["series"][0]["failures"]
+    assert [item["affected_files"] for item in missing_failures[:3]] == [
+        [entry] for entry in missing_entries
+    ]
+    minimum_failure = next(item for item in missing_failures if item["reason"] == "insufficient_slices")
+    assert minimum_failure["affected_files"] == list(missing_entries)
     assert evidence["recovery"]["fallback_investigation"]["complete"] is False
     assert evidence["recovery"]["fallback_investigation"]["promotion_blocked_until_complete"] is True
     assert by_uid[missing_uid]["recovery"]["fallback_investigation"]["status"] == "pending_operator_review"
@@ -503,34 +550,28 @@ def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Pat
         _manifest(study_uid, (IntegrationSeries(study_uid, series_uid, entries=entries),)),
         manifest_path,
     )
-    labels_path = tmp_path / "private" / "fold-manifest.json"
-    labels_path.parent.mkdir()
-    labels_path.write_text(
-        json.dumps(
-            {
-                "memberships": [
-                    {
-                        "StudyInstanceUID": "gold",
-                        "cohort": "gold",
-                        "fold": 0,
-                        "reference_labels": [1] + [0] * (NUM_TARGETS - 1),
-                    },
-                    {
-                        "StudyInstanceUID": "held-out-gold",
-                        "cohort": "gold",
-                        "fold": 1,
-                        "reference_labels": [0] * NUM_TARGETS,
-                    },
-                    {
-                        "StudyInstanceUID": "weak-report",
-                        "cohort": "report_only",
-                        "fold": 1,
-                        "reference_labels": [0] * NUM_TARGETS,
-                    },
-                ]
-            }
+    label_source = SourceManifest(
+        "train",
+        tuple(
+            SourceStudy(
+                f"reference-{index:02d}",
+                True,
+                tuple((index + target_index) % 2 for target_index in range(NUM_TARGETS)),
+            )
+            for index in range(9)
+        )
+        + tuple(
+            SourceStudy(f"report-{index:02d}", True, (None,) * NUM_TARGETS)
+            for index in range(6)
         ),
-        encoding="utf-8",
+        (),
+    )
+    fold_manifest = freeze_folds(label_source, source_version="fixture-v1", seed=17)
+    labels_path = tmp_path / "private" / "fold-manifest.json"
+    write_fold_reports(
+        fold_manifest,
+        private_path=labels_path,
+        public_path=tmp_path / "public" / "fold-evidence.json",
     )
     private_evidence_path = tmp_path / "private" / "evidence.json"
 
@@ -556,7 +597,17 @@ def test_recovery_cli_extracts_only_gold_rows_from_a_fold_manifest(tmp_path: Pat
 
     assert exit_code == 0
     private = json.loads(private_evidence_path.read_text(encoding="utf-8"))
-    assert private["fallback_prior"]["eligible_study_uids"] == ["gold"]
+    expected_eligible = sorted(
+        item.study_instance_uid
+        for item in fold_manifest.gold_memberships
+        if item.fold != 1
+    )
+    assert private["fallback_prior"]["eligible_study_uids"] == expected_eligible
+    assert not set(private["fallback_prior"]["eligible_study_uids"]).intersection(
+        item.study_instance_uid
+        for item in fold_manifest.gold_memberships
+        if item.fold == 1
+    )
 
 
 def test_real_inference_fails_on_model_configuration_errors_instead_of_using_fallback(

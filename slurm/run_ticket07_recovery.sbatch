@@ -65,6 +65,7 @@ recovery_args=(
   --evidence "${output_dir}/public/evidence.json"
   --private-evidence "${output_dir}/private/evidence.json"
   --evidence-ticket 07
+  --recover-damaged-inputs
   --require-slurm
 )
 if [[ -n "${fallback_labels_path}" ]]; then

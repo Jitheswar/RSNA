@@ -12,7 +12,8 @@ attempt order. Typed damaged, unsupported, and validation failures are kept
 with the source entry and skipped when enough valid, geometrically ordered
 slices remain. A series below the frozen minimum is rejected explicitly. The
 strict `require_complete_series=True` loader option remains available for
-callers that need ticket-05 all-or-nothing admission.
+callers that need ticket-05 all-or-nothing admission; the ticket-05 runner
+remains strict unless recovery is explicitly selected.
 
 The shared model receives the surviving series and its existing slice/series
 masks. An all-invalid study still receives one output row, using a
@@ -29,8 +30,9 @@ eligible reference-label set:
 
 with `alpha=1` by default and `0.5` when that target has no known eligible
 reference label. Held-out identifiers cannot overlap the eligible set. The
-CLI accepts private inventory/fold-shaped JSON and admits only complete gold
-or reference rows from those formats; report-only memberships are ignored.
+CLI accepts checksum-validated private fold manifests or reconciled
+inventory-shaped JSON and admits only complete gold or reference rows from
+those formats; report-only memberships are ignored.
 For non-fold label files, the eligible study list is mandatory. A fold-shaped
 manifest can derive the training-reference set and held-out exclusion from an
 explicit `--fallback-held-out-fold` selection.

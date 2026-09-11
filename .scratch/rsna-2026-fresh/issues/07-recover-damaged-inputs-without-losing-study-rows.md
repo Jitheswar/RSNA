@@ -60,8 +60,18 @@ one selected held-out fold; report-only rows never enter the prior. Private
 evidence also records affected files for geometry/preprocessing rejections and
 marks every nonzero fallback case pending operator investigation rather than
 claiming it unavoidable. Model, cache, and unexpected decoder failures remain
-fatal.
+fatal. Ticket-05 strict series admission is preserved unless ticket-07 recovery
+is selected, and canonical fold manifests are checksum-validated before their
+gold rows are used.
 
 Final local verification: 89 tests passed, mypy passed, the recovery Slurm
 adapter parsed with `bash -n`, and `git diff --check` passed. No private Slurm
 execution was performed.
+
+### 2026-09-11 — Review follow-up
+
+The runner now preserves ticket-05 strict admission by default and selects
+recoverable loading explicitly for ticket 07. Minimum-slice failures carry
+the complete affected source-entry list, aggregate failure reasons distinguish
+decoder loss from geometry/preprocessing loss, and fold-shaped label inputs
+must pass canonical checksum validation before gold rows are admitted.

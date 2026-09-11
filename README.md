@@ -227,7 +227,9 @@ skipped with their source entry, decoder attempt, typed reason, and recovery
 action recorded. If no usable series remains, the study still receives one
 submission row using the reference prior. Unexpected decoder infrastructure,
 model, cache, or configuration failures remain fatal and are not converted to
-universal fallback output.
+universal fallback output. The recovery mode is selected explicitly by
+`--recover-damaged-inputs` (and is implied for the ticket-07 evidence command);
+the existing ticket-05 runner remains strict by default.
 
 The recovery adapter is bounded to one `cluster1-cpu` node, 16 CPUs, 64 GB,
 six hours, and no exclusive allocation. It requires the private ticket-05

@@ -35,6 +35,7 @@ from .dicom import (
     decode_stream,
 )
 from .domain import DicomSlice, SeriesRecord, StudyRecord
+from .folds import FOLD_SCHEMA_VERSION, load_fold_manifest
 from .geometry import GeometryPolicy
 from .inference import InferenceEngine, StudyPrediction
 from .model import HierarchicalStudyModel, ModelConfig
@@ -213,6 +214,7 @@ class SeriesLoadFailure:
     decoder: str = ""
     attempts: tuple[str, ...] = ()
     recovery: str = "skip_unusable_input"
+    affected_source_entry_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -838,6 +840,7 @@ def _load_series(
                         if require_complete_series
                         else "skip_damaged_input_continue_with_survivors"
                     ),
+                    affected_source_entry_names=(entry_name,),
                 )
             )
             continue
@@ -876,6 +879,7 @@ def _load_series(
                 ),
                 decoder="geometry",
                 recovery="reject_series_below_minimum_slices",
+                affected_source_entry_names=manifest_series.entries,
             )
         )
     if failures and require_complete_series:
@@ -1074,6 +1078,16 @@ def _load_reference_labels_json(
     else:
         memberships = root.get("memberships")
         if isinstance(memberships, list):
+            if root.get("schema_version") != FOLD_SCHEMA_VERSION:
+                raise RealIntegrationError(
+                    "fold-shaped fallback labels must use the canonical fold-manifest schema"
+                )
+            try:
+                load_fold_manifest(path)
+            except ValueError as exc:
+                raise RealIntegrationError(
+                    "fold-shaped fallback labels failed canonical manifest validation"
+                ) from exc
             for index, raw_item in enumerate(memberships):
                 item = _mapping(raw_item, f"fallback membership {index}")
                 if item.get("cohort") != "gold":
@@ -1107,6 +1121,18 @@ def _load_reference_labels_json(
             source_mapping = source if isinstance(source, Mapping) else root
             studies = source_mapping.get("studies") if isinstance(source_mapping, Mapping) else None
             if isinstance(studies, list):
+                if root.get("schema_version") != INVENTORY_SCHEMA_VERSION:
+                    raise RealIntegrationError(
+                        "inventory-shaped fallback labels must use the canonical inventory schema"
+                    )
+                reconciliation = root.get("reconciliation")
+                if (
+                    not isinstance(reconciliation, Mapping)
+                    or reconciliation.get("full_corpus_reconciled") is not True
+                ):
+                    raise RealIntegrationError(
+                        "inventory-shaped fallback labels must be from a reconciled inventory"
+                    )
                 for index, raw_item in enumerate(studies):
                     item = _mapping(raw_item, f"fallback source study {index}")
                     labels = validate_reference_label_vector(
@@ -1220,6 +1246,10 @@ def _private_study_evidence(
                 "failures": [
                     {
                         "source_entry_name": failure.source_entry_name,
+                        "affected_files": list(
+                            failure.affected_source_entry_names
+                            or ((failure.source_entry_name,) if failure.source_entry_name else ())
+                        ),
                         "reason": failure.reason,
                         "detail": failure.detail,
                         "decoder": failure.decoder,
@@ -1298,6 +1328,7 @@ def run_real_inference(
     fallback_held_out_study_uids: Sequence[str] = (),
     fallback_alpha: float = 1.0,
     evidence_ticket: str = "05",
+    recover_damaged_inputs: bool | None = None,
     require_slurm: bool = False,
     allow_local_smoke: bool = False,
 ) -> dict[str, object]:
@@ -1306,6 +1337,8 @@ def run_real_inference(
     _check_execution_context(require_slurm=require_slurm, allow_local_smoke=allow_local_smoke)
     if not evidence_ticket.strip():
         raise RealIntegrationError("evidence_ticket must be non-empty")
+    if recover_damaged_inputs is None:
+        recover_damaged_inputs = evidence_ticket == "07"
     thread_count = _configure_threads()
     manifest = load_integration_manifest(manifest_path)
     source = Path(source_path)
@@ -1356,7 +1389,7 @@ def run_real_inference(
     for loaded in iter_real_studies(
         manifest,
         source,
-        require_complete_series=False,
+        require_complete_series=not recover_damaged_inputs,
         allow_unverified_directory=allow_local_smoke,
     ):
         manifest_series_count += len(loaded.series_results)
@@ -1393,10 +1426,29 @@ def run_real_inference(
         usable_series_count += prediction.valid_series_count
         for failure in loaded.failures:
             failure_reason_counts[failure.reason] = failure_reason_counts.get(failure.reason, 0) + 1
-        if prediction.rejected_series:
+        loader_failure_reasons = {
+            (
+                item.manifest_series.series_instance_uid,
+                f"{failure.reason}: {failure.detail}",
+            )
+            for item in loaded.series_results
+            for failure in item.failures
+        }
+        preprocessing_rejection_count = sum(
+            (
+                (failure.series_instance_uid, failure.reason) not in loader_failure_reasons
+                and any(
+                    item.manifest_series.series_instance_uid == failure.series_instance_uid
+                    and item.series is not None
+                    for item in loaded.series_results
+                )
+            )
+            for failure in prediction.rejected_series
+        )
+        if preprocessing_rejection_count:
             failure_reason_counts["preprocessing_or_geometry"] = (
                 failure_reason_counts.get("preprocessing_or_geometry", 0)
-                + len(prediction.rejected_series)
+                + preprocessing_rejection_count
             )
         prediction_rejected_series_count += len(prediction.rejected_series)
         warning_count += len(prediction.warnings)
@@ -1587,6 +1639,12 @@ def _parser() -> Any:
     )
     parser.add_argument("--fallback-alpha", type=float, default=1.0)
     parser.add_argument("--evidence-ticket", default="05")
+    parser.add_argument(
+        "--recover-damaged-inputs",
+        action="store_true",
+        default=None,
+        help="continue with surviving slices and series instead of strict series admission",
+    )
     parser.add_argument("--require-slurm", action="store_true")
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
@@ -1674,6 +1732,7 @@ def main(argv: list[str] | None = None) -> int:
             fallback_held_out_study_uids=fallback_held_out_study_uids or (),
             fallback_alpha=args.fallback_alpha,
             evidence_ticket=args.evidence_ticket,
+            recover_damaged_inputs=args.recover_damaged_inputs,
             require_slurm=args.require_slurm,
             allow_local_smoke=args.allow_local_smoke,
         )
