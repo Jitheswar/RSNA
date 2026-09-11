@@ -48,3 +48,59 @@ These retain the parent specification's acceptance criteria and blocking consequ
 ## Completion evidence
 
 - [ ] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+
+## Comments
+
+### 2026-09-11 — Implementation evidence
+
+Implemented the approval-gated Kaggle delivery seam in `rsna_knee.kaggle`,
+with the thin `kaggle_cli` adapter and
+`notebooks/ticket12_kaggle_baseline.ipynb`. Preparation reloads and hashes the
+immutable ticket-11 candidate, local evidence, delivery notebook and adapter,
+then writes an `owner_approval_required` request without contacting Kaggle.
+The notebook adapter reads only the Kaggle test CSV/DICOM layout and uses the
+candidate decoder, preprocessing, model ensemble and exact submission writer.
+
+Accepted-execution recording requires an owner approval artifact tied to the
+request checksum and externally supplied Kaggle evidence tied to the exact
+candidate, notebook, adapter and checkpoint hashes. It records environment,
+actual workload, stage timing, output checksum and measured-or-unknown
+fallback state. Example-only runs, hard-limit violations, mismatched bundles,
+and invented zero fallback claims are rejected. A separate promotion pointer
+is written only for an eligible verified execution; the candidate and request
+remain unchanged and final status remains owner-selected.
+
+The public-safe implementation record is
+[`docs/evidence/ticket-12-kaggle.md`](../../../docs/evidence/ticket-12-kaggle.md).
+The actual Kaggle upload, submission, owner approval, hidden-scale runtime and
+final selection remain pending and no acceptance checkbox above is marked by
+this implementation-only evidence.
+
+### 2026-09-11 — Final delivery-contract tightening
+
+The non-smoke notebook path now verifies the immutable request and owner
+approval before inference, rechecks the copied notebook and adapter hashes,
+and requires measured notebook startup/import timings. Execution evidence also
+records pinned environment identity, candidate/model sizes, peak VRAM,
+observed and projected runtime, and private per-study preprocessing/fallback
+diagnostics. Promotion is blocked until explicit save/reload and interruption
+recovery evidence is present. The final prepared request is
+`ticket-12-ticket-11-local-candidate-20260911-v2` with checksum
+`f9671ca748548da77a0c10a4b48ebde55c188271b8490cb78650817eee35ad00`.
+
+The final contract also fingerprints installed NumPy/pydicom/PyTorch pins,
+records the delivery layout and dated rule-source references required in an
+approval artifact, validates private per-study fallback counts, and requires
+preserved accepted output/private diagnostics before promotion. The request
+will be regenerated once more after this final adapter change so its checksum
+tracks the complete implementation.
+
+### 2026-09-11 — Final request fingerprint
+
+The final immutable request is
+`ticket-12-ticket-11-local-candidate-20260911-v3` with request checksum
+`c1351d4b405d29e17547bb3d385646235d1c9845ee15790644d6a04d66453ac7`.
+Its delivery notebook checksum is
+`20ad131cbf8aa988004fa1bf46cf07253453466edc9dda27ef460e078eced01e`, and its
+adapter checksum is
+`f158cc31d305001d6bde1a6c82dd800afed8fbc9d612b1bd1c0cedf91f1fde97`.

@@ -456,3 +456,53 @@ The candidate remains locally validated until an approved Kaggle execution
 and owner selection. See
 [`docs/evidence/ticket-11-candidate.md`](docs/evidence/ticket-11-candidate.md)
 for the full scope, checksums, runtime evidence and limitations.
+
+## Ticket 12 Kaggle verification seam
+
+`rsna_knee.kaggle` keeps Kaggle delivery approval-gated. It validates the
+exact ticket-11 candidate, local submission/runtime/fallback evidence, the
+network-free delivery notebook and the separately hashed Kaggle adapter, then
+writes an immutable `owner_approval_required` request. Preparation performs no
+upload or submission. The request names the exact checkpoint hashes, candidate
+manifest, notebook, adapter and local evidence without copying identifiers into
+public metadata.
+
+The delivery notebook is
+[`notebooks/ticket12_kaggle_baseline.ipynb`](notebooks/ticket12_kaggle_baseline.ipynb).
+For the Kaggle input, place the candidate under `candidate/`, copy the
+candidate's `code/rsna_knee/` files into a delivery `code/rsna_knee/` directory,
+add the request's separately hashed `kaggle.py` adapter there, copy the
+delivery notebook beside `request.json`, and mount the owner approval as a
+separate private input. Mount the competition's `test.csv`, `test_series.csv`,
+and `test_series/` input. The notebook verifies the request, approval, copied
+notebook and adapter hashes, and pinned candidate environment before running.
+It writes `submission.csv`, public execution evidence, and private per-study
+diagnostics to `/kaggle/working/`; it does not need reports or runtime
+downloads.
+
+Prepare the request locally after reviewing the ticket-11 evidence:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m rsna_knee.kaggle_cli prepare \
+  --candidate /private/path/ticket-11-local-candidate-20260911-v1 \
+  --local-evidence /private/path/ticket-11-real-candidate/public/candidate-evidence.json \
+  --local-submission /private/path/ticket-11-real-candidate/submission.csv \
+  --notebook notebooks/ticket12_kaggle_baseline.ipynb \
+  --output /private/path/ticket-12-delivery-request
+```
+
+After the owner has accepted the current rules and approved that exact
+request, an externally produced accepted-execution JSON can be recorded with
+`kaggle_cli verify`. The verifier requires the exact request, candidate,
+notebook, adapter and checkpoint hashes; offline Kaggle runtime evidence;
+dated official rule-source evidence in the approval artifact;
+actual non-example workload; package/model/VRAM measurements; observed and
+projected whole-notebook timing; the complete thirteen-column output contract;
+explicit recovery evidence; and a measured-or-unknown fallback state. It
+rejects example-only runs, hard-limit violations, mismatched bundles and
+invented zero fallback claims. `kaggle_cli promote` writes a separate
+`kaggle_verified_only` pointer only when fallback is measured at zero, recovery
+is demonstrated, and the runtime gate is eligible. Both the original
+candidate and the request remain unchanged, and final selection is never
+performed by this path. See
+[`docs/evidence/ticket-12-kaggle.md`](docs/evidence/ticket-12-kaggle.md).
