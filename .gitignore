@@ -4,3 +4,13 @@ __pycache__/
 *.egg-info/
 artifacts/*
 !artifacts/.gitkeep
+
+# Competition inputs and identifier-bearing audit artifacts stay private.
+/data/private/
+/data/competition/
+/data/raw/
+/data/cache/
+/private/
+/manifests/private/
+/artifacts/private/
+/rsna-knee-abnormality-detection.zip

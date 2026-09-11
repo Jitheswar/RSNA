@@ -19,11 +19,24 @@ class GeometryPolicy:
     """Numerical policy used by :func:`order_slices`.
 
     The policy is deliberately explicit so a future data audit can version
-    and change it without silently changing an existing cache.
+    and change tolerances or the minimum usable-slice count without silently
+    changing an existing cache.
     """
 
     position_tolerance: float = 1e-4
     orientation_tolerance: float = 1e-3
+    spacing_tolerance: float = 1e-3
+    minimum_usable_slices: int = 1
+
+    def __post_init__(self) -> None:
+        if self.position_tolerance <= 0:
+            raise ValueError("position_tolerance must be positive")
+        if self.orientation_tolerance <= 0:
+            raise ValueError("orientation_tolerance must be positive")
+        if self.spacing_tolerance <= 0:
+            raise ValueError("spacing_tolerance must be positive")
+        if self.minimum_usable_slices <= 0:
+            raise ValueError("minimum_usable_slices must be positive")
 
 
 def _finite_vector(
@@ -79,6 +92,11 @@ def order_slices(
 
     if not slices:
         raise GeometryError("series contains no slices")
+    if len(slices) < policy.minimum_usable_slices:
+        raise GeometryError(
+            f"series contains {len(slices)} slices; at least "
+            f"{policy.minimum_usable_slices} usable slices are required"
+        )
 
     reference_normal: np.ndarray | None = None
     positioned: list[tuple[float, DicomSlice]] = []

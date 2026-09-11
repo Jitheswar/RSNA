@@ -1,6 +1,20 @@
 """Shared MRI-only mechanics core for the RSNA knee project."""
 
 from .domain import DicomSlice, SeriesRecord, StudyRecord
+from .archive import (
+    ArchiveIntegrityError,
+    ArchiveMember,
+    ArchivePathError,
+    ExtractedFile,
+    ExtractionFailure,
+    ExtractionReport,
+    atomic_json_write,
+    extract_batch,
+    failed_extraction_report,
+    list_archive_members,
+    safe_member_path,
+    write_extraction_report,
+)
 from .dicom import DicomDecodeError, decode_dataset, read_dicom_slice
 from .inference import InferenceBatch, InferenceEngine, StudyPrediction, infer_studies
 from .model import HierarchicalStudyModel, MechanicsModel, ModelConfig
@@ -18,6 +32,33 @@ from .preprocessing import (
 )
 from .submission import SubmissionError, validate_predictions, write_submission
 from .targets import NUM_TARGETS, SUBMISSION_COLUMNS, TARGET_COLUMNS
+from .inventory import (
+    INVENTORY_SCHEMA_VERSION,
+    ArchiveIdentity,
+    ExtractionSelection,
+    HeaderFailure,
+    HeaderInspection,
+    InventoryError,
+    InventoryReport,
+    InventoryStratum,
+    SelectionError,
+    SeriesInventory,
+    SourceManifest,
+    SourceManifestError,
+    SourceSeries,
+    SourceStudy,
+    StorageBudgetExceeded,
+    StorageEstimate,
+    enforce_storage_budget,
+    estimate_storage,
+    identify_archive,
+    inventory_archive,
+    load_source_manifest,
+    run_inventory,
+    select_representative_batch,
+    write_inventory_reports,
+    write_selection_reports,
+)
 
 __all__ = [
     "DicomSlice",
@@ -26,6 +67,18 @@ __all__ = [
     "read_dicom_slice",
     "SeriesRecord",
     "StudyRecord",
+    "ArchiveIntegrityError",
+    "ArchiveMember",
+    "ArchivePathError",
+    "ExtractedFile",
+    "ExtractionFailure",
+    "ExtractionReport",
+    "atomic_json_write",
+    "extract_batch",
+    "failed_extraction_report",
+    "list_archive_members",
+    "safe_member_path",
+    "write_extraction_report",
     "InferenceBatch",
     "InferenceEngine",
     "StudyPrediction",
@@ -49,4 +102,29 @@ __all__ = [
     "NUM_TARGETS",
     "SUBMISSION_COLUMNS",
     "TARGET_COLUMNS",
+    "INVENTORY_SCHEMA_VERSION",
+    "ArchiveIdentity",
+    "ExtractionSelection",
+    "HeaderFailure",
+    "HeaderInspection",
+    "InventoryError",
+    "InventoryReport",
+    "InventoryStratum",
+    "SelectionError",
+    "SeriesInventory",
+    "SourceManifest",
+    "SourceManifestError",
+    "SourceSeries",
+    "SourceStudy",
+    "StorageBudgetExceeded",
+    "StorageEstimate",
+    "enforce_storage_budget",
+    "estimate_storage",
+    "identify_archive",
+    "inventory_archive",
+    "load_source_manifest",
+    "run_inventory",
+    "select_representative_batch",
+    "write_inventory_reports",
+    "write_selection_reports",
 ]

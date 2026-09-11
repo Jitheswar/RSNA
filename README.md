@@ -57,3 +57,49 @@ The public interfaces are:
 - `InferenceEngine` and `write_submission`: MRI-only inference, explicit
   all-invalid study fallback, finite bounded scores, exact UID order, and the
   thirteen-column output contract.
+
+## Ticket 03 private inventory and admission
+
+`rsna_knee.inventory` reads the source CSVs and every training DICOM member's
+header without touching pixel data. It records transfer syntax, frame and
+dimension counts, geometry status, slice-count buckets, and the source
+anatomical-plane, fluid-sensitivity, and fat-suppression descriptors as
+separate fields. Unreadable headers, malformed archive members, missing or
+extra series, UID conflicts, and partial reference labels remain explicit
+failures. Series whose DICOM `ImageType` or description reliably contains
+`scout`, `localizer`, `survey`, `pilot`, or `calibration` are excluded as
+non-diagnostic; absent or ambiguous descriptions remain explicitly unknown.
+
+The inventory also selects all reference-labelled studies plus a deterministic
+50–200 report-only sample, estimates the retained-archive/extraction/cache
+peak, and refuses an over-2 TB batch without an explicit approval flag.
+Selected members are extracted into a fresh destination only after each ZIP
+member is read to EOF, its size/CRC is checked by the archive reader, and its
+SHA-256 content checksum is recorded. Extraction rechecks the recorded archive
+identity, and completion reports are atomic and distinguish verified batches
+from failed attempts.
+
+The full archive scan is intentionally Slurm-gated:
+
+```bash
+export RSNA_TICKET03_ARCHIVE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET03_OUTPUT=/private/path/ticket-03-inventory
+export RSNA_TICKET03_SOURCE_VERSION=rsna-2026-08-04
+sbatch --wait slurm/run_ticket03_inventory.sbatch
+```
+
+The adapter requests one `cluster1-cpu` node, eight CPUs, 32 GB, and six
+hours, with no exclusive allocation. Set
+`RSNA_TICKET03_SUPPORTED_TRANSFER_SYNTAXES` to the comma-separated syntax UIDs
+that have passed the decoder gate, then set `RSNA_TICKET03_EXTRACT_TO` only
+after reviewing the private selection and storage estimate. If other retained
+project data already occupies the budget, pass its byte count through
+`RSNA_TICKET03_CURRENT_PROJECT_BYTES` (excluding the source archive, which the
+estimate adds separately). Public aggregate JSON is written below `public/`;
+UID- and
+path-bearing manifests belong below `private/`, which is ignored by Git.
+
+This ticket's implementation and synthetic archive tests do not claim that
+the private competition corpus has completed its full header scan, pixel
+decoder verification, or cache admission. Those claims require the bounded
+Slurm execution and its preserved evidence.
