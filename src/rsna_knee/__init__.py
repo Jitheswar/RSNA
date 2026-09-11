@@ -146,12 +146,25 @@ from .folds import (
     write_fold_reports,
 )
 from .evaluation import (
+    BootstrapMetric,
+    BootstrapSummary,
     EvaluationError,
     FoldEvaluation,
+    OOFEvaluation,
     TargetEvaluation,
+    bootstrap_oof_predictions,
     evaluate_fold_predictions,
+    evaluate_oof_predictions,
     predict_training_examples,
     roc_auc_score,
+)
+from .oof import (
+    OOFArtifactError,
+    OOFRunRecord,
+    aggregate_oof_run_records,
+    load_oof_run_record,
+    render_oof_comparison,
+    write_oof_reports,
 )
 
 
@@ -358,9 +371,20 @@ __all__ = [
     "run_real_inference",
     "run_cache_benchmark",
     "EvaluationError",
+    "BootstrapMetric",
+    "BootstrapSummary",
     "FoldEvaluation",
+    "OOFEvaluation",
+    "OOFArtifactError",
+    "OOFRunRecord",
+    "aggregate_oof_run_records",
+    "load_oof_run_record",
+    "render_oof_comparison",
+    "write_oof_reports",
+    "bootstrap_oof_predictions",
     "TargetEvaluation",
     "evaluate_fold_predictions",
+    "evaluate_oof_predictions",
     "predict_training_examples",
     "roc_auc_score",
     *_LAZY_TRAINING_EXPORTS,

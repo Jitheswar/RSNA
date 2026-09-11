@@ -340,3 +340,49 @@ sbatch --wait slurm/run_ticket09_resume_training.sbatch
 The public recovery evidence is synthetic and does not claim a private
 Slurm execution, real-corpus rollback duration, GPU compatibility, or a
 competition result.
+
+## Ticket 10 complete three-fold OOF evidence
+
+`rsna_knee.evaluation.evaluate_oof_predictions` requires exactly one finite
+twelve-score vector for every gold study in the frozen manifest. It recomputes
+pooled per-target ROC-AUC, the primary twelve-target macro AUC, each fold's
+metrics and class counts, and explicit fold variation. One-class AUCs remain
+undefined; `defined_target_macro_auc` is reported separately and is never used
+as a silent replacement for the primary macro.
+
+`bootstrap_oof_predictions` performs deterministic study bootstrap, or
+reliable-group bootstrap when the fold audit attests a grouping key. It reports
+percentile intervals over defined resamples and counts undefined target and
+macro resamples explicitly. An OOF result records its frozen repeat name and
+is labeled development cross-validation for model selection, not an untouched
+internal test or clinical-generalization proof.
+
+`rsna_knee.oof` loads one atomic `run.json` per fold plus its required
+configuration, metrics and checkpoint evidence, independently checks
+fold/configuration/membership/source-label joins, and refuses incomplete or
+duplicate three-fold coverage. Aggregation only reads fold records and writes
+regenerated identifier-free JSON/Markdown views; it rejects destinations inside
+source run directories. The bounded adapters are
+`slurm/run_ticket10_fold.sbatch` and
+`slurm/run_ticket10_aggregate.sbatch`:
+
+```bash
+export RSNA_TICKET10_INTEGRATION_MANIFEST=/private/path/ticket-05-real-training-input/private/integration-manifest.json
+export RSNA_TICKET10_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET10_FOLD_MANIFEST=/private/path/ticket-04-real/private/fold-manifest.json
+export RSNA_TICKET10_RUN_ROOT=/private/path/ticket-10-real
+export RSNA_TICKET10_SOURCE_VERSION=rsna-2026-08-04
+export RSNA_TICKET10_FOLD=0
+sbatch --wait slurm/run_ticket10_fold.sbatch
+
+export RSNA_TICKET10_INVENTORY=/private/path/ticket-03-inventory-run/private/inventory.json
+export RSNA_TICKET10_OUTPUT=/private/path/ticket-10-oof
+sbatch --wait slurm/run_ticket10_aggregate.sbatch
+```
+
+The fold adapter is bounded to one non-exclusive `cluster1-cpu` node, 16
+CPUs, 64 GB and six hours, and its shared lock/Slurm-state guard keeps no more
+than two ticket-10 fold jobs active. The aggregation adapter uses one such
+node, two CPUs, 8 GB and one hour. See
+[`docs/evidence/ticket-10-oof.md`](docs/evidence/ticket-10-oof.md) for the
+synthetic seam and real-corpus execution evidence.
