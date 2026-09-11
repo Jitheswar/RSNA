@@ -54,7 +54,7 @@ PyTorch 2.7.1+cpu, NumPy 2.2.6, and pydicom 3.0.1 environment.
 The repository suite passes with 69 tests, including synthetic decoder,
 geometry, padding/intensity, source-mapping, localizer-exclusion, partial-file,
 manifest-integrity, and public-evidence cases. Mypy reports no issues across
-the 18 source modules.
+the 19 source modules.
 
 ## Unresolved gates and limitations
 

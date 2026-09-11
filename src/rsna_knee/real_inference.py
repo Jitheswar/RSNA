@@ -53,6 +53,7 @@ INTEGRATION_MANIFEST_SCHEMA_VERSION = "rsna-knee-real-integration-v1"
 INTEGRATION_EVIDENCE_SCHEMA_VERSION = "rsna-knee-real-integration-evidence-v1"
 INVENTORY_SCHEMA_VERSION = "rsna-knee-inventory-v1"
 SELECTION_SCHEMA_VERSION = "rsna-knee-extraction-selection-v1"
+MAX_STORAGE_BUDGET_BYTES = 2_000_000_000_000
 DEFAULT_REAL_GEOMETRY_POLICY = GeometryPolicy(minimum_usable_slices=3)
 DEFAULT_REAL_DECODER_POLICY = DecoderPolicy(require_modality=True)
 DEFAULT_REAL_PREPROCESS_CONFIG = PreprocessConfig(
@@ -471,6 +472,10 @@ def _validate_storage_budget(
         storage.get("current_project_bytes"), "storage current_project_bytes"
     )
     soft_budget_bytes = _required_nonnegative_int(storage.get("soft_budget_bytes"), "storage soft_budget_bytes")
+    if soft_budget_bytes > MAX_STORAGE_BUDGET_BYTES:
+        raise RealIntegrationError(
+            f"selection storage budget cannot exceed {MAX_STORAGE_BUDGET_BYTES} bytes"
+        )
     archive_bytes = _required_nonnegative_int(archive.get("archive_size_bytes"), "archive archive_size_bytes")
     selected_items = [inventory_series[uid] for uid in selected_series_uids]
     extracted_bytes = sum(
@@ -687,7 +692,7 @@ class _SourceReader:
                     while stream.read(1024 * 1024):
                         pass
                     return decoded
-            except (OSError, RuntimeError, zipfile.BadZipFile, zlib.error) as exc:
+            except (EOFError, OSError, RuntimeError, zipfile.BadZipFile, zlib.error) as exc:
                 raise DamagedDicomError(f"archive integrity failed for {entry_name}") from exc
         if self.root is None:
             raise RealIntegrationError("source reader was used outside its context")
@@ -937,6 +942,8 @@ def iter_real_studies(
 def _check_execution_context(*, require_slurm: bool, allow_local_smoke: bool) -> None:
     job_id = os.environ.get("SLURM_JOB_ID")
     partition = os.environ.get("SLURM_JOB_PARTITION")
+    if allow_local_smoke and job_id:
+        raise RealInferenceError("local smoke mode cannot run inside a Slurm allocation")
     if require_slurm and (not job_id or partition != "cluster1-cpu"):
         raise RealInferenceError("real integration must run in a cluster1-cpu Slurm allocation")
     if not job_id and not allow_local_smoke:
@@ -944,6 +951,13 @@ def _check_execution_context(*, require_slurm: bool, allow_local_smoke: bool) ->
             "refusing to read real-DICOM inputs outside Slurm; "
             "use --allow-local-smoke only with a tiny fixture"
         )
+
+
+def _validate_local_smoke_scope(manifest: IntegrationManifest, source: Path) -> None:
+    if not source.is_dir():
+        raise RealInferenceError("local smoke mode requires a small extracted fixture directory")
+    if manifest.series_count > 16 or sum(len(item.entries) for study in manifest.studies for item in study.series) > 256:
+        raise RealInferenceError("local smoke mode is limited to 16 series and 256 source entries")
 
 
 def _configure_threads() -> int:
@@ -1028,7 +1042,10 @@ def run_real_inference(
     _check_execution_context(require_slurm=require_slurm, allow_local_smoke=allow_local_smoke)
     thread_count = _configure_threads()
     manifest = load_integration_manifest(manifest_path)
-    _verify_archive_source_identity(Path(source_path), manifest)
+    source = Path(source_path)
+    if allow_local_smoke:
+        _validate_local_smoke_scope(manifest, source)
+    _verify_archive_source_identity(source, manifest)
     if model is None:
         torch.manual_seed(model_seed)
         model = HierarchicalStudyModel(ModelConfig(image_size=manifest.preprocess_config.image_size))
@@ -1054,7 +1071,7 @@ def run_real_inference(
     warning_count = 0
     for loaded in iter_real_studies(
         manifest,
-        source_path,
+        source,
         allow_unverified_directory=allow_local_smoke,
     ):
         manifest_series_count += len(loaded.series_results)
