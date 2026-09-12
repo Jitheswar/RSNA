@@ -62,10 +62,10 @@ configuration, and empty-input failures. The shared training module records
 the approved operational resource request while retaining its existing
 scientific identity and checkpoint semantics.
 
-The checks run for this implementation pass are:
+The final checks run on 2026-09-13 are:
 
 - focused GPU and training tests: passed;
-- full repository test suite: 188 passed;
+- full repository test suite: 189 passed;
 - mypy for `src/rsna_knee`: passed;
 - Bash syntax checks for both ticket-13 adapters: passed.
 

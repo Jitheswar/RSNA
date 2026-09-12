@@ -63,3 +63,19 @@ No real preflight, owner-approved GPU request, `sbatch` submission, GPU
 allocation, A40 measurement, private-data training, or compatibility claim was
 performed. The acceptance checklist and V10 therefore remain intentionally
 unchecked.
+
+### 2026-09-13 — Final verification and handoff
+
+Hardened the implementation after review: public training seams are CPU-only;
+the private GPU seams require the high-level approval/preflight path and an
+active Slurm job; assigned GPU memory is explicit and must be observed before
+training; `nvidia-smi` is bound to the CUDA-visible device; production study
+loading is lazy until allocation checks pass; and a checksum-keyed submission
+record prevents reuse of one approval for duplicate initial submissions.
+
+Final checks passed: 189 repository tests, mypy for 36 source files, Bash
+syntax checks for both Ticket 13 adapters, and `git diff --check`. The code is
+committed on `master` as `9c371cc` plus hardening commit `eda51a3`. No real
+CPU preflight, owner approval, GPU allocation, smoke run, private-data
+training, or V10 verification was performed; all future execution gates remain
+unchecked.
