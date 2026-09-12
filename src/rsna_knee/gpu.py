@@ -917,7 +917,11 @@ def _job_id(stdout: str) -> str | None:
     lines = [line.strip() for line in stdout.splitlines() if line.strip()]
     if not lines:
         return None
-    return lines[-1].split(";", 1)[0]
+    candidate = lines[-1].split(";", 1)[0].strip()
+    if candidate.isdigit():
+        return candidate
+    match = re.fullmatch(r"Submitted batch job (\d+)", candidate)
+    return match.group(1) if match is not None else None
 
 
 def _recorded_gpu_failure(
@@ -1313,6 +1317,9 @@ def submit_gpu_experiment(
         stderr = str(getattr(completed, "stderr", "") or "")
         returncode = int(getattr(completed, "returncode", 1))
         submitted_job_id = _job_id(stdout)
+        if returncode == 0 and submitted_job_id is None:
+            returncode = 1
+            stderr = "sbatch exited successfully without a parseable job ID"
         if submitted_job_id is not None and returncode == 0:
             job_ids.append(submitted_job_id)
         attempts.append(
@@ -1598,6 +1605,17 @@ def run_approved_gpu_experiment(
         slurm_job_id=str(allocation["job_id"]),
         allocation_fingerprint=_json_sha256(allocation),
     )
+    attempts: list[Mapping[str, object]] = []
+    retry_count = previous_retries
+    _write_gpu_execution_record(
+        execution_record_path,
+        request=request,
+        approval=approval,
+        status="running",
+        output_dir=destination,
+        retry_count=retry_count,
+        attempts=attempts,
+    )
     if runner is None and callable(studies):
         studies = studies()
         if studies is None:
@@ -1618,6 +1636,11 @@ def run_approved_gpu_experiment(
                 preflight=preflight,
                 preflight_checksum=_sha256_file(referenced_preflight),
                 authorization=authorization,
+                preflight_path=referenced_preflight,
+                request_path=request.root,
+                approval_path=approval.path,
+                allocation_environment=allocation_environment,
+                resource=resource.to_dict(),
                 approved_scientific_identity=cast(
                     Mapping[str, object],
                     approved_scientific_identity,
@@ -1627,18 +1650,6 @@ def run_approved_gpu_experiment(
                 requested_resources=resource.to_dict(),
             )
         runner = production_training_runner
-
-    attempts: list[Mapping[str, object]] = []
-    retry_count = previous_retries
-    _write_gpu_execution_record(
-        execution_record_path,
-        request=request,
-        approval=approval,
-        status="running",
-        output_dir=destination,
-        retry_count=retry_count,
-        attempts=attempts,
-    )
     while True:
         try:
             training = runner(
@@ -1687,6 +1698,9 @@ def run_approved_gpu_experiment(
                 "approval_sha256": approval.approval_checksum,
                 "cpu_preflight_sha256": _sha256_file(referenced_preflight),
                 "scientific_config_fingerprint": config.config_fingerprint,
+                "scientific_identity": dict(
+                    cast(Mapping[str, object], approved_scientific_identity)
+                ),
                 "resources": resource.to_dict(),
                 "slurm_allocation": dict(allocation),
                 "hardware": {
@@ -1719,7 +1733,7 @@ def run_approved_gpu_experiment(
                     "latest_present": latest_checkpoint is not None
                     and latest_checkpoint.is_file(),
                     "final_reload_passed": True,
-                    "resumed_from_checkpoint": training.resumed_from_checkpoint,
+                    "resumed_from_checkpoint": training.resumed_from_checkpoint is not None,
                     "replayed_batches": training.replayed_batches,
                 },
                 "retry": {
@@ -1759,8 +1773,12 @@ def run_approved_gpu_experiment(
                 {
                     "attempt": len(attempts) + 1,
                     "error_type": type(exc).__name__,
-                    "error": str(exc),
-                    "retry": classification.to_dict(),
+                    "retry": {
+                        "retryable": classification.retryable,
+                        "category": classification.category,
+                        "reason": "redacted; see private GPU failure evidence",
+                        "retry_number_allowed": classification.retry_number_allowed,
+                    },
                 }
             )
             _write_gpu_execution_record(
@@ -1854,6 +1872,11 @@ def run_gpu_smoke_test(
             authorization=authorization,
             preflight=preflight,
             preflight_checksum=_sha256_file(referenced_preflight),
+            preflight_path=referenced_preflight,
+            request_path=request.root,
+            approval_path=approval.path,
+            allocation_environment=smoke_environment,
+            resource=request.resources.to_dict(),
         )
 
     return run_approved_gpu_experiment(

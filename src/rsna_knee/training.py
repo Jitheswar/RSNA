@@ -127,7 +127,9 @@ def _new_gpu_execution_authorization(
     return _GpuExecutionAuthorization(*values)
 
 
-def _validate_gpu_execution_authorization(value: object) -> _GpuExecutionAuthorization:
+def _validate_gpu_execution_authorization_shape(value: object) -> _GpuExecutionAuthorization:
+    """Validate the private proof's shape before the full adapter recheck."""
+
     if not isinstance(value, _GpuExecutionAuthorization):
         raise TrainingConfigurationError(
             "CUDA training requires the approval-gated GPU execution authorization"
@@ -150,6 +152,53 @@ def _validate_gpu_execution_authorization(value: object) -> _GpuExecutionAuthori
         raise TrainingConfigurationError(
             "CUDA training requires the approved GPU Slurm job to remain active"
         )
+    return value
+
+
+def _validate_gpu_execution_authorization(
+    value: object,
+    *,
+    request_path: str | Path,
+    approval_path: str | Path,
+    preflight_path: str | Path,
+    resource: Mapping[str, object],
+    allocation_environment: Mapping[str, str],
+    preflight: CpuPreflightResult,
+) -> _GpuExecutionAuthorization:
+    value = _validate_gpu_execution_authorization_shape(value)
+    from .gpu import (
+        _json_sha256,
+        _sha256_file,
+        load_cpu_preflight,
+        load_gpu_approval,
+        load_gpu_experiment_request,
+        verify_slurm_gpu_allocation,
+    )
+
+    request = load_gpu_experiment_request(request_path)
+    approval = load_gpu_approval(approval_path, request)
+    if request.request_checksum != value.request_checksum:
+        raise TrainingConfigurationError("GPU authorization request checksum does not match")
+    if approval.approval_checksum != value.approval_checksum:
+        raise TrainingConfigurationError("GPU authorization approval checksum does not match")
+    if request.resources.to_dict() != dict(resource):
+        raise TrainingConfigurationError("GPU authorization resource request does not match")
+    preflight_reference = cast(Mapping[str, object], request.payload["cpu_preflight"])
+    referenced_preflight = Path(str(preflight_reference["path"])).resolve()
+    supplied_preflight = Path(preflight_path).resolve()
+    if referenced_preflight != supplied_preflight:
+        raise PreflightError("GPU authorization does not name the supplied CPU preflight")
+    if _sha256_file(supplied_preflight) != value.preflight_checksum:
+        raise PreflightError("GPU authorization CPU preflight checksum is invalid")
+    loaded_preflight = load_cpu_preflight(supplied_preflight)
+    if loaded_preflight != preflight:
+        raise PreflightError("GPU authorization CPU preflight contents do not match")
+    require_cpu_preflight(loaded_preflight, require_slurm=True, require_isolated_python=True)
+    allocation = verify_slurm_gpu_allocation(request.resources, allocation_environment)
+    if str(allocation["job_id"]) != value.slurm_job_id:
+        raise TrainingConfigurationError("GPU authorization Slurm job does not match")
+    if _json_sha256(allocation) != value.allocation_fingerprint:
+        raise TrainingConfigurationError("GPU authorization Slurm allocation does not match")
     return value
 
 
@@ -1792,7 +1841,7 @@ def _train_fixed_budget_impl(
     """
 
     if config.device != "cpu":
-        _validate_gpu_execution_authorization(gpu_authorization)
+        _validate_gpu_execution_authorization_shape(gpu_authorization)
     examples_tuple = tuple(examples)
     _validate_examples(examples_tuple, config)
     if interrupt_after_steps is not None and interrupt_after_steps < 0:
@@ -2390,6 +2439,11 @@ def _train_fixed_budget_gpu(
     authorization: object,
     preflight: CpuPreflightResult,
     preflight_checksum: str,
+    preflight_path: str | Path,
+    request_path: str | Path,
+    approval_path: str | Path,
+    allocation_environment: Mapping[str, str],
+    resource: Mapping[str, object],
     model: HierarchicalStudyModel | None = None,
     artifact_dir: str | Path | None = None,
     fold: int | None = None,
@@ -2409,7 +2463,15 @@ def _train_fixed_budget_gpu(
 
     if config.device == "cpu" or not config.device.startswith("cuda"):
         raise TrainingConfigurationError("the private GPU seam requires a CUDA device")
-    validated_authorization = _validate_gpu_execution_authorization(authorization)
+    validated_authorization = _validate_gpu_execution_authorization(
+        authorization,
+        request_path=request_path,
+        approval_path=approval_path,
+        preflight_path=preflight_path,
+        resource=resource,
+        allocation_environment=allocation_environment,
+        preflight=preflight,
+    )
     if validated_authorization.preflight_checksum != preflight_checksum:
         raise PreflightError("GPU authorization does not name the supplied CPU preflight")
     require_cpu_preflight(preflight, require_slurm=True, require_isolated_python=True)
@@ -2591,6 +2653,7 @@ def run_cpu_preflight(
     output_path: str | Path | None = None,
     require_isolated_python: bool = True,
     require_slurm: bool = False,
+    required_slurm_resources: Mapping[str, object] | None = None,
 ) -> CpuPreflightResult:
     """Run the finite-loss/checkpoint/import checks that gate real training."""
 
@@ -2607,9 +2670,46 @@ def run_cpu_preflight(
     checks["user_environment_python"] = bool(environment["python_isolated_venv"])
     if not require_isolated_python:
         checks["user_environment_python"] = True
+    slurm_resource_check = True
+    if required_slurm_resources is not None:
+        expected_partition = required_slurm_resources.get("partition")
+        expected_nodes = required_slurm_resources.get("nodes")
+        expected_tasks = required_slurm_resources.get("ntasks")
+        expected_cpus = required_slurm_resources.get("cpus_per_task")
+        expected_memory_gb = required_slurm_resources.get("memory_gb")
+        expected_wall_minutes = required_slurm_resources.get("wall_time_minutes")
+        slurm_resource_check = (
+            isinstance(expected_partition, str)
+            and environment["slurm_partition"] == expected_partition
+            and isinstance(expected_nodes, int)
+            and os.environ.get("SLURM_JOB_NUM_NODES") == str(expected_nodes)
+            and isinstance(expected_tasks, int)
+            and os.environ.get("SLURM_NTASKS") == str(expected_tasks)
+            and isinstance(expected_cpus, int)
+            and os.environ.get("SLURM_CPUS_PER_TASK") == str(expected_cpus)
+            and isinstance(expected_memory_gb, int)
+            and os.environ.get("SLURM_MEM_PER_NODE", "").strip().upper()
+            in {f"{expected_memory_gb}G", str(expected_memory_gb * 1024)}
+            and isinstance(expected_wall_minutes, int)
+            and os.environ.get("SLURM_TIMELIMIT", "").strip()
+            in {
+                str(expected_wall_minutes),
+                f"{expected_wall_minutes // 60:02d}:{expected_wall_minutes % 60:02d}",
+                f"{expected_wall_minutes // 60:02d}:{expected_wall_minutes % 60:02d}:00",
+            }
+            and str(required_slurm_resources.get("exclusive", False)).lower()
+            == "false"
+            and os.environ.get("SLURM_JOB_EXCLUSIVE", "0").strip().lower()
+            not in {"1", "true", "yes"}
+        )
+    slurm_required = require_slurm or required_slurm_resources is not None
     checks["cluster1_cpu_slurm"] = (
-        not require_slurm
-        or (bool(environment["slurm_job_id"]) and environment["slurm_partition"] == "cluster1-cpu")
+        not slurm_required
+        or (
+            bool(environment["slurm_job_id"])
+            and environment["slurm_partition"] == "cluster1-cpu"
+            and slurm_resource_check
+        )
     )
     checks["core_dependencies_import"] = False
     checks["known_roc_auc"] = False
@@ -2682,7 +2782,9 @@ def run_cpu_preflight(
     except (ImportError, OSError, RuntimeError, TypeError, ValueError, CheckpointError) as exc:
         details["failure"] = str(exc)
     details["required_isolated_python"] = require_isolated_python
-    details["required_slurm"] = require_slurm
+    details["required_slurm"] = slurm_required
+    if required_slurm_resources is not None:
+        details["required_slurm_resources"] = dict(required_slurm_resources)
     passed = all(checks.values())
     result = CpuPreflightResult(passed=passed, checks=checks, environment=environment, details=details)
     if output_path is not None:
@@ -2802,7 +2904,7 @@ def _train_one_fold_impl(
             raise TrainingConfigurationError(
                 "GPU fold training requires the approval-gated GPU execution path"
             )
-        _validate_gpu_execution_authorization(gpu_authorization)
+        _validate_gpu_execution_authorization_shape(gpu_authorization)
         if not require_preflight:
             raise PreflightError("GPU fold training always requires a passed CPU preflight")
     if allow_gpu and config.device != "cuda" and not config.device.startswith("cuda:"):
@@ -3087,6 +3189,11 @@ def _train_one_fold_gpu(
     preflight: CpuPreflightResult,
     preflight_checksum: str,
     authorization: object,
+    preflight_path: str | Path,
+    request_path: str | Path,
+    approval_path: str | Path,
+    allocation_environment: Mapping[str, str],
+    resource: Mapping[str, object],
     approved_scientific_identity: Mapping[str, object],
     cache_fingerprint: str | None = None,
     requested_resources: Mapping[str, object] | None = None,
@@ -3100,7 +3207,15 @@ def _train_one_fold_gpu(
     effective_device = str(device) if device is not None else config.device
     if effective_device == "cpu" or not effective_device.startswith("cuda"):
         raise TrainingConfigurationError("the private GPU fold seam requires a CUDA device")
-    validated_authorization = _validate_gpu_execution_authorization(authorization)
+    validated_authorization = _validate_gpu_execution_authorization(
+        authorization,
+        request_path=request_path,
+        approval_path=approval_path,
+        preflight_path=preflight_path,
+        resource=resource,
+        allocation_environment=allocation_environment,
+        preflight=preflight,
+    )
     if validated_authorization.preflight_checksum != preflight_checksum:
         raise PreflightError("GPU authorization does not name the supplied CPU preflight")
     return _train_one_fold_impl(

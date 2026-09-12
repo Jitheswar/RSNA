@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -397,6 +398,50 @@ def test_submit_gpu_experiment_durably_consumes_the_approval(tmp_path: Path) -> 
     assert calls == 1
 
 
+def test_submit_gpu_experiment_accepts_standard_sbatch_job_output(tmp_path: Path) -> None:
+    request, approval = _approved_request(tmp_path)
+    script = tmp_path / "run.sbatch"
+    script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    result = submit_gpu_experiment(
+        request.root,
+        approval,
+        script_path=script,
+        runner=lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="Submitted batch job 5678\n",
+            stderr="",
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.job_ids == ("5678",)
+
+
+def test_submit_gpu_experiment_rejects_success_without_a_job_id(tmp_path: Path) -> None:
+    request, approval = _approved_request(tmp_path)
+    script = tmp_path / "run.sbatch"
+    script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    result = submit_gpu_experiment(
+        request.root,
+        approval,
+        script_path=script,
+        runner=lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="sbatch completed\n",
+            stderr="",
+        ),
+    )
+
+    assert result.status == "failed"
+    assert result.job_ids == ()
+    assert result.attempts[0]["returncode"] == 1
+    assert result.last_failure["category"] == "unknown"
+
+
 def test_submit_gpu_experiment_stops_on_non_transient_failure(tmp_path: Path) -> None:
     request, approval = _approved_request(tmp_path)
     script = tmp_path / "run.sbatch"
@@ -565,6 +610,12 @@ def test_approved_gpu_execution_records_hardware_checkpoint_and_one_retry(tmp_pa
     assert result.evidence["status"] == "completed"
     assert result.evidence["checkpoint"]["final_reload_passed"] is True
     assert result.evidence["hardware"]["peak_vram_bytes"] == 3_000_000
+    assert result.evidence["scientific_identity"]["config_fingerprint"] == request.payload[
+        "experiment"
+    ]["scientific_identity"]["config_fingerprint"]
+    retry_attempt = result.evidence["retry"]["attempts"][0]
+    assert "error" not in retry_attempt
+    assert retry_attempt["retry"]["reason"].startswith("redacted;")
     assert result.evidence_path == tmp_path / "gpu-evidence.json"
     with pytest.raises(GpuExecutionError, match="different output directory"):
         run_approved_gpu_experiment(
@@ -596,6 +647,69 @@ def test_approved_gpu_execution_does_not_retry_oom_or_hide_the_failure(tmp_path:
             training_runner=runner,
         )
     assert calls == 1
+
+
+def test_approved_gpu_execution_consumes_approval_before_lazy_loader(tmp_path: Path) -> None:
+    preflight = _write_preflight(tmp_path / "cpu-preflight.json")
+    request = prepare_gpu_experiment(
+        tmp_path / "request",
+        preflight_path=preflight,
+        resource=GpuResourceRequest(smoke_test=True, wall_time_minutes=30),
+        training_config=_config(),
+        fold=0,
+        source_version="fixture-v1",
+        source_fingerprint="fixture-source",
+        fold_manifest_checksum="fixture-fold",
+        integration_manifest_checksum="fixture-integration",
+    )
+    approval = tmp_path / "approval.json"
+    approval.write_text(
+        json.dumps(
+            {
+                "schema_version": GPU_APPROVAL_SCHEMA_VERSION,
+                "request_checksum": request.request_checksum,
+                "approval_scope": GPU_APPROVAL_SCOPE,
+                "approved": True,
+                "retry_allowed": True,
+                "approver": "owner",
+                "approved_at_utc": "2026-09-12T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def loader() -> dict[str, object]:
+        raise RuntimeError("private study loader failed")
+
+    with pytest.raises(RuntimeError, match="private study loader failed"):
+        run_approved_gpu_experiment(
+            request.root,
+            approval,
+            output_dir=tmp_path / "gpu-run",
+            slurm_environment=_slurm_environment(request.resources),
+            gpu_probe=_gpu_snapshot,
+            studies=loader,
+            fold_manifest=SimpleNamespace(manifest_checksum="fixture-fold"),
+            fold=0,
+            source_version="fixture-v1",
+            source_fingerprint="fixture-source",
+            fold_manifest_checksum="fixture-fold",
+            integration_manifest_checksum="fixture-integration",
+        )
+
+    with pytest.raises(GpuExecutionError, match="already been consumed"):
+        run_approved_gpu_experiment(
+            request.root,
+            approval,
+            output_dir=tmp_path / "gpu-run",
+            slurm_environment=_slurm_environment(request.resources),
+            gpu_probe=_gpu_snapshot,
+            fold=0,
+            source_version="fixture-v1",
+            source_fingerprint="fixture-source",
+            fold_manifest_checksum="fixture-fold",
+            integration_manifest_checksum="fixture-integration",
+        )
 
 
 def test_gpu_smoke_test_requires_a_smoke_scoped_approved_request(tmp_path: Path) -> None:

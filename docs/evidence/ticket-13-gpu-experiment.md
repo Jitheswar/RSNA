@@ -32,7 +32,10 @@ competition data, private identifier, or model upload is included.
    checkpoint when available. Production study loading is deferred until
    these allocation checks complete. The execution authorization carries the
    request, approval, preflight and allocation checksums into the private
-   trainer seam; the recomputed fold identity must match the approved identity.
+   trainer seam, which independently reloads and verifies those artifacts and
+   the live allocation; the recomputed fold identity must match the approved
+   identity. The execution record is written before lazy loading so a loader
+   failure consumes the approval fail-closed.
 5. `run_gpu_smoke_test` is explicitly restricted to a smoke-scoped request and
    the `cluster1-gpu-add` partition. It requires at least one example and uses
    the same forward, backward, checkpoint and recovery path as the full seam.
@@ -61,14 +64,16 @@ Synthetic tests cover immutable request and approval binding, CPU-preflight
 gating, exact Slurm/GRES admission, hardware and assigned-memory recording,
 forward/backward/checkpoint evidence, final-checkpoint reload, transient
 retry, durable retry coordination, and immediate stop for cancellation, OOM,
-configuration, and empty-input failures. The shared training module records
-the approved operational resource request while retaining its existing
-scientific identity and checkpoint semantics.
+configuration, empty-input, malformed-submission-output, and lazy-loader
+failures. The shared training module records the approved operational resource
+request while retaining its existing scientific identity and checkpoint
+semantics; public retry evidence redacts exception text while private failure
+evidence retains diagnostic detail.
 
 The final checks run on 2026-09-13 are:
 
-- focused GPU and training tests: passed;
-- full repository test suite: 189 passed;
+- focused GPU and training tests: 35 passed;
+- full repository test suite: 192 passed;
 - mypy for `src/rsna_knee`: passed;
 - Bash syntax checks for both ticket-13 adapters: passed.
 

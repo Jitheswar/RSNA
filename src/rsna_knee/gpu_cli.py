@@ -19,6 +19,17 @@ from .gpu import (
 from .training import TrainingConfig, TrainingDataError, run_cpu_preflight
 
 
+_TICKET13_CPU_PREFLIGHT_RESOURCES = {
+    "partition": "cluster1-cpu",
+    "nodes": 1,
+    "ntasks": 1,
+    "cpus_per_task": 2,
+    "memory_gb": 8,
+    "wall_time_minutes": 30,
+    "exclusive": False,
+}
+
+
 def _tuple_ints(value: str, *, count: int, field_name: str) -> tuple[int, ...]:
     try:
         values = tuple(int(item.strip()) for item in value.split(","))
@@ -151,6 +162,7 @@ def _preflight(args: argparse.Namespace) -> int:
         output_path=args.output,
         require_isolated_python=True,
         require_slurm=True,
+        required_slurm_resources=_TICKET13_CPU_PREFLIGHT_RESOURCES,
     )
     print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     return 0 if result.passed else 1
