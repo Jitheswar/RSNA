@@ -31,3 +31,35 @@ These retain the parent specification's acceptance criteria and blocking consequ
 ## Completion evidence
 
 - [ ] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+
+## Comments
+
+### 2026-09-12 — Approval-gated execution implementation
+
+Implemented the ticket-13 seam in `src/rsna_knee/gpu.py` and
+`src/rsna_knee/gpu_cli.py`. Request preparation requires a passed,
+checksum-covered CPU preflight and freezes the CUDA configuration, exact
+single-GPU Slurm resources, input identities and retry policy. Submission
+requires a separate owner approval for that exact request checksum and uses
+`sbatch` only. The in-allocation runner verifies Slurm/GRES visibility,
+records actual CUDA/nvidia-smi hardware and assigned memory, delegates to the
+existing checkpointed trainer, reloads the final checkpoint, and permits only
+one unchanged transient-infrastructure retry. Durable failure metadata and
+classification prevent an in-job retry from becoming a second wrapper retry;
+OOM, cancellation, numerical, semantic and loader failures stop.
+
+Added bounded CPU-preflight and GPU Slurm adapters, shared-training resource
+metadata support, and synthetic tests for approval, resource, hardware,
+checkpoint and retry boundaries. Public implementation evidence is recorded
+in `docs/evidence/ticket-13-gpu-experiment.md`.
+
+The GPU adapter uses a separate Python 3.11 CUDA environment rather than the
+repository's CPU-only `.venv`, validates the pinned wheel/runtime contract,
+requires reported Slurm CPU, memory, wall-time, GPU-count and sharing facts,
+and caps smoke requests at 60 minutes. Direct CUDA training also requires the
+approval-gated execution capability.
+
+No real preflight, owner-approved GPU request, `sbatch` submission, GPU
+allocation, A40 measurement, private-data training, or compatibility claim was
+performed. The acceptance checklist and V10 therefore remain intentionally
+unchecked.

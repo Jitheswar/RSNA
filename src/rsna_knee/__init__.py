@@ -260,6 +260,40 @@ _LAZY_TRAINING_EXPORTS = {
 }
 
 
+_LAZY_GPU_EXPORTS = {
+    "GPU_ALLOWED_PARTITIONS",
+    "GPU_APPROVAL_SCHEMA_VERSION",
+    "GPU_APPROVAL_SCOPE",
+    "GPU_DEFAULT_PARTITION",
+    "GPU_EXECUTION_SCHEMA_VERSION",
+    "GPU_EXPERIMENT_SCHEMA_VERSION",
+    "GPU_RETRY_LIMIT",
+    "GPU_SMOKE_PARTITION",
+    "GPU_SMOKE_WALL_TIME_LIMIT",
+    "GpuApproval",
+    "GpuApprovalError",
+    "GpuConfigurationError",
+    "GpuExecutionError",
+    "GpuExecutionResult",
+    "GpuExperimentError",
+    "GpuExperimentRequest",
+    "GpuResourceError",
+    "GpuResourceRequest",
+    "GpuSubmissionResult",
+    "classify_gpu_failure",
+    "collect_gpu_environment",
+    "load_cpu_preflight",
+    "load_gpu_approval",
+    "load_gpu_experiment_request",
+    "prepare_gpu_experiment",
+    "run_approved_gpu_experiment",
+    "run_gpu_smoke_test",
+    "submit_gpu_experiment",
+    "validate_gpu_environment",
+    "verify_slurm_gpu_allocation",
+}
+
+
 def __getattr__(name: str) -> object:
     """Load training orchestration lazily so inference stays training-independent."""
 
@@ -267,6 +301,12 @@ def __getattr__(name: str) -> object:
         from . import training
 
         value = getattr(training, name)
+        globals()[name] = value
+        return value
+    if name in _LAZY_GPU_EXPORTS:
+        from . import gpu
+
+        value = getattr(gpu, name)
         globals()[name] = value
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -473,4 +513,5 @@ __all__ = [
     "predict_training_examples",
     "roc_auc_score",
     *_LAZY_TRAINING_EXPORTS,
+    *_LAZY_GPU_EXPORTS,
 ]

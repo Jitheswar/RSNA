@@ -506,3 +506,53 @@ is demonstrated, and the runtime gate is eligible. Both the original
 candidate and the request remain unchanged, and final selection is never
 performed by this path. See
 [`docs/evidence/ticket-12-kaggle.md`](docs/evidence/ticket-12-kaggle.md).
+
+## Ticket 13 approval-gated GPU experiment execution
+
+`rsna_knee.gpu` separates request preparation, owner approval, Slurm
+submission, and execution. A request is created only after a passed,
+checksum-covered CPU preflight and freezes the exact CUDA configuration,
+single-GPU resource request, scientific input identities, checkpoint output,
+and one-retry policy. The owner approval must name that exact request
+checksum; neither preparation nor local synthetic tests submits a job.
+
+The default adapter is
+`slurm/run_ticket13_gpu_experiment.sbatch`: one non-exclusive
+`cluster1-gpu` node/task, one GPU, 16 CPUs, 64 GB and six hours. The
+`cluster1-gpu-add` partition is admitted only for an explicitly smoke-scoped
+request. The in-job runner verifies Slurm/GRES visibility and records actual
+device, driver, CUDA runtime, assigned/available memory, sharing behavior and
+peak VRAM. It reuses the existing checkpointed trainer, reloads the final
+checkpoint, and allows at most one unchanged retry for a clearly transient
+infrastructure failure. Cancellation, OOM, code/configuration, numerical,
+incompatible-resume and deterministic-loader failures stop immediately.
+
+The repository `.venv` remains the verified CPU environment. Provision a
+separate user-space Python 3.11 GPU environment from
+[`environments/cluster-gpu/requirements.txt`](environments/cluster-gpu/requirements.txt)
+after the cluster's driver/CUDA compatibility gate is approved; pass its
+interpreter as `RSNA_TICKET13_GPU_PYTHON` (the adapter defaults to
+`.venv-gpu/bin/python`). The adapter refuses the CPU-only interpreter,
+requires Python 3.11, checks `torch.cuda.is_available()` before loading
+private data, and the shared trainer refuses CUDA execution outside an active
+Slurm job.
+
+Run the bounded preflight first, then review the generated request before an
+owner creates its separate approval artifact:
+
+```bash
+export RSNA_TICKET13_PREFLIGHT_OUTPUT=/private/path/ticket-13-cpu-preflight.json
+sbatch --wait slurm/run_ticket13_cpu_preflight.sbatch
+
+PYTHONPATH=src .venv/bin/python -m rsna_knee.gpu_cli prepare \
+  --preflight /private/path/ticket-13-cpu-preflight.json \
+  --output /private/path/ticket-13-gpu-request \
+  --smoke-test --partition cluster1-gpu-add --wall-time-minutes 30 --steps 1
+```
+
+After a separately approved request, `gpu_cli submit` passes the exact
+request/approval, GPU interpreter and private data-manifest paths to the Slurm
+adapter. The
+implementation evidence is synthetic only; no Ticket 13 GPU allocation or
+approval-dependent compatibility claim is recorded. See
+[`docs/evidence/ticket-13-gpu-experiment.md`](docs/evidence/ticket-13-gpu-experiment.md).

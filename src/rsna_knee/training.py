@@ -91,6 +91,23 @@ class TrainingInterrupted(TrainingError):
         self.checkpoint_path = checkpoint_path
 
 
+# Capability returned only to the approval-gated GPU orchestration module.
+_GPU_EXECUTION_CAPABILITY = object()
+
+
+def _approved_gpu_execution_capability() -> object:
+    return _GPU_EXECUTION_CAPABILITY
+
+
+def _require_gpu_slurm_context() -> None:
+    """Keep CUDA training inside the scheduler-owned execution boundary."""
+
+    if not os.environ.get("SLURM_JOB_ID", "").strip():
+        raise TrainingConfigurationError(
+            "CUDA training requires an active Slurm job; use the approval-gated GPU runner"
+        )
+
+
 @dataclass(frozen=True)
 class RetryClassification:
     """Conservative classification for the single allowed infrastructure retry."""
@@ -1636,6 +1653,19 @@ def _next_execution_attempt(
     return attempt_id, attempt_dir
 
 
+def _default_requested_resources() -> dict[str, object]:
+    """Return the bounded CPU envelope used when no execution resource is supplied."""
+
+    return {
+        "requested_partition": "cluster1-cpu",
+        "requested_nodes": 1,
+        "requested_cpus": 16,
+        "requested_memory_gb": 64,
+        "requested_wall_time_hours": 6,
+        "exclusive": False,
+    }
+
+
 def train_fixed_budget(
     examples: Sequence[TrainingExample],
     config: TrainingConfig = TrainingConfig(),
@@ -1647,6 +1677,8 @@ def train_fixed_budget(
     identity: Mapping[str, object] | None = None,
     resume_from: str | Path | None = None,
     execution_attempt_id: str | None = None,
+    requested_resources: Mapping[str, object] | None = None,
+    gpu_authorization: object | None = None,
     parent_provenance: Mapping[str, object] | None = None,
     amp_scaler: Any | None = None,
     scaler: Any | None = None,
@@ -1665,6 +1697,12 @@ def train_fixed_budget(
     ``latest_resumable`` checkpoint.
     """
 
+    if config.device != "cpu" and gpu_authorization is not _GPU_EXECUTION_CAPABILITY:
+        raise TrainingConfigurationError(
+            "CUDA fixed-budget training requires the approval-gated GPU execution path"
+        )
+    if config.device != "cpu":
+        _require_gpu_slurm_context()
     examples_tuple = tuple(examples)
     _validate_examples(examples_tuple, config)
     if interrupt_after_steps is not None and interrupt_after_steps < 0:
@@ -1675,6 +1713,9 @@ def train_fixed_budget(
         amp_scaler = scaler
     if best_metric is not None and not np.isfinite(best_metric):
         raise TrainingConfigurationError("best_metric must be finite when present")
+    if requested_resources is not None and not isinstance(requested_resources, Mapping):
+        raise TrainingConfigurationError("requested_resources must be a mapping")
+    effective_resources = dict(requested_resources or _default_requested_resources())
     clock = checkpoint_clock or time.monotonic
     resume_payload: dict[str, object] | None = None
     resume_path: Path | None = None
@@ -1783,12 +1824,7 @@ def train_fixed_budget(
                     "parent_provenance": dict(parent_provenance or {}),
                     "environment": collect_environment_record(),
                     "resources": {
-                        "requested_partition": "cluster1-cpu",
-                        "requested_nodes": 1,
-                        "requested_cpus": 16,
-                        "requested_memory_gb": 64,
-                        "requested_wall_time_hours": 6,
-                        "exclusive": False,
+                        **effective_resources,
                         "slurm_attempt_id": os.environ.get("SLURM_JOB_ID"),
                     },
                 },
@@ -1905,14 +1941,7 @@ def train_fixed_budget(
                 if resume_payload is not None and resume_payload.get("run_id")
                 else (str(parent_provenance.get("parent_run_id")) if parent_provenance and parent_provenance.get("parent_run_id") else None)
             ),
-            requested_resources={
-                "requested_partition": "cluster1-cpu",
-                "requested_nodes": 1,
-                "requested_cpus": 16,
-                "requested_memory_gb": 64,
-                "requested_wall_time_hours": 6,
-                "exclusive": False,
-            },
+            requested_resources=effective_resources,
             supplied_attempt_id=execution_attempt_id,
         )
         log_handle = (attempt_dir / "training.log").open("a", encoding="utf-8")
@@ -2586,6 +2615,9 @@ def train_one_fold(
     preflight: CpuPreflightResult | None = None,
     require_preflight: bool = True,
     allow_local_smoke: bool = False,
+    allow_gpu: bool = False,
+    requested_resources: Mapping[str, object] | None = None,
+    gpu_authorization: object | None = None,
     device: str | torch.device | None = None,
     resume_from: str | Path | None = None,
     execution_attempt_id: str | None = None,
@@ -2623,10 +2655,13 @@ def train_one_fold(
         )
     if device is not None and str(device) != config.device:
         config = replace(config, device=str(device))
-    if config.device != "cpu" and require_preflight:
-        raise TrainingConfigurationError(
-            "ticket 08 real training is CPU-gated; GPU runs need a separate approval"
-        )
+    if config.device != "cpu":
+        if not allow_gpu or gpu_authorization is not _GPU_EXECUTION_CAPABILITY:
+            raise TrainingConfigurationError(
+                "GPU fold training requires the approval-gated GPU execution path"
+            )
+    if allow_gpu and config.device != "cuda" and not config.device.startswith("cuda:"):
+        raise TrainingConfigurationError("GPU-enabled fold training requires a CUDA device")
     if require_preflight:
         if preflight is None:
             raise PreflightError("a passed CPU preflight result is required before real training")
@@ -2699,12 +2734,7 @@ def train_one_fold(
                 "identity": identity,
                 "environment": collect_environment_record(),
                 "resources": {
-                    "requested_partition": "cluster1-cpu",
-                    "requested_nodes": 1,
-                    "requested_cpus": 16,
-                    "requested_memory_gb": 64,
-                    "requested_wall_time_hours": 6,
-                    "exclusive": False,
+                    **dict(requested_resources or _default_requested_resources()),
                     "slurm_attempt_id": os.environ.get("SLURM_JOB_ID"),
                 },
                 "supervision": {
@@ -2769,6 +2799,8 @@ def train_one_fold(
         identity=identity,
         resume_from=resume_from,
         execution_attempt_id=execution_attempt_id,
+        requested_resources=requested_resources,
+        gpu_authorization=gpu_authorization,
         interrupt_after_steps=interrupt_after_steps,
     )
     if result.final_checkpoint_path is None:
