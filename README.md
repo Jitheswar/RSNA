@@ -562,4 +562,6 @@ observable, so a shared allocation cannot silently inherit whole-device A40
 capacity. The production CLI verifies the live allocation before lazily
 loading private studies. A successful `sbatch` is durably recorded against the
 request and approval checksums; reusing that approval requires the single
-approved transient retry and matching failure evidence.
+approved transient retry and matching failure evidence. The private trainer
+authorization binds the request, approval, preflight and verified allocation
+to the active Slurm job.

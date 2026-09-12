@@ -91,21 +91,66 @@ class TrainingInterrupted(TrainingError):
         self.checkpoint_path = checkpoint_path
 
 
-# Capability returned only to the approval-gated GPU orchestration module.
-_GPU_EXECUTION_CAPABILITY = object()
+@dataclass(frozen=True)
+class _GpuExecutionAuthorization:
+    """Private proof binding training to one validated request and allocation."""
+
+    request_checksum: str
+    approval_checksum: str
+    preflight_checksum: str
+    approval_scope: str
+    slurm_job_id: str
+    allocation_fingerprint: str
 
 
-def _approved_gpu_execution_capability() -> object:
-    return _GPU_EXECUTION_CAPABILITY
+def _new_gpu_execution_authorization(
+    *,
+    request_checksum: str,
+    approval_checksum: str,
+    preflight_checksum: str,
+    approval_scope: str,
+    slurm_job_id: str,
+    allocation_fingerprint: str,
+) -> object:
+    """Create the private proof used by the approval-gated GPU adapter."""
+
+    values = (
+        request_checksum,
+        approval_checksum,
+        preflight_checksum,
+        approval_scope,
+        slurm_job_id,
+        allocation_fingerprint,
+    )
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise TrainingConfigurationError("GPU execution authorization is incomplete")
+    return _GpuExecutionAuthorization(*values)
 
 
-def _require_gpu_slurm_context() -> None:
-    """Keep CUDA training inside the scheduler-owned execution boundary."""
-
-    if not os.environ.get("SLURM_JOB_ID", "").strip():
+def _validate_gpu_execution_authorization(value: object) -> _GpuExecutionAuthorization:
+    if not isinstance(value, _GpuExecutionAuthorization):
         raise TrainingConfigurationError(
-            "CUDA training requires an active Slurm job; use the approval-gated GPU runner"
+            "CUDA training requires the approval-gated GPU execution authorization"
         )
+    for field_name in (
+        "request_checksum",
+        "approval_checksum",
+        "preflight_checksum",
+        "allocation_fingerprint",
+    ):
+        field_value = getattr(value, field_name)
+        if re.fullmatch(r"[0-9a-f]{64}", field_value) is None:
+            raise TrainingConfigurationError(
+                f"GPU execution authorization has an invalid {field_name}"
+            )
+    if value.approval_scope != "ticket-13-approved-gpu-experiment":
+        raise TrainingConfigurationError("GPU execution authorization has an invalid approval scope")
+    active_job_id = os.environ.get("SLURM_JOB_ID", "").strip()
+    if not active_job_id or active_job_id != value.slurm_job_id:
+        raise TrainingConfigurationError(
+            "CUDA training requires the approved GPU Slurm job to remain active"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -1746,12 +1791,8 @@ def _train_fixed_budget_impl(
     ``latest_resumable`` checkpoint.
     """
 
-    if config.device != "cpu" and gpu_authorization is not _GPU_EXECUTION_CAPABILITY:
-        raise TrainingConfigurationError(
-            "CUDA fixed-budget training requires the approval-gated GPU execution path"
-        )
     if config.device != "cpu":
-        _require_gpu_slurm_context()
+        _validate_gpu_execution_authorization(gpu_authorization)
     examples_tuple = tuple(examples)
     _validate_examples(examples_tuple, config)
     if interrupt_after_steps is not None and interrupt_after_steps < 0:
@@ -2346,6 +2387,9 @@ def _train_fixed_budget_gpu(
     examples: Sequence[TrainingExample],
     config: TrainingConfig,
     *,
+    authorization: object,
+    preflight: CpuPreflightResult,
+    preflight_checksum: str,
     model: HierarchicalStudyModel | None = None,
     artifact_dir: str | Path | None = None,
     fold: int | None = None,
@@ -2365,6 +2409,10 @@ def _train_fixed_budget_gpu(
 
     if config.device == "cpu" or not config.device.startswith("cuda"):
         raise TrainingConfigurationError("the private GPU seam requires a CUDA device")
+    validated_authorization = _validate_gpu_execution_authorization(authorization)
+    if validated_authorization.preflight_checksum != preflight_checksum:
+        raise PreflightError("GPU authorization does not name the supplied CPU preflight")
+    require_cpu_preflight(preflight, require_slurm=True, require_isolated_python=True)
     return _train_fixed_budget_impl(
         examples,
         config,
@@ -2376,7 +2424,7 @@ def _train_fixed_budget_gpu(
         resume_from=resume_from,
         execution_attempt_id=execution_attempt_id,
         requested_resources=requested_resources,
-        gpu_authorization=_GPU_EXECUTION_CAPABILITY,
+        gpu_authorization=validated_authorization,
         parent_provenance=parent_provenance,
         amp_scaler=amp_scaler,
         scaler=scaler,
@@ -2711,6 +2759,7 @@ def _train_one_fold_impl(
     allow_gpu: bool = False,
     requested_resources: Mapping[str, object] | None = None,
     gpu_authorization: object | None = None,
+    approved_scientific_identity: Mapping[str, object] | None = None,
     device: str | torch.device | None = None,
     resume_from: str | Path | None = None,
     execution_attempt_id: str | None = None,
@@ -2749,10 +2798,11 @@ def _train_one_fold_impl(
     if device is not None and str(device) != config.device:
         config = replace(config, device=str(device))
     if config.device != "cpu":
-        if not allow_gpu or gpu_authorization is not _GPU_EXECUTION_CAPABILITY:
+        if not allow_gpu:
             raise TrainingConfigurationError(
                 "GPU fold training requires the approval-gated GPU execution path"
             )
+        _validate_gpu_execution_authorization(gpu_authorization)
         if not require_preflight:
             raise PreflightError("GPU fold training always requires a passed CPU preflight")
     if allow_gpu and config.device != "cuda" and not config.device.startswith("cuda:"):
@@ -2768,6 +2818,21 @@ def _train_one_fold_impl(
         if not allow_local_smoke and preflight.details.get("required_slurm") is not True:
             raise PreflightError(
                 "real training requires a CPU preflight executed with the Slurm gate enabled"
+            )
+    if approved_scientific_identity is not None:
+        expected_scientific_identity = {
+            "config_fingerprint": config.config_fingerprint,
+            "inputs": {
+                "fold": fold,
+                "source_version": source_version,
+                "source_fingerprint": source_fingerprint,
+                "fold_manifest_checksum": fold_manifest.manifest_checksum,
+                "integration_manifest_checksum": integration_manifest_checksum,
+            },
+        }
+        if dict(approved_scientific_identity) != expected_scientific_identity:
+            raise TrainingConfigurationError(
+                "recomputed training identity does not match the approved scientific identity"
             )
     training_examples = build_fold_training_examples(
         studies,
@@ -2809,6 +2874,8 @@ def _train_one_fold_impl(
     identity["held_out_data_fingerprint"] = fingerprint_training_examples(held_out_examples)
     identity["held_out_inputs_excluded_from_fitting"] = True
     identity["learned_normalization_fit_studies"] = []
+    if approved_scientific_identity is not None:
+        identity["approved_scientific_identity"] = dict(approved_scientific_identity)
     run_id = _default_run_id(identity, config)
     scientific_identity = semantic_fingerprint(config, identity)
     destination = Path(output_dir)
@@ -3018,6 +3085,9 @@ def _train_one_fold_gpu(
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
     preflight: CpuPreflightResult,
+    preflight_checksum: str,
+    authorization: object,
+    approved_scientific_identity: Mapping[str, object],
     cache_fingerprint: str | None = None,
     requested_resources: Mapping[str, object] | None = None,
     device: str | torch.device | None = None,
@@ -3030,6 +3100,9 @@ def _train_one_fold_gpu(
     effective_device = str(device) if device is not None else config.device
     if effective_device == "cpu" or not effective_device.startswith("cuda"):
         raise TrainingConfigurationError("the private GPU fold seam requires a CUDA device")
+    validated_authorization = _validate_gpu_execution_authorization(authorization)
+    if validated_authorization.preflight_checksum != preflight_checksum:
+        raise PreflightError("GPU authorization does not name the supplied CPU preflight")
     return _train_one_fold_impl(
         studies,
         fold_manifest,
@@ -3044,10 +3117,11 @@ def _train_one_fold_gpu(
         preprocess_config=preprocess_config,
         packing_config=packing_config,
         preflight=preflight,
+        approved_scientific_identity=approved_scientific_identity,
         require_preflight=True,
         allow_local_smoke=False,
         allow_gpu=True,
-        gpu_authorization=_GPU_EXECUTION_CAPABILITY,
+        gpu_authorization=validated_authorization,
         requested_resources=requested_resources,
         device=device,
         resume_from=resume_from,

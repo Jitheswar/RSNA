@@ -13,10 +13,13 @@ import json
 import os
 import re
 import subprocess
+import fcntl
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, Callable, Iterator, Mapping, Sequence, cast
 
 import torch
 
@@ -34,6 +37,7 @@ from .training import (
     require_cpu_preflight,
     _train_fixed_budget_gpu,
     _train_one_fold_gpu,
+    _new_gpu_execution_authorization,
 )
 
 
@@ -41,6 +45,7 @@ GPU_EXPERIMENT_SCHEMA_VERSION = "rsna-knee-gpu-experiment-v1"
 GPU_APPROVAL_SCHEMA_VERSION = "rsna-knee-gpu-owner-approval-v1"
 GPU_EXECUTION_SCHEMA_VERSION = "rsna-knee-gpu-execution-v1"
 GPU_SUBMISSION_SCHEMA_VERSION = "rsna-knee-gpu-submission-v1"
+GPU_EXECUTION_RECORD_SCHEMA_VERSION = "rsna-knee-gpu-execution-record-v1"
 GPU_APPROVAL_SCOPE = "ticket-13-approved-gpu-experiment"
 GPU_DEFAULT_PARTITION = "cluster1-gpu"
 GPU_SMOKE_PARTITION = "cluster1-gpu-add"
@@ -454,6 +459,13 @@ def load_gpu_experiment_request(path: str | Path) -> GpuExperimentRequest:
     inputs = payload.get("inputs", {})
     if not isinstance(inputs, Mapping):
         raise GpuConfigurationError("GPU request inputs section is invalid")
+    scientific_identity = experiment_payload.get("scientific_identity")
+    expected_scientific_identity = {
+        "config_fingerprint": config.config_fingerprint,
+        "inputs": dict(inputs),
+    }
+    if scientific_identity != expected_scientific_identity:
+        raise GpuApprovalError("GPU request scientific identity is invalid")
     if config.device != "cuda" and not config.device.startswith("cuda:"):
         raise GpuConfigurationError("GPU request must use a CUDA device")
     if resources.smoke_test and config.successful_optimizer_steps > 2:
@@ -1033,6 +1045,103 @@ def _write_gpu_submission_record(
     )
 
 
+def _gpu_execution_record_path(
+    request: GpuExperimentRequest,
+    approval: GpuApproval,
+) -> Path:
+    return request.root.parent / (
+        ".ticket13-execution-"
+        f"{request.request_checksum[:16]}-{approval.approval_checksum[:16]}.json"
+    )
+
+
+@contextmanager
+def _exclusive_gpu_record_lock(path: Path) -> Iterator[None]:
+    """Serialize approval consumption across processes sharing a filesystem."""
+
+    lock_path = path.with_name(f"{path.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _lock_gpu_record(
+    record_path: Callable[[GpuExperimentRequest, GpuApproval], Path],
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(function)
+        def locked(
+            request_path: str | Path,
+            approval_path: str | Path,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Any:
+            request = load_gpu_experiment_request(request_path)
+            approval = load_gpu_approval(approval_path, request)
+            with _exclusive_gpu_record_lock(record_path(request, approval)):
+                return function(request_path, approval_path, *args, **kwargs)
+
+        return locked
+
+    return decorate
+
+
+def _load_gpu_execution_record(
+    path: Path,
+    *,
+    request_checksum: str,
+    approval_checksum: str,
+) -> Mapping[str, object] | None:
+    if not path.exists():
+        return None
+    payload = _read_json(path, "GPU execution record")
+    if payload.get("schema_version") != GPU_EXECUTION_RECORD_SCHEMA_VERSION:
+        raise GpuApprovalError("GPU execution record has an unexpected schema")
+    if payload.get("request_checksum") != request_checksum:
+        raise GpuApprovalError("GPU execution record names a different request")
+    if payload.get("approval_sha256") != approval_checksum:
+        raise GpuApprovalError("GPU execution record names a different approval artifact")
+    if payload.get("status") not in {"running", "failed", "completed"}:
+        raise GpuApprovalError("GPU execution record has an invalid status")
+    retry_count = payload.get("retry_count")
+    if not isinstance(retry_count, int) or isinstance(retry_count, bool) or retry_count < 0:
+        raise GpuApprovalError("GPU execution record has an invalid retry count")
+    _nonempty(payload.get("output_dir"), "GPU execution record output directory")
+    return payload
+
+
+def _write_gpu_execution_record(
+    path: Path,
+    *,
+    request: GpuExperimentRequest,
+    approval: GpuApproval,
+    status: str,
+    output_dir: Path,
+    retry_count: int,
+    attempts: Sequence[Mapping[str, object]],
+    retry: Mapping[str, object] | None = None,
+) -> None:
+    atomic_json_write(
+        path,
+        {
+            "schema_version": GPU_EXECUTION_RECORD_SCHEMA_VERSION,
+            "status": status,
+            "request_checksum": request.request_checksum,
+            "approval_sha256": approval.approval_checksum,
+            "output_dir": str(output_dir),
+            "retry_count": retry_count,
+            "attempts": [dict(attempt) for attempt in attempts],
+            "retry": dict(retry or {}),
+        },
+        overwrite=path.exists(),
+    )
+
+
+@_lock_gpu_record(_gpu_submission_record_path)
 def submit_gpu_experiment(
     request_path: str | Path,
     approval_path: str | Path,
@@ -1311,6 +1420,7 @@ def _write_gpu_failure(
     )
 
 
+@_lock_gpu_record(_gpu_execution_record_path)
 def run_approved_gpu_experiment(
     request_path: str | Path,
     approval_path: str | Path,
@@ -1355,6 +1465,16 @@ def run_approved_gpu_experiment(
     request_inputs = request.payload.get("inputs", {})
     if not isinstance(request_inputs, Mapping):
         raise GpuConfigurationError("GPU request inputs section is invalid")
+    experiment_payload = request.payload.get("experiment")
+    if not isinstance(experiment_payload, Mapping):
+        raise GpuConfigurationError("GPU request experiment section is invalid")
+    approved_scientific_identity = experiment_payload.get("scientific_identity")
+    expected_scientific_identity = {
+        "config_fingerprint": config.config_fingerprint,
+        "inputs": dict(request_inputs),
+    }
+    if approved_scientific_identity != expected_scientific_identity:
+        raise GpuApprovalError("approved GPU scientific identity does not match the request")
     for field_name, supplied_value in (
         ("fold", fold),
         ("source_version", source_version),
@@ -1377,6 +1497,38 @@ def run_approved_gpu_experiment(
     evidence_destination = Path(evidence_path or destination / "gpu-execution.json").resolve()
     if evidence_destination == request.root or request.root in evidence_destination.parents:
         raise GpuExecutionError("GPU evidence must not be written inside the immutable request")
+    execution_record_path = _gpu_execution_record_path(request, approval)
+    execution_record = _load_gpu_execution_record(
+        execution_record_path,
+        request_checksum=request.request_checksum,
+        approval_checksum=approval.approval_checksum,
+    )
+    if execution_record is not None:
+        recorded_output = Path(
+            _nonempty(execution_record["output_dir"], "GPU execution record output directory")
+        ).resolve()
+        if recorded_output != destination:
+            raise GpuExecutionError(
+                "the approved GPU execution is bound to a different output directory"
+            )
+        execution_status = str(execution_record["status"])
+        if execution_status in {"running", "completed"}:
+            raise GpuExecutionError(
+                "this approval has already been consumed by a GPU execution"
+            )
+        execution_retry = cast(int, execution_record["retry_count"])
+        execution_retry_payload = execution_record.get("retry")
+        if (
+            not isinstance(execution_retry_payload, Mapping)
+            or not isinstance(execution_retry_payload.get("retryable"), bool)
+            or approval.payload.get("retry_allowed") is not True
+            or not bool(execution_retry_payload["retryable"])
+            or execution_retry >= GPU_RETRY_LIMIT
+        ):
+            raise GpuExecutionError(
+                "existing GPU execution evidence requires diagnosis and a new approved request"
+            )
+        previous_retries = max(previous_retries, execution_retry + 1)
     recorded_retry_count, recorded_classification = _recorded_gpu_failure(
         {"RSNA_TICKET13_OUTPUT": str(destination)},
         request_checksum=request.request_checksum,
@@ -1438,6 +1590,14 @@ def run_approved_gpu_experiment(
         raise GpuResourceError(
             "GPU memory assigned to this job could not be verified; stop before training"
         )
+    authorization = _new_gpu_execution_authorization(
+        request_checksum=request.request_checksum,
+        approval_checksum=approval.approval_checksum,
+        preflight_checksum=_sha256_file(referenced_preflight),
+        approval_scope=GPU_APPROVAL_SCOPE,
+        slurm_job_id=str(allocation["job_id"]),
+        allocation_fingerprint=_json_sha256(allocation),
+    )
     if runner is None and callable(studies):
         studies = studies()
         if studies is None:
@@ -1456,6 +1616,12 @@ def run_approved_gpu_experiment(
                 integration_manifest_checksum=approved_integration_manifest_checksum,
                 series_cache=series_cache,
                 preflight=preflight,
+                preflight_checksum=_sha256_file(referenced_preflight),
+                authorization=authorization,
+                approved_scientific_identity=cast(
+                    Mapping[str, object],
+                    approved_scientific_identity,
+                ),
                 device=config.device,
                 resume_from=resume_from,
                 requested_resources=resource.to_dict(),
@@ -1464,6 +1630,15 @@ def run_approved_gpu_experiment(
 
     attempts: list[Mapping[str, object]] = []
     retry_count = previous_retries
+    _write_gpu_execution_record(
+        execution_record_path,
+        request=request,
+        approval=approval,
+        status="running",
+        output_dir=destination,
+        retry_count=retry_count,
+        attempts=attempts,
+    )
     while True:
         try:
             training = runner(
@@ -1562,6 +1737,15 @@ def run_approved_gpu_experiment(
                 },
             }
             atomic_json_write(evidence_destination, evidence)
+            _write_gpu_execution_record(
+                execution_record_path,
+                request=request,
+                approval=approval,
+                status="completed",
+                output_dir=destination,
+                retry_count=retry_count,
+                attempts=attempts,
+            )
             return GpuExecutionResult(
                 request=request,
                 training=training,
@@ -1579,12 +1763,32 @@ def run_approved_gpu_experiment(
                     "retry": classification.to_dict(),
                 }
             )
+            _write_gpu_execution_record(
+                execution_record_path,
+                request=request,
+                approval=approval,
+                status="failed",
+                output_dir=destination,
+                retry_count=retry_count,
+                attempts=attempts,
+                retry=classification.to_dict(),
+            )
             if (
                 approval.payload.get("retry_allowed") is True
                 and classification.retryable
                 and retry_count < GPU_RETRY_LIMIT
             ):
                 retry_count += 1
+                _write_gpu_execution_record(
+                    execution_record_path,
+                    request=request,
+                    approval=approval,
+                    status="running",
+                    output_dir=destination,
+                    retry_count=retry_count,
+                    attempts=attempts,
+                    retry=classification.to_dict(),
+                )
                 continue
             _write_gpu_failure(
                 destination,
@@ -1620,6 +1824,22 @@ def run_gpu_smoke_test(
     if not examples:
         raise GpuExecutionError("GPU smoke execution requires at least one example")
     config = request.training_config
+    approval = load_gpu_approval(approval_path, request)
+    preflight_reference = cast(Mapping[str, object], request.payload["cpu_preflight"])
+    referenced_preflight = Path(
+        _nonempty(preflight_reference["path"], "CPU preflight path")
+    ).resolve()
+    preflight = load_cpu_preflight(referenced_preflight)
+    smoke_environment = dict(os.environ if slurm_environment is None else slurm_environment)
+    smoke_allocation = verify_slurm_gpu_allocation(request.resources, smoke_environment)
+    authorization = _new_gpu_execution_authorization(
+        request_checksum=request.request_checksum,
+        approval_checksum=approval.approval_checksum,
+        preflight_checksum=_sha256_file(referenced_preflight),
+        approval_scope=GPU_APPROVAL_SCOPE,
+        slurm_job_id=str(smoke_allocation["job_id"]),
+        allocation_fingerprint=_json_sha256(smoke_allocation),
+    )
     destination = Path(
         output_dir or request.root.parent / f"{request.root.name}-execution"
     ).resolve()
@@ -1631,6 +1851,9 @@ def run_gpu_smoke_test(
             artifact_dir=destination,
             resume_from=resume_from,
             requested_resources=request.resources.to_dict(),
+            authorization=authorization,
+            preflight=preflight,
+            preflight_checksum=_sha256_file(referenced_preflight),
         )
 
     return run_approved_gpu_experiment(
@@ -1689,6 +1912,10 @@ def prepare_gpu_experiment(
             if field_name != "fold":
                 _nonempty(field_value, f"GPU input {field_name}")
             input_values[field_name] = field_value
+    scientific_identity = {
+        "config_fingerprint": config.config_fingerprint,
+        "inputs": dict(input_values),
+    }
     identity = dict(experiment_identity or {})
     try:
         _canonical_json(identity)
@@ -1737,6 +1964,7 @@ def prepare_gpu_experiment(
             "training_config": config.to_dict(),
             "scientific_config_fingerprint": config.config_fingerprint,
             "identity": identity,
+            "scientific_identity": scientific_identity,
         },
         "inputs": input_values,
         "approval": {
@@ -1761,6 +1989,7 @@ __all__ = [
     "GPU_APPROVAL_SCOPE",
     "GPU_DEFAULT_PARTITION",
     "GPU_EXECUTION_SCHEMA_VERSION",
+    "GPU_EXECUTION_RECORD_SCHEMA_VERSION",
     "GPU_EXPERIMENT_SCHEMA_VERSION",
     "GPU_RETRY_LIMIT",
     "GPU_SMOKE_PARTITION",

@@ -566,6 +566,15 @@ def test_approved_gpu_execution_records_hardware_checkpoint_and_one_retry(tmp_pa
     assert result.evidence["checkpoint"]["final_reload_passed"] is True
     assert result.evidence["hardware"]["peak_vram_bytes"] == 3_000_000
     assert result.evidence_path == tmp_path / "gpu-evidence.json"
+    with pytest.raises(GpuExecutionError, match="different output directory"):
+        run_approved_gpu_experiment(
+            request.root,
+            approval,
+            output_dir=tmp_path / "second-gpu-run",
+            slurm_environment=_slurm_environment(request.resources),
+            gpu_probe=_gpu_snapshot,
+            training_runner=runner,
+        )
 
 
 def test_approved_gpu_execution_does_not_retry_oom_or_hide_the_failure(tmp_path: Path) -> None:

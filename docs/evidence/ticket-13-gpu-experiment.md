@@ -10,8 +10,9 @@ competition data, private identifier, or model upload is included.
 
 1. `prepare_gpu_experiment` reloads a passed, checksum-covered CPU preflight,
    freezes the CUDA training configuration and exact single-GPU Slurm request,
-   binds optional fold/source/manifest identities, and writes an immutable
-   `owner_approval_required` request. Preparing a request does not submit work.
+   freezes a canonical scientific identity for the bound inputs, and writes an
+   immutable `owner_approval_required` request. Preparing a request does not
+   submit work.
 2. `load_gpu_approval` requires an approval for the exact request checksum,
    the ticket-13 scope, and the request's declared retry policy.
 3. `submit_gpu_experiment` builds one `sbatch` command with the exact
@@ -29,7 +30,9 @@ competition data, private identifier, or model upload is included.
    memory is not observable, compares peak VRAM to the verified assignment,
    and keeps a retry on the same request/configuration using the durable latest
    checkpoint when available. Production study loading is deferred until
-   these allocation checks complete.
+   these allocation checks complete. The execution authorization carries the
+   request, approval, preflight and allocation checksums into the private
+   trainer seam; the recomputed fold identity must match the approved identity.
 5. `run_gpu_smoke_test` is explicitly restricted to a smoke-scoped request and
    the `cluster1-gpu-add` partition. It requires at least one example and uses
    the same forward, backward, checkpoint and recovery path as the full seam.
