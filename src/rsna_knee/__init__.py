@@ -270,6 +270,7 @@ _LAZY_GPU_EXPORTS = {
     "GPU_RETRY_LIMIT",
     "GPU_SMOKE_PARTITION",
     "GPU_SMOKE_WALL_TIME_LIMIT",
+    "GPU_SUBMISSION_SCHEMA_VERSION",
     "GpuApproval",
     "GpuApprovalError",
     "GpuConfigurationError",

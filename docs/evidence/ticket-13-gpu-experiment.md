@@ -19,12 +19,17 @@ competition data, private identifier, or model upload is included.
    It never invokes `srun`. A scheduler retry is allowed only when the exact
    approval permits it and the failure is classified as transient. Durable
    in-job failure evidence is consulted first, so an in-job retry cannot be
-   followed by an additional wrapper retry.
+   followed by an additional wrapper retry. A checksum-keyed private
+   submission record consumes the approval after a successful `sbatch` and
+   prevents duplicate initial submissions.
 4. `run_approved_gpu_experiment` verifies the live Slurm allocation, records
    actual CUDA/nvidia-smi device, driver, runtime and memory facts, delegates
    training to the existing checkpointed fold trainer, reloads the final
-   checkpoint, and writes execution evidence. A retry keeps the same request
-   and configuration and uses the durable latest checkpoint when available.
+   checkpoint, and writes execution evidence. It stops when assigned GPU
+   memory is not observable, compares peak VRAM to the verified assignment,
+   and keeps a retry on the same request/configuration using the durable latest
+   checkpoint when available. Production study loading is deferred until
+   these allocation checks complete.
 5. `run_gpu_smoke_test` is explicitly restricted to a smoke-scoped request and
    the `cluster1-gpu-add` partition. It requires at least one example and uses
    the same forward, backward, checkpoint and recovery path as the full seam.
@@ -33,7 +38,8 @@ The GPU adapter is
 `slurm/run_ticket13_gpu_experiment.sbatch`. Its default request is one
 non-exclusive `cluster1-gpu` node/task with one GPU, 16 CPUs, 64 GB and six
 hours. The adapter and Python layer both verify the allocation; nominal A40
-capacity is never treated as assigned memory. The bounded CPU preflight
+capacity is never treated as assigned memory, and an unverified shared-memory
+allocation is stopped before training. The bounded CPU preflight
 adapter is `slurm/run_ticket13_cpu_preflight.sbatch`.
 
 The repository `.venv` is CPU-only and is used only for the prerequisite

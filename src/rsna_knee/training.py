@@ -1678,6 +1678,55 @@ def train_fixed_budget(
     resume_from: str | Path | None = None,
     execution_attempt_id: str | None = None,
     requested_resources: Mapping[str, object] | None = None,
+    parent_provenance: Mapping[str, object] | None = None,
+    amp_scaler: Any | None = None,
+    scaler: Any | None = None,
+    best_metric: float | None = None,
+    checkpoint_clock: Callable[[], float] | None = None,
+    interrupt_after_steps: int | None = None,
+) -> TrainingResult:
+    """Run a CPU fixed-budget training job.
+
+    CUDA execution is deliberately not part of this public training seam;
+    the approval-gated GPU adapter uses ``_train_fixed_budget_gpu`` instead.
+    """
+
+    if config.device != "cpu":
+        raise TrainingConfigurationError(
+            "CUDA fixed-budget training is available only through the approval-gated GPU runner"
+        )
+    return _train_fixed_budget_impl(
+        examples,
+        config,
+        model=model,
+        artifact_dir=artifact_dir,
+        fold=fold,
+        run_id=run_id,
+        identity=identity,
+        resume_from=resume_from,
+        execution_attempt_id=execution_attempt_id,
+        requested_resources=requested_resources,
+        parent_provenance=parent_provenance,
+        amp_scaler=amp_scaler,
+        scaler=scaler,
+        best_metric=best_metric,
+        checkpoint_clock=checkpoint_clock,
+        interrupt_after_steps=interrupt_after_steps,
+    )
+
+
+def _train_fixed_budget_impl(
+    examples: Sequence[TrainingExample],
+    config: TrainingConfig = TrainingConfig(),
+    *,
+    model: HierarchicalStudyModel | None = None,
+    artifact_dir: str | Path | None = None,
+    fold: int | None = None,
+    run_id: str | None = None,
+    identity: Mapping[str, object] | None = None,
+    resume_from: str | Path | None = None,
+    execution_attempt_id: str | None = None,
+    requested_resources: Mapping[str, object] | None = None,
     gpu_authorization: object | None = None,
     parent_provenance: Mapping[str, object] | None = None,
     amp_scaler: Any | None = None,
@@ -2293,6 +2342,50 @@ def train_fixed_budget(
     )
 
 
+def _train_fixed_budget_gpu(
+    examples: Sequence[TrainingExample],
+    config: TrainingConfig,
+    *,
+    model: HierarchicalStudyModel | None = None,
+    artifact_dir: str | Path | None = None,
+    fold: int | None = None,
+    run_id: str | None = None,
+    identity: Mapping[str, object] | None = None,
+    resume_from: str | Path | None = None,
+    execution_attempt_id: str | None = None,
+    requested_resources: Mapping[str, object] | None = None,
+    parent_provenance: Mapping[str, object] | None = None,
+    amp_scaler: Any | None = None,
+    scaler: Any | None = None,
+    best_metric: float | None = None,
+    checkpoint_clock: Callable[[], float] | None = None,
+    interrupt_after_steps: int | None = None,
+) -> TrainingResult:
+    """Private CUDA seam entered only after the GPU adapter's approval gates."""
+
+    if config.device == "cpu" or not config.device.startswith("cuda"):
+        raise TrainingConfigurationError("the private GPU seam requires a CUDA device")
+    return _train_fixed_budget_impl(
+        examples,
+        config,
+        model=model,
+        artifact_dir=artifact_dir,
+        fold=fold,
+        run_id=run_id,
+        identity=identity,
+        resume_from=resume_from,
+        execution_attempt_id=execution_attempt_id,
+        requested_resources=requested_resources,
+        gpu_authorization=_GPU_EXECUTION_CAPABILITY,
+        parent_provenance=parent_provenance,
+        amp_scaler=amp_scaler,
+        scaler=scaler,
+        best_metric=best_metric,
+        checkpoint_clock=checkpoint_clock,
+        interrupt_after_steps=interrupt_after_steps,
+    )
+
+
 def resume_training(
     examples: Sequence[TrainingExample],
     checkpoint: str | Path,
@@ -2598,7 +2691,7 @@ def _public_run_environment() -> dict[str, object]:
     }
 
 
-def train_one_fold(
+def _train_one_fold_impl(
     studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
     fold_manifest: FoldManifest,
     fold: int,
@@ -2660,6 +2753,8 @@ def train_one_fold(
             raise TrainingConfigurationError(
                 "GPU fold training requires the approval-gated GPU execution path"
             )
+        if not require_preflight:
+            raise PreflightError("GPU fold training always requires a passed CPU preflight")
     if allow_gpu and config.device != "cuda" and not config.device.startswith("cuda:"):
         raise TrainingConfigurationError("GPU-enabled fold training requires a CUDA device")
     if require_preflight:
@@ -2790,7 +2885,7 @@ def train_one_fold(
             raise TrainingConfigurationError(
                 "experiment semantic fingerprint does not match the requested run"
             )
-    result = train_fixed_budget(
+    result = _train_fixed_budget_impl(
         training_examples,
         config,
         artifact_dir=destination,
@@ -2847,6 +2942,118 @@ def train_one_fold(
     atomic_json_write(destination / "metrics.json", evaluation.to_private_dict())
     atomic_json_write(destination / "run.json", completed.to_private_dict())
     return completed
+
+
+def train_one_fold(
+    studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
+    fold_manifest: FoldManifest,
+    fold: int,
+    output_dir: str | Path,
+    *,
+    config: TrainingConfig = TrainingConfig(),
+    source_version: str = DEFAULT_SOURCE_VERSION,
+    source_fingerprint: str | None = None,
+    cache_fingerprint: str | None = None,
+    integration_manifest_checksum: str | None = None,
+    series_cache: SeriesCache | None = None,
+    preprocess_config: PreprocessConfig | None = None,
+    packing_config: PackingConfig | None = None,
+    preflight: CpuPreflightResult | None = None,
+    require_preflight: bool = True,
+    allow_local_smoke: bool = False,
+    requested_resources: Mapping[str, object] | None = None,
+    device: str | torch.device | None = None,
+    resume_from: str | Path | None = None,
+    execution_attempt_id: str | None = None,
+    interrupt_after_steps: int | None = None,
+) -> TrainingResult:
+    """Train one reference fold on CPU.
+
+    CUDA fold training is deliberately private to the approval-gated GPU
+    adapter; this public seam cannot opt into it with a keyword or sentinel.
+    """
+
+    effective_device = str(device) if device is not None else config.device
+    if effective_device != "cpu":
+        raise TrainingConfigurationError(
+            "CUDA fold training is available only through the approval-gated GPU runner"
+        )
+    return _train_one_fold_impl(
+        studies,
+        fold_manifest,
+        fold,
+        output_dir,
+        config=config,
+        source_version=source_version,
+        source_fingerprint=source_fingerprint,
+        cache_fingerprint=cache_fingerprint,
+        integration_manifest_checksum=integration_manifest_checksum,
+        series_cache=series_cache,
+        preprocess_config=preprocess_config,
+        packing_config=packing_config,
+        preflight=preflight,
+        require_preflight=require_preflight,
+        allow_local_smoke=allow_local_smoke,
+        allow_gpu=False,
+        gpu_authorization=None,
+        requested_resources=requested_resources,
+        device=device,
+        resume_from=resume_from,
+        execution_attempt_id=execution_attempt_id,
+        interrupt_after_steps=interrupt_after_steps,
+    )
+
+
+def _train_one_fold_gpu(
+    studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
+    fold_manifest: FoldManifest,
+    fold: int,
+    output_dir: str | Path,
+    *,
+    config: TrainingConfig,
+    source_version: str,
+    source_fingerprint: str,
+    integration_manifest_checksum: str,
+    series_cache: SeriesCache | None = None,
+    preprocess_config: PreprocessConfig | None = None,
+    packing_config: PackingConfig | None = None,
+    preflight: CpuPreflightResult,
+    cache_fingerprint: str | None = None,
+    requested_resources: Mapping[str, object] | None = None,
+    device: str | torch.device | None = None,
+    resume_from: str | Path | None = None,
+    execution_attempt_id: str | None = None,
+    interrupt_after_steps: int | None = None,
+) -> TrainingResult:
+    """Private CUDA fold seam entered after request, approval, and preflight checks."""
+
+    effective_device = str(device) if device is not None else config.device
+    if effective_device == "cpu" or not effective_device.startswith("cuda"):
+        raise TrainingConfigurationError("the private GPU fold seam requires a CUDA device")
+    return _train_one_fold_impl(
+        studies,
+        fold_manifest,
+        fold,
+        output_dir,
+        config=config,
+        source_version=source_version,
+        source_fingerprint=source_fingerprint,
+        cache_fingerprint=cache_fingerprint,
+        integration_manifest_checksum=integration_manifest_checksum,
+        series_cache=series_cache,
+        preprocess_config=preprocess_config,
+        packing_config=packing_config,
+        preflight=preflight,
+        require_preflight=True,
+        allow_local_smoke=False,
+        allow_gpu=True,
+        gpu_authorization=_GPU_EXECUTION_CAPABILITY,
+        requested_resources=requested_resources,
+        device=device,
+        resume_from=resume_from,
+        execution_attempt_id=execution_attempt_id,
+        interrupt_after_steps=interrupt_after_steps,
+    )
 
 
 def _parser() -> Any:

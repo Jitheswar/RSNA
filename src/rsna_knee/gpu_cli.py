@@ -174,15 +174,17 @@ def _run(args: argparse.Namespace) -> int:
     required_gold = {item.study_instance_uid for item in fold_manifest.gold_memberships}
     if not required_gold.issubset(set(integration_manifest.study_uids)):
         raise TrainingDataError("integration manifest does not cover every frozen gold study")
-    studies = {
-        loaded.study.study_instance_uid: loaded.study
-        for loaded in iter_real_studies(
-            integration_manifest,
-            args.source,
-            require_complete_series=True,
-            allow_unverified_directory=False,
-        )
-    }
+    def load_studies() -> dict[str, object]:
+        return {
+            loaded.study.study_instance_uid: loaded.study
+            for loaded in iter_real_studies(
+                integration_manifest,
+                args.source,
+                require_complete_series=True,
+                allow_unverified_directory=False,
+            )
+        }
+
     cache = SeriesCache(args.cache_root) if args.cache_root is not None else None
     result = run_approved_gpu_experiment(
         args.request,
@@ -190,7 +192,7 @@ def _run(args: argparse.Namespace) -> int:
         preflight_path=args.preflight,
         output_dir=args.output,
         evidence_path=args.evidence,
-        studies=studies,
+        studies=load_studies,
         fold_manifest=fold_manifest,
         fold=args.fold,
         source_version=args.source_version,

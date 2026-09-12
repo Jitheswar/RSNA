@@ -32,15 +32,15 @@ from .training import (
     classify_retry_failure,
     load_training_checkpoint,
     require_cpu_preflight,
-    train_fixed_budget,
-    train_one_fold,
-    _approved_gpu_execution_capability,
+    _train_fixed_budget_gpu,
+    _train_one_fold_gpu,
 )
 
 
 GPU_EXPERIMENT_SCHEMA_VERSION = "rsna-knee-gpu-experiment-v1"
 GPU_APPROVAL_SCHEMA_VERSION = "rsna-knee-gpu-owner-approval-v1"
 GPU_EXECUTION_SCHEMA_VERSION = "rsna-knee-gpu-execution-v1"
+GPU_SUBMISSION_SCHEMA_VERSION = "rsna-knee-gpu-submission-v1"
 GPU_APPROVAL_SCOPE = "ticket-13-approved-gpu-experiment"
 GPU_DEFAULT_PARTITION = "cluster1-gpu"
 GPU_SMOKE_PARTITION = "cluster1-gpu-add"
@@ -611,12 +611,24 @@ def verify_slurm_gpu_allocation(
     }
 
 
-def _nvidia_smi_facts() -> dict[str, object]:
+def _cuda_device_selector(device_index: int) -> str:
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible_devices is None or not visible_devices.strip():
+        return str(device_index)
+    selectors = [item.strip() for item in visible_devices.split(",") if item.strip()]
+    if device_index >= len(selectors) or selectors[device_index] == "-1":
+        raise GpuResourceError("CUDA_VISIBLE_DEVICES does not identify the current GPU")
+    return selectors[device_index]
+
+
+def _nvidia_smi_facts(device_selector: str) -> dict[str, object]:
     try:
         completed = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=name,driver_version,memory.total,memory.free,memory.used",
+                "--id",
+                device_selector,
+                "--query-gpu=index,name,driver_version,memory.total,memory.free,memory.used",
                 "--format=csv,noheader,nounits",
             ],
             check=False,
@@ -631,17 +643,21 @@ def _nvidia_smi_facts() -> dict[str, object]:
             "nvidia-smi did not return driver and memory facts: "
             f"{completed.stderr.strip() or 'unknown error'}"
         )
-    fields = [item.strip() for item in completed.stdout.splitlines()[0].split(",")]
-    if len(fields) != 5 or not fields[0] or not fields[1]:
+    rows = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if len(rows) != 1:
+        raise GpuResourceError("nvidia-smi returned more than one GPU fact row")
+    fields = [item.strip() for item in rows[0].split(",")]
+    if len(fields) != 6 or not fields[0] or not fields[1] or not fields[2]:
         raise GpuResourceError("nvidia-smi returned an unparseable GPU fact row")
     facts: dict[str, object] = {
-        "nvidia_smi_device_name": fields[0],
-        "driver_version": fields[1],
+        "nvidia_smi_device_index": fields[0],
+        "nvidia_smi_device_name": fields[1],
+        "driver_version": fields[2],
     }
     for key, value in (
-        ("nvidia_smi_memory_total_mb", fields[2]),
-        ("nvidia_smi_memory_free_mb", fields[3]),
-        ("nvidia_smi_memory_used_mb", fields[4]),
+        ("nvidia_smi_memory_total_mb", fields[3]),
+        ("nvidia_smi_memory_free_mb", fields[4]),
+        ("nvidia_smi_memory_used_mb", fields[5]),
     ):
         try:
             facts[key] = int(float(value))
@@ -657,9 +673,19 @@ def _default_gpu_probe() -> dict[str, object]:
         device_index = torch.cuda.current_device()
         properties = torch.cuda.get_device_properties(device_index)
         free_bytes, total_bytes = torch.cuda.mem_get_info(device_index)
-        facts = _nvidia_smi_facts()
+        device_selector = _cuda_device_selector(device_index)
+        facts = _nvidia_smi_facts(device_selector)
+        nvidia_total_bytes = int(cast(int, facts["nvidia_smi_memory_total_mb"])) * 1024 * 1024
+        if abs(nvidia_total_bytes - int(properties.total_memory)) > max(
+            256 * 1024 * 1024,
+            int(properties.total_memory) // 20,
+        ):
+            raise GpuResourceError(
+                "nvidia-smi memory facts do not match the CUDA-visible device"
+            )
         return {
             "device_index": device_index,
+            "device_selector": device_selector,
             "visible_device_count": torch.cuda.device_count(),
             "device_name": properties.name,
             "compute_capability": [properties.major, properties.minor],
@@ -737,17 +763,62 @@ def validate_gpu_environment(
     available_memory_source = str(normalized["available_memory_source"])
     if available_memory_source.lower() in {"nominal", "device_specification", "user_report"}:
         raise GpuResourceError("GPU available memory must come from an observed allocation")
-    normalized["resource_request"] = resource.to_dict()
-    normalized["allocation"] = dict(allocation)
-    normalized["nominal_device_memory_used"] = False
     sharing_behavior = str(allocation.get("sharing_behavior", "")).strip().lower()
-    normalized["memory_assignment_verified"] = sharing_behavior in {
+    memory_assignment_verified = sharing_behavior in {
         "0",
         "false",
         "no",
         "exclusive",
         "unshared",
     }
+    assigned_memory_value = snapshot.get("assigned_memory_bytes")
+    if assigned_memory_value is not None:
+        if (
+            not isinstance(assigned_memory_value, int)
+            or isinstance(assigned_memory_value, bool)
+            or assigned_memory_value <= 0
+        ):
+            raise GpuResourceError("GPU assigned memory must be a positive integer when reported")
+        assigned_memory_bytes = assigned_memory_value
+        assigned_memory_source_value = snapshot.get("assigned_memory_source")
+        try:
+            assigned_memory_source = _nonempty(
+                assigned_memory_source_value,
+                "GPU assigned_memory_source",
+            )
+        except GpuConfigurationError as exc:
+            raise GpuResourceError(str(exc)) from exc
+        if assigned_memory_source.lower() in {
+            "nominal",
+            "device_specification",
+            "user_report",
+        }:
+            raise GpuResourceError("GPU assigned memory must come from an observed allocation")
+        memory_assignment_verified = True
+    elif memory_assignment_verified:
+        assigned_memory_bytes = runtime_visible_memory_limit_bytes
+        assigned_memory_source = "runtime_visible_memory_limit_on_unshared_allocation"
+    else:
+        assigned_memory_bytes = None
+        assigned_memory_source = "not_verified"
+    if assigned_memory_bytes is not None:
+        if assigned_memory_bytes > runtime_visible_memory_limit_bytes:
+            raise GpuResourceError("GPU assigned memory exceeds the runtime-visible memory limit")
+        if available_memory_bytes > assigned_memory_bytes:
+            raise GpuResourceError("GPU free memory exceeds the assigned memory")
+        if peak_vram_bytes > assigned_memory_bytes:
+            raise GpuResourceError("observed peak VRAM exceeds the assigned GPU memory")
+    normalized["resource_request"] = resource.to_dict()
+    normalized["allocation"] = dict(allocation)
+    normalized["nominal_device_memory_used"] = False
+    normalized["assigned_memory_bytes"] = assigned_memory_bytes
+    normalized["assigned_memory_source"] = assigned_memory_source
+    normalized["memory_assignment_verified"] = memory_assignment_verified
+    normalized["peak_vram_within_assigned_memory"] = (
+        memory_assignment_verified
+        and assigned_memory_bytes is not None
+        and peak_vram_bytes <= assigned_memory_bytes
+    )
     return normalized
 
 
@@ -899,6 +970,69 @@ def _recorded_gpu_failure(
     )
 
 
+def _gpu_submission_record_path(
+    request: GpuExperimentRequest,
+    approval: GpuApproval,
+) -> Path:
+    """Return a checksum-keyed sidecar that consumes one approval artifact."""
+
+    return request.root.parent / (
+        ".ticket13-submission-"
+        f"{request.request_checksum[:16]}-{approval.approval_checksum[:16]}.json"
+    )
+
+
+def _load_gpu_submission_record(
+    path: Path,
+    *,
+    request_checksum: str,
+    approval_checksum: str,
+) -> Mapping[str, object] | None:
+    if not path.exists():
+        return None
+    payload = _read_json(path, "GPU submission record")
+    if payload.get("schema_version") != GPU_SUBMISSION_SCHEMA_VERSION:
+        raise GpuApprovalError("GPU submission record has an unexpected schema")
+    if payload.get("request_checksum") != request_checksum:
+        raise GpuApprovalError("GPU submission record names a different request")
+    if payload.get("approval_sha256") != approval_checksum:
+        raise GpuApprovalError("GPU submission record names a different approval artifact")
+    status = payload.get("status")
+    if status not in {"submitting", "failed", "submitted", "completed"}:
+        raise GpuApprovalError("GPU submission record has an invalid status")
+    retry_count = payload.get("retry_count")
+    if not isinstance(retry_count, int) or isinstance(retry_count, bool) or retry_count < 0:
+        raise GpuApprovalError("GPU submission record has an invalid retry count")
+    return payload
+
+
+def _write_gpu_submission_record(
+    path: Path,
+    *,
+    request: GpuExperimentRequest,
+    approval: GpuApproval,
+    status: str,
+    retry_count: int,
+    attempts: Sequence[Mapping[str, object]],
+    job_ids: Sequence[str] = (),
+    last_failure: Mapping[str, object] | None = None,
+) -> None:
+    atomic_json_write(
+        path,
+        {
+            "schema_version": GPU_SUBMISSION_SCHEMA_VERSION,
+            "status": status,
+            "request_checksum": request.request_checksum,
+            "approval_sha256": approval.approval_checksum,
+            "retry_count": retry_count,
+            "job_ids": list(job_ids),
+            "attempts": [dict(attempt) for attempt in attempts],
+            "last_failure": dict(last_failure or {}),
+        },
+        overwrite=path.exists(),
+    )
+
+
 def submit_gpu_experiment(
     request_path: str | Path,
     approval_path: str | Path,
@@ -920,6 +1054,7 @@ def submit_gpu_experiment(
 
     request = load_gpu_experiment_request(request_path)
     approval = load_gpu_approval(approval_path, request)
+    approval_file = Path(approval_path).resolve()
     script = Path(script_path).resolve()
     if not script.is_file():
         raise GpuExecutionError(f"GPU sbatch adapter is not a regular file: {script}")
@@ -937,12 +1072,106 @@ def submit_gpu_experiment(
     submission_environment.update(
         {
             "RSNA_TICKET13_REQUEST": str(request.request_path),
-            "RSNA_TICKET13_APPROVAL": str(Path(approval_path).resolve()),
+            "RSNA_TICKET13_APPROVAL": str(approval_file),
             "RSNA_TICKET13_PREFLIGHT": str(
                 Path(_nonempty(preflight_reference["path"], "CPU preflight path")).resolve()
             ),
             "RSNA_TICKET13_PREVIOUS_RETRIES": "0",
         }
+    )
+    submission_record_path = _gpu_submission_record_path(request, approval)
+    submission_record = _load_gpu_submission_record(
+        submission_record_path,
+        request_checksum=request.request_checksum,
+        approval_checksum=approval.approval_checksum,
+    )
+    recorded_retry_count, recorded_classification = _recorded_gpu_failure(
+        submission_environment,
+        request_checksum=request.request_checksum,
+    )
+    retry_count = 0
+    attempts: list[Mapping[str, object]] = []
+    job_ids: list[str] = []
+    last_failure: dict[str, object] = {}
+    stale_failure_metadata = False
+    if submission_record is not None:
+        raw_attempts = submission_record.get("attempts")
+        if not isinstance(raw_attempts, list) or any(
+            not isinstance(attempt, Mapping) for attempt in raw_attempts
+        ):
+            raise GpuApprovalError("GPU submission record has invalid attempts")
+        attempts = [dict(attempt) for attempt in raw_attempts]
+        raw_job_ids = submission_record.get("job_ids", [])
+        if not isinstance(raw_job_ids, list) or any(
+            not isinstance(job_id, str) or not job_id.strip() for job_id in raw_job_ids
+        ):
+            raise GpuApprovalError("GPU submission record has invalid job IDs")
+        job_ids = list(raw_job_ids)
+        record_status = str(submission_record["status"])
+        record_retry_count = cast(int, submission_record["retry_count"])
+        if record_status == "submitting":
+            raise GpuApprovalError(
+                "a prior submission has an unknown outcome; do not reuse the approval"
+            )
+        if record_status in {"submitted", "completed"}:
+            if recorded_classification is None:
+                raise GpuApprovalError(
+                    "this approval has already been consumed by a successful submission"
+                )
+            classification = recorded_classification
+        else:
+            recorded_failure = submission_record.get("last_failure")
+            if not isinstance(recorded_failure, Mapping):
+                raise GpuApprovalError("GPU submission record has no failure classification")
+            if not isinstance(recorded_failure.get("retryable"), bool):
+                raise GpuApprovalError("GPU submission record has an invalid failure classification")
+            classification = RetryClassification(
+                bool(recorded_failure["retryable"]),
+                str(recorded_failure.get("category", "recorded_failure")),
+                str(recorded_failure.get("reason", "recorded GPU submission failure")),
+                int(recorded_failure.get("retry_number_allowed", GPU_RETRY_LIMIT)),
+            )
+        if (
+            approval.payload.get("retry_allowed") is not True
+            or not classification.retryable
+            or classification.retry_number_allowed < GPU_RETRY_LIMIT
+            or max(record_retry_count, recorded_retry_count) >= GPU_RETRY_LIMIT
+        ):
+            raise GpuApprovalError(
+                "this approval cannot authorize another GPU submission attempt"
+            )
+        retry_count = max(record_retry_count, recorded_retry_count) + 1
+        last_failure = classification.to_dict()
+    elif recorded_classification is not None:
+        if (
+            recorded_classification.category == "recorded_failure"
+            and "different request" in recorded_classification.reason
+        ):
+            # A stale output directory must not authorize a retry, but it also
+            # must not prevent one fresh submission for this request.
+            stale_failure_metadata = True
+            retry_count = recorded_retry_count
+        else:
+            if (
+                approval.payload.get("retry_allowed") is not True
+                or not recorded_classification.retryable
+                or recorded_classification.retry_number_allowed < GPU_RETRY_LIMIT
+                or recorded_retry_count >= GPU_RETRY_LIMIT
+            ):
+                raise GpuApprovalError(
+                    "existing GPU failure evidence requires a new approved request"
+                )
+            retry_count = recorded_retry_count + 1
+            last_failure = recorded_classification.to_dict()
+    submission_environment["RSNA_TICKET13_PREVIOUS_RETRIES"] = str(retry_count)
+    _write_gpu_submission_record(
+        submission_record_path,
+        request=request,
+        approval=approval,
+        status="submitting",
+        retry_count=retry_count,
+        attempts=attempts,
+        last_failure=last_failure,
     )
     command = [
         sbatch_binary,
@@ -960,10 +1189,6 @@ def submit_gpu_experiment(
         command.append("--exclusive")
     command.append(str(script))
     execute = runner or subprocess.run
-    attempts: list[Mapping[str, object]] = []
-    job_ids: list[str] = []
-    retry_count = 0
-    last_failure: dict[str, object] = {}
     while True:
         try:
             completed = execute(
@@ -991,6 +1216,16 @@ def submit_gpu_experiment(
             }
         )
         if returncode == 0:
+            _write_gpu_submission_record(
+                submission_record_path,
+                request=request,
+                approval=approval,
+                status="completed" if wait else "submitted",
+                retry_count=retry_count,
+                attempts=attempts,
+                job_ids=job_ids,
+                last_failure=last_failure,
+            )
             return GpuSubmissionResult(
                 status="completed" if wait else "submitted",
                 job_ids=tuple(job_ids),
@@ -1004,7 +1239,23 @@ def submit_gpu_experiment(
         )
         retry_count = max(retry_count, recorded_retry_count)
         classification = recorded_classification or classify_gpu_failure(f"{stderr}\n{stdout}".strip())
+        if stale_failure_metadata:
+            classification = RetryClassification(
+                False,
+                "stale_request",
+                "retry suppressed because the existing failure names a different request",
+            )
         last_failure = classification.to_dict()
+        _write_gpu_submission_record(
+            submission_record_path,
+            request=request,
+            approval=approval,
+            status="failed",
+            retry_count=retry_count,
+            attempts=attempts,
+            job_ids=job_ids,
+            last_failure=last_failure,
+        )
         if (
             not wait
             or approval.payload.get("retry_allowed") is not True
@@ -1020,6 +1271,16 @@ def submit_gpu_experiment(
             )
         retry_count += 1
         submission_environment["RSNA_TICKET13_PREVIOUS_RETRIES"] = str(retry_count)
+        _write_gpu_submission_record(
+            submission_record_path,
+            request=request,
+            approval=approval,
+            status="submitting",
+            retry_count=retry_count,
+            attempts=attempts,
+            job_ids=job_ids,
+            last_failure=last_failure,
+        )
 
 
 def _write_gpu_failure(
@@ -1126,6 +1387,36 @@ def run_approved_gpu_experiment(
                 "existing GPU failure evidence requires diagnosis and a new approved request"
             )
         previous_retries = max(previous_retries, recorded_retry_count + 1)
+    runner = training_runner
+    if runner is None:
+        if studies is None or fold_manifest is None or fold is None:
+            raise GpuConfigurationError(
+                "production GPU execution requires studies, fold manifest, and fold"
+            )
+        if not source_version or not source_fingerprint or not integration_manifest_checksum:
+            raise GpuConfigurationError(
+                "production GPU execution requires source and integration manifest identities"
+            )
+        required_inputs = (
+            "fold",
+            "source_version",
+            "source_fingerprint",
+            "fold_manifest_checksum",
+            "integration_manifest_checksum",
+        )
+        if any(request_inputs.get(name) is None for name in required_inputs):
+            raise GpuConfigurationError(
+                "approved GPU request does not bind every training input identity"
+            )
+        if request_inputs.get("fold_manifest_checksum") != fold_manifest.manifest_checksum:
+            raise GpuConfigurationError("fold manifest checksum differs from the approved request")
+        approved_fold = cast(int, fold)
+        approved_source_version = cast(str, source_version)
+        approved_source_fingerprint = cast(str, source_fingerprint)
+        approved_integration_manifest_checksum = cast(
+            str,
+            integration_manifest_checksum,
+        )
     allocation_environment = dict(os.environ if slurm_environment is None else slurm_environment)
     allocation = verify_slurm_gpu_allocation(resource, allocation_environment)
     if not resource.smoke_test and str(allocation["sharing_behavior"]).strip().lower() not in {
@@ -1143,51 +1434,39 @@ def run_approved_gpu_experiment(
         slurm_environment=allocation_environment,
         probe=gpu_probe,
     )
-
-    if training_runner is None:
-        if studies is None or fold_manifest is None or fold is None:
-            raise GpuConfigurationError("production GPU execution requires studies, fold manifest, and fold")
-        if not source_version or not source_fingerprint or not integration_manifest_checksum:
-            raise GpuConfigurationError(
-                "production GPU execution requires source and integration manifest identities"
-            )
-        required_inputs = (
-            "fold",
-            "source_version",
-            "source_fingerprint",
-            "fold_manifest_checksum",
-            "integration_manifest_checksum",
+    if before.get("memory_assignment_verified") is not True:
+        raise GpuResourceError(
+            "GPU memory assigned to this job could not be verified; stop before training"
         )
-        if any(request_inputs.get(name) is None for name in required_inputs):
-            raise GpuConfigurationError("approved GPU request does not bind every training input identity")
-        if request_inputs.get("fold_manifest_checksum") != fold_manifest.manifest_checksum:
-            raise GpuConfigurationError("fold manifest checksum differs from the approved request")
+    if runner is None and callable(studies):
+        studies = studies()
+        if studies is None:
+            raise GpuConfigurationError("the approved GPU study loader returned no studies")
 
-        def training_runner(resume_from: Path | None) -> TrainingResult:
-            return train_one_fold(
+    if runner is None:
+        def production_training_runner(resume_from: Path | None) -> TrainingResult:
+            return _train_one_fold_gpu(
                 studies,
                 fold_manifest,
-                fold,
+                approved_fold,
                 destination,
                 config=config,
-                source_version=source_version,
-                source_fingerprint=source_fingerprint,
-                integration_manifest_checksum=integration_manifest_checksum,
+                source_version=approved_source_version,
+                source_fingerprint=approved_source_fingerprint,
+                integration_manifest_checksum=approved_integration_manifest_checksum,
                 series_cache=series_cache,
                 preflight=preflight,
-                require_preflight=True,
-                allow_gpu=True,
-                gpu_authorization=_approved_gpu_execution_capability(),
                 device=config.device,
                 resume_from=resume_from,
                 requested_resources=resource.to_dict(),
             )
+        runner = production_training_runner
 
     attempts: list[Mapping[str, object]] = []
     retry_count = previous_retries
     while True:
         try:
-            training = training_runner(
+            training = runner(
                 destination / "checkpoints" / "latest.pt"
                 if (destination / "checkpoints" / "latest.pt").is_file()
                 and retry_count > 0
@@ -1213,6 +1492,14 @@ def run_approved_gpu_experiment(
                 slurm_environment=allocation_environment,
                 probe=gpu_probe,
             )
+            if after.get("memory_assignment_verified") is not True:
+                raise GpuResourceError(
+                    "GPU memory assignment was not verified after training"
+                )
+            if after.get("assigned_memory_bytes") != before.get("assigned_memory_bytes"):
+                raise GpuResourceError(
+                    "GPU assigned memory changed during the approved execution"
+                )
             before_peak = int(cast(Any, before["peak_vram_bytes"]))
             after_peak = int(cast(Any, after["peak_vram_bytes"]))
             final_sha256 = checkpoint_sha256(final_checkpoint)
@@ -1242,7 +1529,12 @@ def run_approved_gpu_experiment(
                     "runtime_visible_memory_limit_bytes": before[
                         "runtime_visible_memory_limit_bytes"
                     ],
+                    "assigned_memory_bytes": before["assigned_memory_bytes"],
+                    "assigned_memory_source": before["assigned_memory_source"],
                     "memory_assignment_verified": after["memory_assignment_verified"],
+                    "peak_vram_within_assigned_memory": after[
+                        "peak_vram_within_assigned_memory"
+                    ],
                     "nominal_device_memory_used": False,
                 },
                 "training": training.to_public_dict(),
@@ -1333,13 +1625,12 @@ def run_gpu_smoke_test(
     ).resolve()
 
     def runner(resume_from: Path | None) -> TrainingResult:
-        return train_fixed_budget(
+        return _train_fixed_budget_gpu(
             examples,
             config,
             artifact_dir=destination,
             resume_from=resume_from,
             requested_resources=request.resources.to_dict(),
-            gpu_authorization=_approved_gpu_execution_capability(),
         )
 
     return run_approved_gpu_experiment(
@@ -1474,6 +1765,7 @@ __all__ = [
     "GPU_RETRY_LIMIT",
     "GPU_SMOKE_PARTITION",
     "GPU_SMOKE_WALL_TIME_LIMIT",
+    "GPU_SUBMISSION_SCHEMA_VERSION",
     "GpuApproval",
     "GpuApprovalError",
     "GpuConfigurationError",

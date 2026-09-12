@@ -32,7 +32,6 @@ from rsna_knee.training import (
     TrainingConfigurationError,
     TrainingError,
     TrainingResult,
-    _approved_gpu_execution_capability,
     save_training_checkpoint,
     train_fixed_budget,
 )
@@ -232,6 +231,8 @@ def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_fa
             "available_memory_bytes": 20_000_000_000,
             "runtime_visible_memory_limit_bytes": 20_000_000_000,
             "available_memory_source": "synthetic_allocation_fixture",
+            "assigned_memory_bytes": 20_000_000_000,
+            "assigned_memory_source": "synthetic_allocation_fixture",
             "allocated_vram_bytes": 1_000_000,
             "reserved_vram_bytes": 2_000_000,
             "peak_vram_bytes": 3_000_000,
@@ -242,7 +243,21 @@ def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_fa
     validated = validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
     assert validated["device_name"] == "NVIDIA A40"
     assert validated["available_memory_bytes"] == 20_000_000_000
+    assert validated["assigned_memory_bytes"] == 20_000_000_000
+    assert validated["memory_assignment_verified"] is True
+    assert validated["peak_vram_within_assigned_memory"] is True
     assert validated["nominal_device_memory_used"] is False
+
+    unassigned = validate_gpu_environment(
+        {key: value for key, value in snapshot.items() if key not in {
+            "assigned_memory_bytes",
+            "assigned_memory_source",
+        }},
+        resource=resource,
+        allocation=allocation,
+    )
+    assert unassigned["assigned_memory_bytes"] is None
+    assert unassigned["memory_assignment_verified"] is False
 
     with pytest.raises(GpuResourceError, match="driver"):
         validate_gpu_environment(
@@ -254,6 +269,30 @@ def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_fa
             resource=resource,
             allocation=allocation,
         )
+
+
+def test_approved_gpu_execution_stops_without_observed_memory_assignment(tmp_path: Path) -> None:
+    request, approval = _approved_request(tmp_path)
+    calls = 0
+
+    def runner(resume_from: Path | None) -> TrainingResult:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("training must not start without assigned-memory evidence")
+
+    snapshot = _gpu_snapshot()
+    snapshot.pop("assigned_memory_bytes")
+    snapshot.pop("assigned_memory_source")
+    with pytest.raises(GpuResourceError, match="assigned to this job"):
+        run_approved_gpu_experiment(
+            request.root,
+            approval,
+            output_dir=tmp_path / "gpu-run",
+            slurm_environment=_slurm_environment(request.resources),
+            gpu_probe=lambda: snapshot,
+            training_runner=runner,
+        )
+    assert calls == 0
 
 
 def _approved_request(tmp_path: Path):
@@ -289,14 +328,8 @@ def test_gpu_retry_classification_excludes_user_cancel_and_oom() -> None:
 
 
 def test_direct_cuda_training_requires_the_approval_capability() -> None:
-    with pytest.raises(TrainingConfigurationError, match="approval-gated"):
+    with pytest.raises(TrainingConfigurationError, match="only through the approval-gated"):
         train_fixed_budget((), _config())
-
-
-def test_approved_cuda_training_requires_a_slurm_job(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
-    with pytest.raises(TrainingConfigurationError, match="active Slurm job"):
-        train_fixed_budget((), _config(), gpu_authorization=_approved_gpu_execution_capability())
 
 
 def test_submit_gpu_experiment_uses_sbatch_and_retries_one_transient_failure(
@@ -331,6 +364,37 @@ def test_submit_gpu_experiment_uses_sbatch_and_retries_one_transient_failure(
     assert "--gres=gpu:1" in calls[0][0]
     assert "srun" not in calls[0][0]
     assert calls[1][1]["RSNA_TICKET13_PREVIOUS_RETRIES"] == "1"
+
+
+def test_submit_gpu_experiment_durably_consumes_the_approval(tmp_path: Path) -> None:
+    request, approval = _approved_request(tmp_path)
+    script = tmp_path / "run.sbatch"
+    script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    calls = 0
+
+    def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(command, 0, stdout="5678\n", stderr="")
+
+    environment = {"RSNA_TICKET13_OUTPUT": str(tmp_path / "run")}
+    first = submit_gpu_experiment(
+        request.root,
+        approval,
+        script_path=script,
+        environment=environment,
+        runner=runner,
+    )
+    assert first.status == "completed"
+    with pytest.raises(GpuApprovalError, match="already been consumed"):
+        submit_gpu_experiment(
+            request.root,
+            approval,
+            script_path=script,
+            environment=environment,
+            runner=runner,
+        )
+    assert calls == 1
 
 
 def test_submit_gpu_experiment_stops_on_non_transient_failure(tmp_path: Path) -> None:
@@ -369,24 +433,16 @@ def test_submit_gpu_experiment_honors_durable_in_job_failure_before_retry(tmp_pa
         ),
         encoding="utf-8",
     )
-    calls = 0
-
-    def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        nonlocal calls
-        calls += 1
-        return subprocess.CompletedProcess(command, 1, stdout="", stderr="job failed")
-
-    result = submit_gpu_experiment(
-        request.root,
-        approval,
-        script_path=script,
-        environment={"RSNA_TICKET13_OUTPUT": str(output_dir)},
-        runner=runner,
-    )
-
-    assert result.status == "failed"
-    assert result.retry_count == 1
-    assert calls == 1
+    with pytest.raises(GpuApprovalError, match="new approved request"):
+        submit_gpu_experiment(
+            request.root,
+            approval,
+            script_path=script,
+            environment={"RSNA_TICKET13_OUTPUT": str(output_dir)},
+            runner=lambda command, **kwargs: subprocess.CompletedProcess(
+                command, 1, stdout="", stderr="job failed"
+            ),
+        )
 
 
 def test_submit_gpu_experiment_does_not_trust_stale_failure_metadata(tmp_path: Path) -> None:
@@ -441,6 +497,8 @@ def _gpu_snapshot() -> dict[str, object]:
         "available_memory_bytes": 20_000_000_000,
         "runtime_visible_memory_limit_bytes": 20_000_000_000,
         "available_memory_source": "synthetic_allocation_fixture",
+        "assigned_memory_bytes": 20_000_000_000,
+        "assigned_memory_source": "synthetic_allocation_fixture",
         "allocated_vram_bytes": 1_000_000,
         "reserved_vram_bytes": 2_000_000,
         "peak_vram_bytes": 3_000_000,

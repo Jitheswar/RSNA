@@ -556,3 +556,10 @@ adapter. The
 implementation evidence is synthetic only; no Ticket 13 GPU allocation or
 approval-dependent compatibility claim is recorded. See
 [`docs/evidence/ticket-13-gpu-experiment.md`](docs/evidence/ticket-13-gpu-experiment.md).
+
+The runner refuses to start when the assigned GPU-memory limit is not
+observable, so a shared allocation cannot silently inherit whole-device A40
+capacity. The production CLI verifies the live allocation before lazily
+loading private studies. A successful `sbatch` is durably recorded against the
+request and approval checksums; reusing that approval requires the single
+approved transient retry and matching failure evidence.
