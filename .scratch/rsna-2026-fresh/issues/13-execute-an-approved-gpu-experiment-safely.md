@@ -71,11 +71,17 @@ the private GPU seams require the high-level approval/preflight path and an
 active Slurm job; assigned GPU memory is explicit and must be observed before
 training; `nvidia-smi` is bound to the CUDA-visible device; production study
 loading is lazy until allocation checks pass; and a checksum-keyed submission
-record prevents reuse of one approval for duplicate initial submissions.
+record prevents reuse of one approval for duplicate initial submissions. The
+CPU preflight now verifies its exact bounded Slurm envelope; private GPU
+authorization independently reloads the request, approval and preflight and
+rechecks the live allocation; execution is consumed before lazy loading; and
+public retry evidence redacts raw exception text. Submission output must also
+contain a parseable scheduler job ID.
 
-Final checks passed: 189 repository tests, mypy for 36 source files, Bash
+Final checks passed: 192 repository tests (35 focused GPU/training tests), mypy for 36 source files, Bash
 syntax checks for both Ticket 13 adapters, and `git diff --check`. The code is
-committed on `master` as `9c371cc` plus hardening commit `eda51a3`. No real
+committed on `master` as `9c371cc`, `eda51a3`, `4fde09a`, `8ae96c8`, and
+`3fe25a9`. No real
 CPU preflight, owner approval, GPU allocation, smoke run, private-data
 training, or V10 verification was performed; all future execution gates remain
 unchecked.
