@@ -792,7 +792,12 @@ def _gpu_snapshot() -> dict[str, object]:
     }
 
 
-def _training_result_with_reloadable_checkpoint(tmp_path: Path, config: TrainingConfig) -> TrainingResult:
+def _training_result_with_reloadable_checkpoint(
+    tmp_path: Path,
+    config: TrainingConfig,
+    *,
+    fold: int | None = None,
+) -> TrainingResult:
     from rsna_knee.model import HierarchicalStudyModel
 
     model = HierarchicalStudyModel(config.model_config())
@@ -810,6 +815,7 @@ def _training_result_with_reloadable_checkpoint(tmp_path: Path, config: Training
         skipped_batches=0,
         loss_history=(0.5,),
         checkpoint_kind="final_selected",
+        fold=fold,
         overwrite=False,
     )
     return TrainingResult(
@@ -821,6 +827,7 @@ def _training_result_with_reloadable_checkpoint(tmp_path: Path, config: Training
         skipped_batches=0,
         loss_history=(0.5,),
         final_checkpoint_path=checkpoint,
+        fold=fold,
     )
 
 
@@ -828,25 +835,29 @@ def test_approved_gpu_execution_records_hardware_checkpoint_and_one_retry(tmp_pa
     request, approval = _approved_request(tmp_path)
     snapshots = iter((_gpu_snapshot(), _gpu_snapshot()))
     calls: list[Path | None] = []
+    execution_root = tmp_path / "gpu-run"
     training_result = _training_result_with_reloadable_checkpoint(tmp_path, _config())
 
     def runner(resume_from: Path | None) -> TrainingResult:
         calls.append(resume_from)
         if len(calls) == 1:
+            latest_checkpoint = execution_root / "training" / "checkpoints" / "latest.pt"
+            latest_checkpoint.parent.mkdir(parents=True)
+            latest_checkpoint.write_bytes(b"synthetic latest checkpoint")
             raise RuntimeError("node failure during the approved allocation")
         return training_result
 
     result = run_approved_gpu_experiment(
         request.root,
         approval,
-        output_dir=tmp_path / "gpu-run",
+        output_dir=execution_root,
         evidence_path=tmp_path / "gpu-evidence.json",
         slurm_environment=_slurm_environment(request.resources),
         gpu_probe=lambda: next(snapshots),
         training_runner=runner,
     )
 
-    assert calls == [None, None]
+    assert calls == [None, execution_root / "training" / "checkpoints" / "latest.pt"]
     assert result.retry_count == 1
     assert result.evidence["status"] == "completed"
     assert result.evidence["checkpoint"]["final_reload_passed"] is True
@@ -867,6 +878,138 @@ def test_approved_gpu_execution_records_hardware_checkpoint_and_one_retry(tmp_pa
             gpu_probe=_gpu_snapshot,
             training_runner=runner,
         )
+
+
+def test_approved_gpu_execution_gives_the_trainer_an_empty_child_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preflight = _write_preflight(tmp_path / "cpu-preflight.json")
+    request = prepare_gpu_experiment(
+        tmp_path / "request",
+        preflight_path=preflight,
+        resource=GpuResourceRequest(smoke_test=True, wall_time_minutes=30),
+        training_config=_config(),
+        fold=0,
+        source_version="fixture-v1",
+        source_fingerprint="fixture-source",
+        fold_manifest_checksum="fixture-fold",
+        integration_manifest_checksum="fixture-integration",
+    )
+    approval = tmp_path / "approval.json"
+    approval.write_text(
+        json.dumps(
+            {
+                "schema_version": GPU_APPROVAL_SCHEMA_VERSION,
+                "request_checksum": request.request_checksum,
+                "approval_scope": GPU_APPROVAL_SCOPE,
+                "approved": True,
+                "retry_allowed": True,
+                "approver": "owner",
+                "approved_at_utc": "2026-09-12T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    execution_root = tmp_path / "gpu-run"
+    trainer_directories: list[Path] = []
+
+    def fake_train(*args: object, **kwargs: object) -> TrainingResult:
+        del kwargs
+        trainer_directory = Path(args[3])
+        trainer_directories.append(trainer_directory)
+        if any(trainer_directory.iterdir()):
+            raise TrainingConfigurationError(
+                "trainer output directory was pre-populated by orchestration evidence"
+            )
+        return _training_result_with_reloadable_checkpoint(
+            tmp_path / "training-result",
+            _config(),
+            fold=0,
+        )
+
+    monkeypatch.setattr("rsna_knee.gpu._train_one_fold_gpu", fake_train)
+
+    result = run_approved_gpu_experiment(
+        request.root,
+        approval,
+        output_dir=execution_root,
+        slurm_environment=_slurm_environment(request.resources),
+        gpu_probe=_gpu_snapshot,
+        studies=(),
+        fold_manifest=SimpleNamespace(manifest_checksum="fixture-fold"),
+        fold=0,
+        source_version="fixture-v1",
+        source_fingerprint="fixture-source",
+        fold_manifest_checksum="fixture-fold",
+        integration_manifest_checksum="fixture-integration",
+    )
+
+    assert result.training.successful_optimizer_steps == 1
+    assert trainer_directories == [execution_root / "training"]
+    assert (execution_root / "gpu-preflight.json").is_file()
+
+
+def test_approved_gpu_execution_does_not_overwrite_an_unbound_execution_root(
+    tmp_path: Path,
+) -> None:
+    request, approval = _approved_request(tmp_path)
+    execution_root = tmp_path / "existing-experiment"
+    execution_root.mkdir()
+    unrelated_artifact = execution_root / "unrelated-artifact.json"
+    unrelated_artifact.write_text("keep this experiment", encoding="utf-8")
+
+    def should_not_train(resume_from: Path | None) -> TrainingResult:
+        del resume_from
+        raise AssertionError("training must not start for an unbound execution root")
+
+    with pytest.raises(GpuExecutionError, match="non-empty GPU execution directory"):
+        run_approved_gpu_experiment(
+            request.root,
+            approval,
+            output_dir=execution_root,
+            slurm_environment=_slurm_environment(request.resources),
+            gpu_probe=_gpu_snapshot,
+            training_runner=should_not_train,
+        )
+
+    assert unrelated_artifact.read_text(encoding="utf-8") == "keep this experiment"
+    assert not (execution_root / "gpu-preflight.json").exists()
+
+
+def test_gpu_smoke_test_keeps_training_artifacts_in_the_child_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, approval = _approved_request(tmp_path)
+    execution_root = tmp_path / "gpu-smoke"
+    trainer_directories: list[Path] = []
+
+    def fake_gpu_train(*args: object, **kwargs: object) -> TrainingResult:
+        config = args[1]
+        assert isinstance(config, TrainingConfig)
+        trainer_directory = Path(kwargs["artifact_dir"])
+        trainer_directories.append(trainer_directory)
+        assert not any(trainer_directory.iterdir())
+        return _training_result_with_reloadable_checkpoint(
+            tmp_path / "smoke-training-result",
+            config,
+        )
+
+    monkeypatch.setattr("rsna_knee.gpu._train_fixed_budget_gpu", fake_gpu_train)
+
+    result = run_gpu_smoke_test(
+        (object(),),
+        request.root,
+        approval,
+        output_dir=execution_root,
+        slurm_environment=_slurm_environment(request.resources),
+        gpu_probe=_gpu_snapshot,
+    )
+
+    assert result.training.successful_optimizer_steps == 1
+    assert trainer_directories == [execution_root / "training"]
+    assert (execution_root / "gpu-preflight.json").is_file()
 
 
 def test_approved_gpu_execution_does_not_retry_oom_or_hide_the_failure(tmp_path: Path) -> None:

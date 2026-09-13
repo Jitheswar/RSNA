@@ -1746,7 +1746,13 @@ def run_approved_gpu_experiment(
             raise GpuExecutionError(
                 "existing GPU execution evidence requires diagnosis and a new approved request"
             )
-        previous_retries = max(previous_retries, execution_retry + 1)
+            previous_retries = max(previous_retries, execution_retry + 1)
+    if execution_record is None and any(destination.iterdir()):
+        raise GpuExecutionError(
+            "refusing to reuse a non-empty GPU execution directory without an execution record"
+        )
+    training_destination = destination / "training"
+    training_destination.mkdir(parents=True, exist_ok=True)
     recorded_retry_count, recorded_classification = _recorded_gpu_failure(
         {"RSNA_TICKET13_OUTPUT": str(destination)},
         request_checksum=request.request_checksum,
@@ -1911,7 +1917,7 @@ def run_approved_gpu_experiment(
                 studies,
                 fold_manifest,
                 approved_fold,
-                destination,
+                training_destination,
                 config=config,
                 source_version=approved_source_version,
                 source_fingerprint=approved_source_fingerprint,
@@ -1937,8 +1943,8 @@ def run_approved_gpu_experiment(
     while True:
         try:
             training = runner(
-                destination / "checkpoints" / "latest.pt"
-                if (destination / "checkpoints" / "latest.pt").is_file()
+                training_destination / "checkpoints" / "latest.pt"
+                if (training_destination / "checkpoints" / "latest.pt").is_file()
                 and retry_count > 0
                 else None
             )
@@ -2145,12 +2151,13 @@ def run_gpu_smoke_test(
     destination = Path(
         output_dir or request.root.parent / f"{request.root.name}-execution"
     ).resolve()
+    training_destination = destination / "training"
 
     def runner(resume_from: Path | None) -> TrainingResult:
         return _train_fixed_budget_gpu(
             examples,
             config,
-            artifact_dir=destination,
+            artifact_dir=training_destination,
             resume_from=resume_from,
             requested_resources=request.resources.to_dict(),
             authorization=authorization,
@@ -2245,7 +2252,7 @@ def prepare_gpu_experiment(
         "schema_version": GPU_EXECUTION_SCHEMA_VERSION,
         "execution_file": "gpu-execution.json",
         "failure_file": "gpu-failure.json",
-        "checkpoint_directory": "checkpoints",
+        "checkpoint_directory": "training/checkpoints",
         "required_fields": [
             "slurm_allocation",
             "hardware",

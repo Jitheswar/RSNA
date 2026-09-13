@@ -175,6 +175,52 @@ def test_one_fold_uses_reference_gold_only_and_evaluates_final_checkpoint(tmp_pa
     assert result.evaluation.fold == 0
 
 
+def test_one_fold_rejects_a_nonempty_trainer_directory(tmp_path) -> None:
+    studies = tuple(
+        make_synthetic_study(f"guard-{index}", series_count=1, slices_per_series=2, seed=200 + index)
+        for index in range(9)
+    )
+    source = SourceManifest(
+        "train",
+        tuple(
+            SourceStudy(
+                study.study_instance_uid,
+                True,
+                tuple((index + target_index) % 2 for target_index in range(len(TARGET_COLUMNS))),
+            )
+            for index, study in enumerate(studies)
+        ),
+        (),
+    )
+    fold_manifest = freeze_folds(source, source_version="synthetic-training-v1", seed=19)
+    config = TrainingConfig(
+        image_size=(16, 16),
+        channels=(2, 4, 8),
+        max_slices=2,
+        max_series=1,
+        successful_optimizer_steps=1,
+        checkpoint_interval_steps=1,
+    )
+    trainer_directory = tmp_path / "existing-trainer"
+    trainer_directory.mkdir()
+    marker = trainer_directory / "unrelated-artifact.txt"
+    marker.write_text("preserve", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="existing experiment directory"):
+        train_one_fold(
+            {study.study_instance_uid: study for study in studies},
+            fold_manifest,
+            0,
+            trainer_directory,
+            config=config,
+            source_version="synthetic-training-v1",
+            require_preflight=False,
+            allow_local_smoke=True,
+        )
+
+    assert marker.read_text(encoding="utf-8") == "preserve"
+
+
 def test_cpu_preflight_records_the_required_runtime_checks(tmp_path) -> None:
     result = run_cpu_preflight(
         output_path=tmp_path / "preflight.json",
