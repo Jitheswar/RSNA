@@ -64,6 +64,7 @@ if [[ ! "${fold_id}" =~ ^[012]$ ]]; then
   exit 1
 fi
 
+job_details=""
 if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]] && command -v scontrol >/dev/null 2>&1; then
   job_details="$(scontrol show job -o "${job_id}" 2>/dev/null || true)"
   if [[ "${job_details}" =~ Shared=([^[:space:]]+) ]]; then
@@ -92,6 +93,24 @@ fi
 if [[ -z "${SLURM_TIMELIMIT:-}" ]]; then
   echo "Slurm time limit could not be verified; stop before private-data loading" >&2
   exit 1
+fi
+
+if [[ -z "${SLURM_JOB_GRES:-}" || -z "${SLURM_GPUS_ON_NODE:-${SLURM_GPUS:-}}" ]] && command -v scontrol >/dev/null 2>&1; then
+  if [[ -z "${job_details}" ]]; then
+    job_details="$(scontrol show job -o "${job_id}" 2>/dev/null || true)"
+  fi
+  scheduler_gres=""
+  for field in ${job_details}; do
+    case "${field}" in
+      JOB_GRES=*|TresPerNode=*) scheduler_gres="${field#*=}" ;;
+    esac
+  done
+  if [[ -z "${SLURM_JOB_GRES:-}" && -n "${scheduler_gres}" ]]; then
+    export SLURM_JOB_GRES="${scheduler_gres}"
+  fi
+  if [[ -z "${SLURM_GPUS_ON_NODE:-${SLURM_GPUS:-}}" && "${scheduler_gres}" =~ ^gpu(:[A-Za-z0-9_.-]+)?:([0-9]+)$ ]]; then
+    export SLURM_GPUS_ON_NODE="${BASH_REMATCH[2]}"
+  fi
 fi
 
 export PYTHONPATH="${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
