@@ -68,6 +68,10 @@ if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]] && command -v scontrol >/de
   job_details="$(scontrol show job -o "${job_id}" 2>/dev/null || true)"
   if [[ "${job_details}" =~ Shared=([^[:space:]]+) ]]; then
     export SLURM_JOB_SHARED="${BASH_REMATCH[1]}"
+  elif [[ "${job_details}" =~ OverSubscribe=([^[:space:]]+) ]]; then
+    # Slurm 20.11 on this cluster exposes the sharing signal as
+    # OverSubscribe=... rather than Shared=....
+    export SLURM_JOB_SHARED="${BASH_REMATCH[1]}"
   fi
 fi
 if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]]; then
