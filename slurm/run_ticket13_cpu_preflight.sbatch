@@ -31,10 +31,36 @@ case "${SLURM_MEM_PER_NODE:-}" in
   8G|8192) ;;
   *) echo "ticket-13 CPU preflight requires exactly 8 GB per node" >&2; exit 1 ;;
 esac
-case "${SLURM_TIMELIMIT:-}" in
-  00:30|00:30:00|30) ;;
-  *) echo "ticket-13 CPU preflight requires exactly 30 minutes" >&2; exit 1 ;;
-esac
+timelimit="${SLURM_TIMELIMIT:-}"
+if [[ -z "${timelimit}" ]] && command -v scontrol >/dev/null 2>&1; then
+  if job_info="$(scontrol show job "${SLURM_JOB_ID}" 2>/dev/null)"; then
+    for field in ${job_info}; do
+      if [[ "${field}" == TimeLimit=* ]]; then
+        timelimit="${field#TimeLimit=}"
+        break
+      fi
+    done
+  fi
+fi
+timelimit_minutes=-1
+if [[ "${timelimit}" =~ ^([0-9]+)-([0-9]{2}):([0-9]{2}):([0-9]{2})$ ]]; then
+  timelimit_minutes=$((10#${BASH_REMATCH[1]} * 1440 + 10#${BASH_REMATCH[2]} * 60 + 10#${BASH_REMATCH[3]}))
+  if (( 10#${BASH_REMATCH[4]} != 0 )); then
+    timelimit_minutes=-1
+  fi
+elif [[ "${timelimit}" =~ ^([0-9]+):([0-9]{2})(:([0-9]{2}))?$ ]]; then
+  timelimit_minutes=$((10#${BASH_REMATCH[1]} * 60 + 10#${BASH_REMATCH[2]}))
+  if [[ -n "${BASH_REMATCH[4]:-}" ]] && (( 10#${BASH_REMATCH[4]} != 0 )); then
+    timelimit_minutes=-1
+  fi
+elif [[ "${timelimit}" =~ ^[0-9]+$ ]]; then
+  timelimit_minutes=$((10#${timelimit}))
+fi
+if (( timelimit_minutes != 30 )); then
+  echo "ticket-13 CPU preflight requires exactly 30 minutes (got ${timelimit:-unset})" >&2
+  exit 1
+fi
+export SLURM_TIMELIMIT="${timelimit}"
 case "${SLURM_JOB_EXCLUSIVE:-0}" in
   1|true|TRUE|yes|YES) echo "ticket-13 CPU preflight must not request an exclusive allocation" >&2; exit 1 ;;
 esac
