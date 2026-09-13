@@ -75,6 +75,21 @@ if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]]; then
   exit 1
 fi
 
+if [[ -z "${SLURM_TIMELIMIT:-}" ]] && command -v scontrol >/dev/null 2>&1; then
+  if job_info="$(scontrol show job "${job_id}" 2>/dev/null)"; then
+    for field in ${job_info}; do
+      if [[ "${field}" == TimeLimit=* ]]; then
+        export SLURM_TIMELIMIT="${field#TimeLimit=}"
+        break
+      fi
+    done
+  fi
+fi
+if [[ -z "${SLURM_TIMELIMIT:-}" ]]; then
+  echo "Slurm time limit could not be verified; stop before private-data loading" >&2
+  exit 1
+fi
+
 export PYTHONPATH="${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
 if ! "${gpu_python}" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)'; then
   echo "the selected GPU environment must use Python 3.11; stop before loading private data" >&2
