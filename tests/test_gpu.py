@@ -124,6 +124,56 @@ def _unknown_slurm_environment(resource: GpuResourceRequest) -> dict[str, str]:
     return environment
 
 
+def _run_ticket13_gres_parser(script: Path, config: Path, node_name: str) -> dict[str, str]:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                'source "$1"; '
+                'ticket13_collect_gres_config "$2" "$3"; '
+                'printf "entry=%s\\nscope=%s\\ndevice=%s\\n" '
+                '"${TICKET13_GRES_CONFIG_ENTRY}" '
+                '"${TICKET13_GRES_CONFIG_SCOPE}" '
+                '"${TICKET13_GRES_DEVICE_FILE}"'
+            ),
+            "bash",
+            str(script),
+            node_name,
+            str(config),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return dict(line.split("=", 1) for line in result.stdout.splitlines())
+
+
+def test_ticket13_gres_parser_accepts_node_local_and_named_range_entries(tmp_path: Path) -> None:
+    script = Path(__file__).parents[1] / "slurm" / "ticket13_gres.sh"
+
+    local_config = tmp_path / "local-gres.conf"
+    local_config.write_text("Name=gpu File=/dev/nvidia0\n", encoding="utf-8")
+    local_result = _run_ticket13_gres_parser(script, local_config, "KLEF-G-NODE2")
+    assert local_result == {
+        "entry": "Name=gpu File=/dev/nvidia0",
+        "scope": "local_node",
+        "device": "/dev/nvidia0",
+    }
+
+    ranged_config = tmp_path / "ranged-gres.conf"
+    ranged_config.write_text(
+        "NodeName=KLEF-G-NODE[1-3] Name=gpu File=/dev/nvidia[0-3]\n",
+        encoding="utf-8",
+    )
+    ranged_result = _run_ticket13_gres_parser(script, ranged_config, "KLEF-G-NODE2")
+    assert ranged_result == {
+        "entry": "NodeName=KLEF-G-NODE[1-3] Name=gpu File=/dev/nvidia[0-3]",
+        "scope": "named_node",
+        "device": "/dev/nvidia[0-3]",
+    }
+
+
 def test_gpu_resource_request_is_one_explicit_noninteractive_gpu() -> None:
     request = GpuResourceRequest(
         partition="cluster1-gpu-add",
@@ -266,6 +316,45 @@ def test_slurm_gpu_allocation_proves_one_whole_generic_gpu_device() -> None:
     assert isinstance(proof, dict)
     assert proof["allocated_device_index"] == 0
     assert proof["device_file"] == "/dev/nvidia0"
+
+
+def test_slurm_gpu_allocation_proves_node_local_gres_and_preserves_fail_closed_scope() -> None:
+    resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
+    environment = {
+        **_slurm_environment(resource),
+        "SLURM_GRES_CONFIG_ENTRY": "Name=gpu File=/dev/nvidia0",
+        "SLURM_GRES_CONFIG_SCOPE": "local_node",
+    }
+
+    allocation = verify_slurm_gpu_allocation(resource, environment)
+
+    assert allocation["whole_gpu_device_verified"] is True
+    proof = allocation["whole_gpu_device_proof"]
+    assert isinstance(proof, dict)
+    assert proof["config_scope"] == "local_node"
+    assert proof["checks"]["node_mapping_matches_job_node"] is True
+
+    unscoped_environment = {key: value for key, value in environment.items() if key != "SLURM_GRES_CONFIG_SCOPE"}
+    unscoped_allocation = verify_slurm_gpu_allocation(resource, unscoped_environment)
+    assert unscoped_allocation["whole_gpu_device_verified"] is False
+    unscoped_proof = unscoped_allocation["whole_gpu_device_proof"]
+    assert isinstance(unscoped_proof, dict)
+    assert "node_mapping_matches_job_node" in unscoped_proof["failure_reasons"]
+
+
+def test_slurm_gpu_allocation_matches_a_named_node_range() -> None:
+    resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
+    environment = {
+        **_slurm_environment(resource),
+        "SLURM_GRES_CONFIG_ENTRY": (
+            "NodeName=KLEF-G-NODE[1-3] Name=gpu File=/dev/nvidia[0-3]"
+        ),
+        "SLURM_GRES_DEVICE_FILE": "/dev/nvidia[0-3]",
+    }
+
+    allocation = verify_slurm_gpu_allocation(resource, environment)
+
+    assert allocation["whole_gpu_device_verified"] is True
 
 
 def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_facts() -> None:

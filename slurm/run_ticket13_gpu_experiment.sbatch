@@ -17,6 +17,9 @@
 set -euo pipefail
 
 project_dir="${SLURM_SUBMIT_DIR:?sbatch must provide SLURM_SUBMIT_DIR}"
+# shellcheck source=slurm/ticket13_gres.sh
+source "${project_dir}/slurm/ticket13_gres.sh"
+
 job_id="${SLURM_JOB_ID:?sbatch must provide SLURM_JOB_ID}"
 gpu_python="${RSNA_TICKET13_GPU_PYTHON:-${project_dir}/.venv-gpu/bin/python}"
 request="${RSNA_TICKET13_REQUEST:?set RSNA_TICKET13_REQUEST to the immutable GPU request directory or request.json}"
@@ -66,7 +69,7 @@ fi
 
 job_details=""
 unset SLURM_JOB_GRES_DETAIL SLURM_NODE_GRES SLURM_GRES_CONFIG_ENTRY \
-  SLURM_GRES_DEVICE_FILE SLURM_CONSTRAIN_DEVICES SLURM_GRES_TYPES \
+  SLURM_GRES_CONFIG_SCOPE SLURM_GRES_DEVICE_FILE SLURM_CONSTRAIN_DEVICES SLURM_GRES_TYPES \
   SLURM_SELECT_TYPE SLURM_SELECT_TYPE_PARAMETERS SLURM_GRES_SHARING_MODE
 if command -v scontrol >/dev/null 2>&1; then
   # The detailed job record is the authoritative source for the concrete GRES
@@ -151,15 +154,13 @@ if command -v scontrol >/dev/null 2>&1; then
 
   gres_config_path="/etc/slurm/gres.conf"
   if [[ -n "${node_name}" && -r "${gres_config_path}" ]]; then
-    while IFS= read -r gres_line; do
-      if [[ "${gres_line}" =~ (^|[[:space:]])NodeName=${node_name}([[:space:]]|$) ]] \
-        && [[ "${gres_line}" =~ (^|[[:space:]])Name=gpu([[:space:]]|$) ]] \
-        && [[ "${gres_line}" =~ File=([^[:space:]]+) ]]; then
-        export SLURM_GRES_CONFIG_ENTRY="${gres_line}"
-        export SLURM_GRES_DEVICE_FILE="${BASH_REMATCH[1]}"
-        break
+    if ticket13_collect_gres_config "${node_name}" "${gres_config_path}"; then
+      if [[ -n "${TICKET13_GRES_CONFIG_ENTRY}" ]]; then
+        export SLURM_GRES_CONFIG_ENTRY="${TICKET13_GRES_CONFIG_ENTRY}"
+        export SLURM_GRES_CONFIG_SCOPE="${TICKET13_GRES_CONFIG_SCOPE}"
+        export SLURM_GRES_DEVICE_FILE="${TICKET13_GRES_DEVICE_FILE}"
       fi
-    done < "${gres_config_path}"
+    fi
   fi
 
   mode_text="${SLURM_GRES_TYPES:-} ${SLURM_GRES_CONFIG_ENTRY:-}"

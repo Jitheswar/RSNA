@@ -549,6 +549,32 @@ def _device_file_covers_index(device_file: str, device_index: int) -> bool:
     return first <= device_index <= last
 
 
+def _slurm_node_name_matches(pattern: str, node_name: str) -> bool:
+    if pattern == node_name:
+        return True
+    match = re.fullmatch(r"([^\[]*)\[([^]]+)\]([^\[]*)", pattern)
+    if match is None:
+        return False
+    prefix, members, suffix = match.groups()
+    if not node_name.startswith(prefix) or not node_name.endswith(suffix):
+        return False
+    end = len(node_name) - len(suffix) if suffix else len(node_name)
+    middle = node_name[len(prefix) : end]
+    for member in members.split(","):
+        range_match = re.fullmatch(r"(\d+)-(\d+)", member)
+        if range_match is not None:
+            if not middle.isdecimal():
+                continue
+            first = int(range_match.group(1))
+            last = int(range_match.group(2))
+            candidate = int(middle)
+            if first <= candidate <= last:
+                return True
+        elif middle == member:
+            return True
+    return False
+
+
 def _whole_gpu_device_proof(
     resource: GpuResourceRequest,
     values: Mapping[str, str],
@@ -576,6 +602,7 @@ def _whole_gpu_device_proof(
     gres_types = (values.get("SLURM_GRES_TYPES") or "").strip()
     select_type = (values.get("SLURM_SELECT_TYPE") or "").strip().lower()
     select_type_parameters = (values.get("SLURM_SELECT_TYPE_PARAMETERS") or "").strip()
+    config_scope = (values.get("SLURM_GRES_CONFIG_SCOPE") or "").strip().lower()
     sharing_mode = (values.get("SLURM_GRES_SHARING_MODE") or "").strip().lower()
     forbidden_terms = ("mps", "mig", "shard", "fraction", "slice")
     mode_text = " ".join(
@@ -588,6 +615,15 @@ def _whole_gpu_device_proof(
     config_name_match = re.search(r"(?:^|\s)Name=([^\s]+)", config_entry)
     config_file_match = re.search(r"(?:^|\s)File=([^\s]+)", config_entry)
     configured_file = config_file_match.group(1) if config_file_match is not None else ""
+    node_mapping_matches_job_node = (
+        config_node_match is not None
+        and bool(node_name)
+        and _slurm_node_name_matches(config_node_match.group(1), node_name)
+    ) or (
+        config_scope == "local_node"
+        and config_node_match is None
+        and bool(node_name)
+    )
     checks: dict[str, bool] = {
         "exact_generic_request": resource.gres == "gpu:1",
         "exact_generic_allocation": allocated_gres == "gpu:1",
@@ -601,9 +637,7 @@ def _whole_gpu_device_proof(
         ),
         "concrete_allocated_gres_detail": detail_match is not None,
         "node_generic_gpu_gres": node_gpu_match is not None,
-        "node_mapping_matches_job_node": (
-            config_node_match is not None and bool(node_name) and config_node_match.group(1) == node_name
-        ),
+        "node_mapping_matches_job_node": node_mapping_matches_job_node,
         "generic_gres_device_file": config_name_match is not None and config_name_match.group(1) == "gpu",
         "device_file_observed": bool(device_file) and configured_file == device_file,
         "allocated_index_matches_device_file": (
@@ -636,6 +670,7 @@ def _whole_gpu_device_proof(
         "gres_types": gres_types,
         "select_type": select_type,
         "select_type_parameters": select_type_parameters,
+        "config_scope": config_scope,
         "device_isolation": device_isolation,
         "sharing_mode": sharing_mode,
         "forbidden_modes": forbidden_modes,
