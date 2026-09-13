@@ -89,10 +89,39 @@ def _slurm_environment(resource: GpuResourceRequest) -> dict[str, str]:
         "SLURM_MEM_PER_NODE": f"{resource.memory_gb}G",
         "SLURM_TIMELIMIT": f"{hours:02d}:{minutes:02d}:00",
         "SLURM_JOB_GRES": resource.gres,
+        "SLURM_TRES_PER_NODE": resource.gres,
         "SLURM_GPUS_ON_NODE": str(resource.gpu_count),
         "CUDA_VISIBLE_DEVICES": "0",
         "SLURM_JOB_SHARED": "shared",
+        "SLURMD_NODENAME": "KLEF-G-NODE2",
+        "SLURM_JOB_GRES_DETAIL": "gpu:1(IDX:0)",
+        "SLURM_NODE_GRES": "gpu:1",
+        "SLURM_GRES_CONFIG_ENTRY": "NodeName=KLEF-G-NODE2 Name=gpu File=/dev/nvidia0",
+        "SLURM_GRES_DEVICE_FILE": "/dev/nvidia0",
+        "SLURM_CONSTRAIN_DEVICES": "yes",
+        "SLURM_GRES_TYPES": "gpu,vllm_gpu1,vllm_gpu2",
+        "SLURM_SELECT_TYPE": "select/cons_res",
+        "SLURM_SELECT_TYPE_PARAMETERS": "CR_CPU",
+        "SLURM_GRES_SHARING_MODE": "none",
     }
+
+
+def _unknown_slurm_environment(resource: GpuResourceRequest) -> dict[str, str]:
+    environment = _slurm_environment(resource)
+    for key in (
+        "SLURMD_NODENAME",
+        "SLURM_JOB_GRES_DETAIL",
+        "SLURM_NODE_GRES",
+        "SLURM_GRES_CONFIG_ENTRY",
+        "SLURM_GRES_DEVICE_FILE",
+        "SLURM_CONSTRAIN_DEVICES",
+        "SLURM_GRES_TYPES",
+        "SLURM_SELECT_TYPE",
+        "SLURM_SELECT_TYPE_PARAMETERS",
+        "SLURM_GRES_SHARING_MODE",
+    ):
+        environment.pop(key)
+    return environment
 
 
 def test_gpu_resource_request_is_one_explicit_noninteractive_gpu() -> None:
@@ -214,6 +243,31 @@ def test_slurm_gpu_allocation_must_match_the_approved_single_gpu_request() -> No
         )
 
 
+def test_slurm_gpu_allocation_proves_one_whole_generic_gpu_device() -> None:
+    resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
+    environment = {
+        **_slurm_environment(resource),
+        "SLURM_JOB_SHARED": "OK",
+        "SLURMD_NODENAME": "KLEF-G-NODE2",
+        "SLURM_JOB_GRES_DETAIL": "gpu:1(IDX:0)",
+        "SLURM_NODE_GRES": "gpu:1",
+        "SLURM_GRES_CONFIG_ENTRY": "NodeName=KLEF-G-NODE2 Name=gpu File=/dev/nvidia0",
+        "SLURM_GRES_DEVICE_FILE": "/dev/nvidia0",
+        "SLURM_CONSTRAIN_DEVICES": "yes",
+        "SLURM_GRES_TYPES": "gpu,vllm_gpu1,vllm_gpu2",
+        "SLURM_GRES_SHARING_MODE": "none",
+    }
+
+    allocation = verify_slurm_gpu_allocation(resource, environment)
+
+    assert allocation["sharing_behavior"] == "OK"
+    assert allocation["whole_gpu_device_verified"] is True
+    proof = allocation["whole_gpu_device_proof"]
+    assert isinstance(proof, dict)
+    assert proof["allocated_device_index"] == 0
+    assert proof["device_file"] == "/dev/nvidia0"
+
+
 def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_facts() -> None:
     resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
     allocation = verify_slurm_gpu_allocation(
@@ -229,8 +283,9 @@ def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_fa
             "cuda_runtime_version": "12.6",
             "visible_device_count": 1,
             "device_total_memory_bytes": 45_000_000_000,
+            "nvidia_smi_memory_total_mb": 42_915,
             "available_memory_bytes": 20_000_000_000,
-            "runtime_visible_memory_limit_bytes": 20_000_000_000,
+            "runtime_visible_memory_limit_bytes": 45_000_000_000,
             "available_memory_source": "synthetic_allocation_fixture",
             "assigned_memory_bytes": 20_000_000_000,
             "assigned_memory_source": "synthetic_allocation_fixture",
@@ -244,18 +299,23 @@ def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_fa
     validated = validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
     assert validated["device_name"] == "NVIDIA A40"
     assert validated["available_memory_bytes"] == 20_000_000_000
-    assert validated["assigned_memory_bytes"] == 20_000_000_000
+    assert validated["assigned_memory_bytes"] == 45_000_000_000
     assert validated["memory_assignment_verified"] is True
+    assert validated["assigned_memory_source"] == "cuda_total_on_verified_whole_gpu_gres"
     assert validated["peak_vram_within_assigned_memory"] is True
     assert validated["nominal_device_memory_used"] is False
 
+    unknown_allocation = verify_slurm_gpu_allocation(
+        resource,
+        _unknown_slurm_environment(resource),
+    )
     unassigned = validate_gpu_environment(
         {key: value for key, value in snapshot.items() if key not in {
             "assigned_memory_bytes",
             "assigned_memory_source",
         }},
         resource=resource,
-        allocation=allocation,
+        allocation=unknown_allocation,
     )
     assert unassigned["assigned_memory_bytes"] is None
     assert unassigned["memory_assignment_verified"] is False
@@ -270,6 +330,85 @@ def test_gpu_environment_records_assigned_memory_and_rejects_missing_hardware_fa
             resource=resource,
             allocation=allocation,
         )
+
+
+def test_gpu_environment_accepts_verified_whole_gpu_without_oversubscribe_proof() -> None:
+    resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
+    snapshot = _gpu_snapshot()
+    snapshot["device_total_memory_bytes"] = 45_000_000_000
+    snapshot["runtime_visible_memory_limit_bytes"] = 45_000_000_000
+    allocation = {
+        "partition": resource.partition,
+        "sharing_behavior": "OK",
+        "whole_gpu_device_verified": True,
+    }
+
+    validated = validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
+
+    assert validated["whole_gpu_device_verified"] is True
+    assert validated["assigned_memory_bytes"] == 45_000_000_000
+    assert validated["assigned_memory_source"] == "cuda_total_on_verified_whole_gpu_gres"
+    assert validated["memory_assignment_verified"] is True
+
+
+def test_gpu_environment_rejects_inconsistent_cuda_and_nvidia_smi_totals() -> None:
+    resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
+    snapshot = _gpu_snapshot()
+    snapshot.pop("assigned_memory_bytes")
+    snapshot.pop("assigned_memory_source")
+    snapshot["device_total_memory_bytes"] = 45_000_000_000
+    snapshot["runtime_visible_memory_limit_bytes"] = 45_000_000_000
+    snapshot["nvidia_smi_memory_total_mb"] = 30_000
+    allocation = {
+        "partition": resource.partition,
+        "sharing_behavior": "OK",
+        "whole_gpu_device_verified": True,
+    }
+
+    with pytest.raises(GpuResourceError, match="nvidia-smi memory facts"):
+        validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
+
+
+def test_gpu_environment_rejects_unknown_allocation_without_memory_allowance() -> None:
+    resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
+    environment = _unknown_slurm_environment(resource)
+    environment["SLURM_JOB_SHARED"] = "unshared"
+    allocation = verify_slurm_gpu_allocation(resource, environment)
+    snapshot = _gpu_snapshot()
+    snapshot.pop("assigned_memory_bytes")
+    snapshot.pop("assigned_memory_source")
+
+    validated = validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
+
+    assert validated["whole_gpu_device_verified"] is False
+    assert validated["assigned_memory_bytes"] is None
+    assert validated["memory_assignment_verified"] is False
+
+
+def test_gpu_environment_rejects_fractional_gpu_without_authoritative_allowance() -> None:
+    resource = GpuResourceRequest(smoke_test=True, wall_time_minutes=30)
+    environment = {
+        **_slurm_environment(resource),
+        "SLURM_JOB_GRES_DETAIL": "gpu:1(IDX:0)",
+        "SLURMD_NODENAME": "KLEF-G-NODE2",
+        "SLURM_NODE_GRES": "gpu:1",
+        "SLURM_GRES_CONFIG_ENTRY": "NodeName=KLEF-G-NODE2 Name=gpu File=/dev/nvidia0",
+        "SLURM_GRES_DEVICE_FILE": "/dev/nvidia0",
+        "SLURM_CONSTRAIN_DEVICES": "yes",
+        "SLURM_GRES_TYPES": "gpu,mps",
+        "SLURM_GRES_SHARING_MODE": "mps",
+    }
+    allocation = verify_slurm_gpu_allocation(resource, environment)
+    snapshot = _gpu_snapshot()
+    snapshot.pop("assigned_memory_bytes")
+    snapshot.pop("assigned_memory_source")
+
+    validated = validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
+
+    assert allocation["whole_gpu_device_verified"] is False
+    assert "non_fractional_gpu_mode" in allocation["whole_gpu_device_proof"]["failure_reasons"]
+    assert validated["assigned_memory_bytes"] is None
+    assert validated["memory_assignment_verified"] is False
 
 
 def test_approved_gpu_execution_stops_without_observed_memory_assignment(tmp_path: Path) -> None:
@@ -289,11 +428,23 @@ def test_approved_gpu_execution_stops_without_observed_memory_assignment(tmp_pat
             request.root,
             approval,
             output_dir=tmp_path / "gpu-run",
-            slurm_environment=_slurm_environment(request.resources),
+            slurm_environment=_unknown_slurm_environment(request.resources),
             gpu_probe=lambda: snapshot,
             training_runner=runner,
         )
     assert calls == 0
+    preflight_record = json.loads(
+        (tmp_path / "gpu-run" / "gpu-preflight.json").read_text(encoding="utf-8")
+    )
+    assert preflight_record["status"] == "failed"
+    assert preflight_record["hardware"]["device_name"] == "NVIDIA A40"
+    assert preflight_record["hardware"]["driver_version"] == "550.54.15"
+    assert preflight_record["hardware"]["cuda_runtime_version"] == "12.6"
+    assert preflight_record["hardware"]["visible_device_count"] == 1
+    assert preflight_record["hardware"]["runtime_visible_memory_limit_bytes"] == 45_000_000_000
+    assert preflight_record["slurm_allocation"]["sharing_behavior"] == "shared"
+    assert preflight_record["slurm_allocation"]["whole_gpu_device_verified"] is False
+    assert preflight_record["slurm_allocation"]["whole_gpu_device_proof"]["failure_reasons"]
 
 
 def _approved_request(tmp_path: Path):
@@ -539,8 +690,9 @@ def _gpu_snapshot() -> dict[str, object]:
         "cuda_runtime_version": "12.6",
         "visible_device_count": 1,
         "device_total_memory_bytes": 45_000_000_000,
+        "nvidia_smi_memory_total_mb": 42_915,
         "available_memory_bytes": 20_000_000_000,
-        "runtime_visible_memory_limit_bytes": 20_000_000_000,
+        "runtime_visible_memory_limit_bytes": 45_000_000_000,
         "available_memory_source": "synthetic_allocation_fixture",
         "assigned_memory_bytes": 20_000_000_000,
         "assigned_memory_source": "synthetic_allocation_fixture",

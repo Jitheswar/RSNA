@@ -46,6 +46,7 @@ GPU_APPROVAL_SCHEMA_VERSION = "rsna-knee-gpu-owner-approval-v1"
 GPU_EXECUTION_SCHEMA_VERSION = "rsna-knee-gpu-execution-v1"
 GPU_SUBMISSION_SCHEMA_VERSION = "rsna-knee-gpu-submission-v1"
 GPU_EXECUTION_RECORD_SCHEMA_VERSION = "rsna-knee-gpu-execution-record-v1"
+GPU_PREFLIGHT_SCHEMA_VERSION = "rsna-knee-gpu-preflight-v1"
 GPU_APPROVAL_SCOPE = "ticket-13-approved-gpu-experiment"
 GPU_DEFAULT_PARTITION = "cluster1-gpu"
 GPU_SMOKE_PARTITION = "cluster1-gpu-add"
@@ -536,6 +537,113 @@ def _slurm_memory_mb(value: str) -> int:
     return max(1, int(amount * multiplier))
 
 
+def _device_file_covers_index(device_file: str, device_index: int) -> bool:
+    exact = re.fullmatch(r"/dev/nvidia(\d+)", device_file)
+    if exact is not None:
+        return int(exact.group(1)) == device_index
+    range_match = re.fullmatch(r"/dev/nvidia\[(\d+)-(\d+)\]", device_file)
+    if range_match is None:
+        return False
+    first = int(range_match.group(1))
+    last = int(range_match.group(2))
+    return first <= device_index <= last
+
+
+def _whole_gpu_device_proof(
+    resource: GpuResourceRequest,
+    values: Mapping[str, str],
+    *,
+    allocated_gres: str,
+) -> tuple[bool, dict[str, object]]:
+    """Prove whole-device ownership from scheduler and active GRES evidence."""
+
+    job_gres_detail = (
+        values.get("SLURM_JOB_GRES_DETAIL")
+        or values.get("SLURM_GRES_DETAIL")
+        or ""
+    ).strip()
+    detail_match = re.fullmatch(r"gpu:1\(IDX:(\d+)\)", job_gres_detail)
+    allocated_device_index = int(detail_match.group(1)) if detail_match is not None else None
+    node_name = (values.get("SLURM_JOB_NODELIST") or values.get("SLURMD_NODENAME") or "").strip()
+    node_gres = (values.get("SLURM_NODE_GRES") or "").strip()
+    config_entry = (values.get("SLURM_GRES_CONFIG_ENTRY") or "").strip()
+    device_file = (values.get("SLURM_GRES_DEVICE_FILE") or "").strip()
+    device_isolation = (
+        values.get("SLURM_CONSTRAIN_DEVICES")
+        or values.get("SLURM_GRES_DEVICE_ISOLATION")
+        or ""
+    ).strip().lower()
+    gres_types = (values.get("SLURM_GRES_TYPES") or "").strip()
+    select_type = (values.get("SLURM_SELECT_TYPE") or "").strip().lower()
+    select_type_parameters = (values.get("SLURM_SELECT_TYPE_PARAMETERS") or "").strip()
+    sharing_mode = (values.get("SLURM_GRES_SHARING_MODE") or "").strip().lower()
+    forbidden_terms = ("mps", "mig", "shard", "fraction", "slice")
+    mode_text = " ".join(
+        (job_gres_detail, node_gres, config_entry, gres_types, sharing_mode)
+    ).lower()
+    forbidden_modes = tuple(term for term in forbidden_terms if term in mode_text)
+
+    node_gpu_match = re.fullmatch(r"gpu:(\d+)", node_gres)
+    config_node_match = re.search(r"(?:^|\s)NodeName=([^\s]+)", config_entry)
+    config_name_match = re.search(r"(?:^|\s)Name=([^\s]+)", config_entry)
+    config_file_match = re.search(r"(?:^|\s)File=([^\s]+)", config_entry)
+    configured_file = config_file_match.group(1) if config_file_match is not None else ""
+    checks: dict[str, bool] = {
+        "exact_generic_request": resource.gres == "gpu:1",
+        "exact_generic_allocation": allocated_gres == "gpu:1",
+        "all_reported_gres_match": all(
+            value.split("(", 1)[0] == "gpu:1"
+            for value in (
+                values.get("SLURM_JOB_GRES"),
+                values.get("SLURM_TRES_PER_NODE"),
+            )
+            if value is not None and value.strip()
+        ),
+        "concrete_allocated_gres_detail": detail_match is not None,
+        "node_generic_gpu_gres": node_gpu_match is not None,
+        "node_mapping_matches_job_node": (
+            config_node_match is not None and bool(node_name) and config_node_match.group(1) == node_name
+        ),
+        "generic_gres_device_file": config_name_match is not None and config_name_match.group(1) == "gpu",
+        "device_file_observed": bool(device_file) and configured_file == device_file,
+        "allocated_index_matches_device_file": (
+            allocated_device_index is not None
+            and bool(device_file)
+            and _device_file_covers_index(device_file, allocated_device_index)
+        ),
+        "device_isolation_enabled": device_isolation in {"1", "true", "yes"},
+        "generic_gpu_type_configured": "gpu" in {item.strip() for item in gres_types.split(",") if item.strip()},
+        "consumable_select_type": select_type in {"select/cons_res", "select/cons_tres"},
+        "select_type_parameters_observed": bool(select_type_parameters),
+        "non_fractional_gpu_mode": bool(sharing_mode)
+        and sharing_mode in {"none", "disabled", "no", "false"}
+        and not forbidden_modes,
+        "allocated_index_within_node_gpu_count": (
+            allocated_device_index is not None
+            and node_gpu_match is not None
+            and allocated_device_index < int(node_gpu_match.group(1))
+        ),
+    }
+    missing_or_failed = tuple(name for name, passed in checks.items() if not passed)
+    proof: dict[str, object] = {
+        "checks": checks,
+        "allocated_gres_detail": job_gres_detail,
+        "allocated_device_index": allocated_device_index,
+        "node_name": node_name,
+        "node_gres": node_gres,
+        "device_file": device_file,
+        "gres_config_entry": config_entry,
+        "gres_types": gres_types,
+        "select_type": select_type,
+        "select_type_parameters": select_type_parameters,
+        "device_isolation": device_isolation,
+        "sharing_mode": sharing_mode,
+        "forbidden_modes": forbidden_modes,
+        "failure_reasons": missing_or_failed,
+    }
+    return not missing_or_failed, proof
+
+
 def verify_slurm_gpu_allocation(
     resource: GpuResourceRequest,
     environment: Mapping[str, str] | None = None,
@@ -605,6 +713,11 @@ def verify_slurm_gpu_allocation(
         raise GpuResourceError("Slurm allocation does not report sharing behavior")
     if sharing_behavior.strip().lower() in {"not_reported", "unknown", "unavailable"}:
         raise GpuResourceError("Slurm sharing behavior is not verified")
+    whole_gpu_device_verified, whole_gpu_device_proof = _whole_gpu_device_proof(
+        resource,
+        values,
+        allocated_gres=allocated_gres,
+    )
     return {
         "job_id": job_id,
         "partition": partition,
@@ -618,6 +731,8 @@ def verify_slurm_gpu_allocation(
         "allocated_wall_time_minutes": allocated_wall_time,
         "sharing_behavior": sharing_behavior,
         "sharing_verified": True,
+        "whole_gpu_device_verified": whole_gpu_device_verified,
+        "whole_gpu_device_proof": whole_gpu_device_proof,
         "exclusive_requested": resource.exclusive,
         "nominal_memory_assumed": False,
     }
@@ -631,6 +746,13 @@ def _cuda_device_selector(device_index: int) -> str:
     if device_index >= len(selectors) or selectors[device_index] == "-1":
         raise GpuResourceError("CUDA_VISIBLE_DEVICES does not identify the current GPU")
     return selectors[device_index]
+
+
+def _memory_totals_consistent(observed_bytes: int, expected_bytes: int) -> bool:
+    return abs(observed_bytes - expected_bytes) <= max(
+        256 * 1024 * 1024,
+        expected_bytes // 20,
+    )
 
 
 def _nvidia_smi_facts(device_selector: str) -> dict[str, object]:
@@ -688,10 +810,7 @@ def _default_gpu_probe() -> dict[str, object]:
         device_selector = _cuda_device_selector(device_index)
         facts = _nvidia_smi_facts(device_selector)
         nvidia_total_bytes = int(cast(int, facts["nvidia_smi_memory_total_mb"])) * 1024 * 1024
-        if abs(nvidia_total_bytes - int(properties.total_memory)) > max(
-            256 * 1024 * 1024,
-            int(properties.total_memory) // 20,
-        ):
+        if not _memory_totals_consistent(nvidia_total_bytes, int(properties.total_memory)):
             raise GpuResourceError(
                 "nvidia-smi memory facts do not match the CUDA-visible device"
             )
@@ -759,6 +878,7 @@ def validate_gpu_environment(
     runtime_visible_memory_limit_bytes = cast(
         int, normalized["runtime_visible_memory_limit_bytes"]
     )
+    device_total_memory_bytes = cast(int, normalized["device_total_memory_bytes"])
     peak_vram_bytes = cast(int, normalized["peak_vram_bytes"])
     if visible_device_count != resource.gpu_count:
         raise GpuResourceError("CUDA exposes a different GPU count than the approved request")
@@ -766,6 +886,20 @@ def validate_gpu_environment(
         raise GpuResourceError("GPU allocation reports no available memory")
     if runtime_visible_memory_limit_bytes <= 0:
         raise GpuResourceError("GPU runtime reports no visible memory limit")
+    if device_total_memory_bytes <= 0:
+        raise GpuResourceError("GPU device reports no total memory")
+    if not _memory_totals_consistent(
+        runtime_visible_memory_limit_bytes,
+        device_total_memory_bytes,
+    ):
+        raise GpuResourceError("CUDA memory totals do not match the device properties")
+    nvidia_total_mb = snapshot.get("nvidia_smi_memory_total_mb")
+    if nvidia_total_mb is not None:
+        if not isinstance(nvidia_total_mb, int) or isinstance(nvidia_total_mb, bool) or nvidia_total_mb <= 0:
+            raise GpuResourceError("nvidia-smi memory total must be a positive integer")
+        nvidia_total_bytes = nvidia_total_mb * 1024 * 1024
+        if not _memory_totals_consistent(nvidia_total_bytes, device_total_memory_bytes):
+            raise GpuResourceError("nvidia-smi memory facts do not match the CUDA-visible device")
     if available_memory_bytes > runtime_visible_memory_limit_bytes:
         raise GpuResourceError("GPU free memory exceeds the visible memory limit")
     if peak_vram_bytes > runtime_visible_memory_limit_bytes:
@@ -775,14 +909,8 @@ def validate_gpu_environment(
     available_memory_source = str(normalized["available_memory_source"])
     if available_memory_source.lower() in {"nominal", "device_specification", "user_report"}:
         raise GpuResourceError("GPU available memory must come from an observed allocation")
-    sharing_behavior = str(allocation.get("sharing_behavior", "")).strip().lower()
-    memory_assignment_verified = sharing_behavior in {
-        "0",
-        "false",
-        "no",
-        "exclusive",
-        "unshared",
-    }
+    whole_device_verified = allocation.get("whole_gpu_device_verified") is True
+    memory_assignment_verified = False
     assigned_memory_value = snapshot.get("assigned_memory_bytes")
     if assigned_memory_value is not None:
         if (
@@ -791,7 +919,6 @@ def validate_gpu_environment(
             or assigned_memory_value <= 0
         ):
             raise GpuResourceError("GPU assigned memory must be a positive integer when reported")
-        assigned_memory_bytes = assigned_memory_value
         assigned_memory_source_value = snapshot.get("assigned_memory_source")
         try:
             assigned_memory_source = _nonempty(
@@ -806,10 +933,13 @@ def validate_gpu_environment(
             "user_report",
         }:
             raise GpuResourceError("GPU assigned memory must come from an observed allocation")
-        memory_assignment_verified = True
-    elif memory_assignment_verified:
+    if whole_device_verified:
         assigned_memory_bytes = runtime_visible_memory_limit_bytes
-        assigned_memory_source = "runtime_visible_memory_limit_on_unshared_allocation"
+        assigned_memory_source = "cuda_total_on_verified_whole_gpu_gres"
+        memory_assignment_verified = True
+    elif assigned_memory_value is not None:
+        assigned_memory_bytes = assigned_memory_value
+        memory_assignment_verified = True
     else:
         assigned_memory_bytes = None
         assigned_memory_source = "not_verified"
@@ -822,6 +952,7 @@ def validate_gpu_environment(
             raise GpuResourceError("observed peak VRAM exceeds the assigned GPU memory")
     normalized["resource_request"] = resource.to_dict()
     normalized["allocation"] = dict(allocation)
+    normalized["whole_gpu_device_verified"] = whole_device_verified
     normalized["nominal_device_memory_used"] = False
     normalized["assigned_memory_bytes"] = assigned_memory_bytes
     normalized["assigned_memory_source"] = assigned_memory_source
@@ -842,15 +973,29 @@ def collect_gpu_environment(
 ) -> dict[str, object]:
     """Capture actual CUDA facts, optionally binding them to a Slurm request."""
 
+    allocation, snapshot = _collect_gpu_observation(
+        resource=resource,
+        slurm_environment=slurm_environment,
+        probe=probe,
+    )
+    if resource is not None and allocation is not None:
+        return validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
+    return snapshot
+
+
+def _collect_gpu_observation(
+    *,
+    resource: GpuResourceRequest | None,
+    slurm_environment: Mapping[str, str] | None,
+    probe: Callable[[], Mapping[str, object]] | None,
+) -> tuple[dict[str, object] | None, dict[str, object]]:
     allocation = (
         verify_slurm_gpu_allocation(resource, slurm_environment)
         if resource is not None
         else None
     )
     snapshot = dict(probe() if probe is not None else _default_gpu_probe())
-    if resource is not None and allocation is not None:
-        return validate_gpu_environment(snapshot, resource=resource, allocation=allocation)
-    return snapshot
+    return allocation, snapshot
 
 
 def classify_gpu_failure(error: BaseException | str) -> RetryClassification:
@@ -1047,6 +1192,36 @@ def _write_gpu_submission_record(
         },
         overwrite=path.exists(),
     )
+
+
+def _write_gpu_preflight_record(
+    destination: Path,
+    *,
+    request: GpuExperimentRequest,
+    approval: GpuApproval,
+    preflight_path: Path,
+    status: str,
+    allocation: Mapping[str, object] | None = None,
+    hardware: Mapping[str, object] | None = None,
+    error: BaseException | None = None,
+) -> Path:
+    """Persist resource facts before the final GPU memory gate."""
+
+    payload: dict[str, object] = {
+        "schema_version": GPU_PREFLIGHT_SCHEMA_VERSION,
+        "status": status,
+        "request_checksum": request.request_checksum,
+        "approval_sha256": approval.approval_checksum,
+        "cpu_preflight_sha256": _sha256_file(preflight_path),
+        "slurm_allocation": dict(allocation or {}),
+        "hardware": dict(hardware or {}),
+    }
+    if error is not None:
+        payload["error_type"] = type(error).__name__
+        payload["error"] = str(error)
+    path = destination / "gpu-preflight.json"
+    atomic_json_write(path, payload, overwrite=True)
+    return path
 
 
 def _gpu_execution_record_path(
@@ -1408,23 +1583,24 @@ def _write_gpu_failure(
     retry_count: int,
     attempts: Sequence[Mapping[str, object]],
     error: BaseException,
+    resource_preflight: Mapping[str, object] | None = None,
 ) -> None:
-    atomic_json_write(
-        destination / "gpu-failure.json",
-        {
-            "schema_version": GPU_EXECUTION_SCHEMA_VERSION,
-            "status": "failed",
-            "request_checksum": request.request_checksum,
-            "approval_sha256": approval.approval_checksum,
-            "cpu_preflight_sha256": _sha256_file(preflight_path),
-            "retry_count": retry_count,
-            "attempts": [dict(attempt) for attempt in attempts],
-            "error_type": type(error).__name__,
-            "error": str(error),
-            "retry": classify_gpu_failure(error).to_dict(),
-        },
-        overwrite=True,
-    )
+    payload: dict[str, object] = {
+        "schema_version": GPU_EXECUTION_SCHEMA_VERSION,
+        "status": "failed",
+        "request_checksum": request.request_checksum,
+        "approval_sha256": approval.approval_checksum,
+        "cpu_preflight_sha256": _sha256_file(preflight_path),
+        "retry_count": retry_count,
+        "attempts": [dict(attempt) for attempt in attempts],
+        "error_type": type(error).__name__,
+        "error": str(error),
+        "retry": classify_gpu_failure(error).to_dict(),
+        "resource_preflight_file": "gpu-preflight.json",
+    }
+    if resource_preflight is not None:
+        payload["resource_preflight"] = dict(resource_preflight)
+    atomic_json_write(destination / "gpu-failure.json", payload, overwrite=True)
 
 
 @_lock_gpu_record(_gpu_execution_record_path)
@@ -1577,26 +1753,101 @@ def run_approved_gpu_experiment(
             integration_manifest_checksum,
         )
     allocation_environment = dict(os.environ if slurm_environment is None else slurm_environment)
-    allocation = verify_slurm_gpu_allocation(resource, allocation_environment)
-    if not resource.smoke_test and str(allocation["sharing_behavior"]).strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "exclusive",
-        "unshared",
-    }:
-        raise GpuResourceError(
-            "full GPU training requires a verified unshared allocation; use a smoke request for shared memory"
+    attempts: list[Mapping[str, object]] = []
+    retry_count = previous_retries
+    allocation: dict[str, object] = {}
+    raw_snapshot: dict[str, object] = {}
+    before: dict[str, object] = {}
+    try:
+        collected_allocation, raw_snapshot = _collect_gpu_observation(
+            resource=resource,
+            slurm_environment=allocation_environment,
+            probe=gpu_probe,
         )
-    before = collect_gpu_environment(
-        resource=resource,
-        slurm_environment=allocation_environment,
-        probe=gpu_probe,
-    )
-    if before.get("memory_assignment_verified") is not True:
-        raise GpuResourceError(
-            "GPU memory assigned to this job could not be verified; stop before training"
+        allocation = dict(collected_allocation or {})
+        _write_gpu_preflight_record(
+            destination,
+            request=request,
+            approval=approval,
+            preflight_path=referenced_preflight,
+            status="observed",
+            allocation=allocation,
+            hardware=raw_snapshot,
         )
+        before = validate_gpu_environment(
+            raw_snapshot,
+            resource=resource,
+            allocation=allocation,
+        )
+        if not resource.smoke_test and allocation.get("whole_gpu_device_verified") is not True:
+            raise GpuResourceError(
+                "full GPU training requires a verified whole-device GPU GRES allocation"
+            )
+        if before.get("memory_assignment_verified") is not True:
+            raise GpuResourceError(
+                "GPU memory assigned to this job could not be verified; stop before training"
+            )
+        _write_gpu_preflight_record(
+            destination,
+            request=request,
+            approval=approval,
+            preflight_path=referenced_preflight,
+            status="passed",
+            allocation=allocation,
+            hardware=before,
+        )
+    except Exception as exc:
+        failure_hardware: Mapping[str, object] = before or raw_snapshot
+        _write_gpu_preflight_record(
+            destination,
+            request=request,
+            approval=approval,
+            preflight_path=referenced_preflight,
+            status="failed",
+            allocation=allocation,
+            hardware=failure_hardware,
+            error=exc,
+        )
+        classification = classify_gpu_failure(exc)
+        attempts.append(
+            {
+                "attempt": 1,
+                "error_type": type(exc).__name__,
+                "retry": {
+                    "retryable": classification.retryable,
+                    "category": classification.category,
+                    "reason": "redacted; see private GPU failure evidence",
+                    "retry_number_allowed": classification.retry_number_allowed,
+                },
+            }
+        )
+        _write_gpu_execution_record(
+            execution_record_path,
+            request=request,
+            approval=approval,
+            status="failed",
+            output_dir=destination,
+            retry_count=retry_count,
+            attempts=attempts,
+            retry=classification.to_dict(),
+        )
+        _write_gpu_failure(
+            destination,
+            request=request,
+            approval=approval,
+            preflight_path=referenced_preflight,
+            retry_count=retry_count,
+            attempts=attempts,
+            error=exc,
+            resource_preflight={
+                "status": "failed",
+                "slurm_allocation": dict(allocation),
+                "hardware": dict(failure_hardware),
+            },
+        )
+        if isinstance(exc, GpuResourceError):
+            raise
+        raise GpuExecutionError(f"approved GPU preflight failed: {exc}") from exc
     authorization = _new_gpu_execution_authorization(
         request_checksum=request.request_checksum,
         approval_checksum=approval.approval_checksum,
@@ -1605,8 +1856,6 @@ def run_approved_gpu_experiment(
         slurm_job_id=str(allocation["job_id"]),
         allocation_fingerprint=_json_sha256(allocation),
     )
-    attempts: list[Mapping[str, object]] = []
-    retry_count = previous_retries
     _write_gpu_execution_record(
         execution_record_path,
         request=request,
@@ -2014,6 +2263,7 @@ __all__ = [
     "GPU_EXECUTION_SCHEMA_VERSION",
     "GPU_EXECUTION_RECORD_SCHEMA_VERSION",
     "GPU_EXPERIMENT_SCHEMA_VERSION",
+    "GPU_PREFLIGHT_SCHEMA_VERSION",
     "GPU_RETRY_LIMIT",
     "GPU_SMOKE_PARTITION",
     "GPU_SMOKE_WALL_TIME_LIMIT",

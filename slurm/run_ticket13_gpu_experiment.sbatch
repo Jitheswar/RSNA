@@ -65,14 +65,44 @@ if [[ ! "${fold_id}" =~ ^[012]$ ]]; then
 fi
 
 job_details=""
-if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]] && command -v scontrol >/dev/null 2>&1; then
-  job_details="$(scontrol show job -o "${job_id}" 2>/dev/null || true)"
-  if [[ "${job_details}" =~ Shared=([^[:space:]]+) ]]; then
-    export SLURM_JOB_SHARED="${BASH_REMATCH[1]}"
-  elif [[ "${job_details}" =~ OverSubscribe=([^[:space:]]+) ]]; then
-    # Slurm 20.11 on this cluster exposes the sharing signal as
-    # OverSubscribe=... rather than Shared=....
-    export SLURM_JOB_SHARED="${BASH_REMATCH[1]}"
+unset SLURM_JOB_GRES_DETAIL SLURM_NODE_GRES SLURM_GRES_CONFIG_ENTRY \
+  SLURM_GRES_DEVICE_FILE SLURM_CONSTRAIN_DEVICES SLURM_GRES_TYPES \
+  SLURM_SELECT_TYPE SLURM_SELECT_TYPE_PARAMETERS SLURM_GRES_SHARING_MODE
+if command -v scontrol >/dev/null 2>&1; then
+  # The detailed job record is the authoritative source for the concrete GRES
+  # index.  OverSubscribe remains a separate node/CPU-sharing fact.
+  job_details="$(scontrol show job -d "${job_id}" 2>/dev/null || true)"
+  scheduler_gres=""
+  for field in ${job_details}; do
+    case "${field}" in
+      JOB_GRES=*) export SLURM_JOB_GRES="${field#JOB_GRES=}"; scheduler_gres="${field#JOB_GRES=}" ;;
+      TresPerNode=*)
+        export SLURM_TRES_PER_NODE="${field#TresPerNode=}"
+        if [[ -z "${scheduler_gres}" ]]; then
+          scheduler_gres="${field#TresPerNode=}"
+        fi
+        ;;
+      GRES=*) export SLURM_JOB_GRES_DETAIL="${field#GRES=}" ;;
+      NodeList=*) export SLURM_JOB_NODELIST="${field#NodeList=}" ;;
+      Shared=*)
+        if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]]; then
+          export SLURM_JOB_SHARED="${field#Shared=}"
+        fi
+        ;;
+      OverSubscribe=*)
+        if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]]; then
+          # Slurm 20.11 on this cluster exposes the sharing signal as
+          # OverSubscribe=... rather than Shared=....
+          export SLURM_JOB_SHARED="${field#OverSubscribe=}"
+        fi
+        ;;
+    esac
+  done
+  if [[ -z "${SLURM_JOB_GRES:-}" && -n "${scheduler_gres}" ]]; then
+    export SLURM_JOB_GRES="${scheduler_gres}"
+  fi
+  if [[ -z "${SLURM_GPUS_ON_NODE:-${SLURM_GPUS:-}}" && "${scheduler_gres}" =~ ^gpu(:[A-Za-z0-9_.-]+)?:([0-9]+)$ ]]; then
+    export SLURM_GPUS_ON_NODE="${BASH_REMATCH[2]}"
   fi
 fi
 if [[ -z "${SLURM_JOB_SHARED:-${SLURM_SHARED:-}}" ]]; then
@@ -95,21 +125,51 @@ if [[ -z "${SLURM_TIMELIMIT:-}" ]]; then
   exit 1
 fi
 
-if [[ -z "${SLURM_JOB_GRES:-}" || -z "${SLURM_GPUS_ON_NODE:-${SLURM_GPUS:-}}" ]] && command -v scontrol >/dev/null 2>&1; then
-  if [[ -z "${job_details}" ]]; then
-    job_details="$(scontrol show job -o "${job_id}" 2>/dev/null || true)"
+if command -v scontrol >/dev/null 2>&1; then
+  node_name="${SLURMD_NODENAME:-${SLURM_JOB_NODELIST:-}}"
+  node_details=""
+  if [[ -n "${node_name}" ]]; then
+    node_details="$(scontrol show node -o "${node_name}" 2>/dev/null || true)"
+    if [[ "${node_details}" =~ Gres=([^[:space:]]+) ]]; then
+      export SLURM_NODE_GRES="${BASH_REMATCH[1]}"
+    fi
   fi
-  scheduler_gres=""
-  for field in ${job_details}; do
-    case "${field}" in
-      JOB_GRES=*|TresPerNode=*) scheduler_gres="${field#*=}" ;;
-    esac
-  done
-  if [[ -z "${SLURM_JOB_GRES:-}" && -n "${scheduler_gres}" ]]; then
-    export SLURM_JOB_GRES="${scheduler_gres}"
+
+  cluster_config="$(scontrol show config 2>/dev/null || true)"
+  if [[ "${cluster_config}" =~ GresTypes[[:space:]]*=[[:space:]]*([^[:space:]]+) ]]; then
+    export SLURM_GRES_TYPES="${BASH_REMATCH[1]}"
   fi
-  if [[ -z "${SLURM_GPUS_ON_NODE:-${SLURM_GPUS:-}}" && "${scheduler_gres}" =~ ^gpu(:[A-Za-z0-9_.-]+)?:([0-9]+)$ ]]; then
-    export SLURM_GPUS_ON_NODE="${BASH_REMATCH[2]}"
+  if [[ "${cluster_config}" =~ ConstrainDevices[[:space:]]*=[[:space:]]*([^[:space:]]+) ]]; then
+    export SLURM_CONSTRAIN_DEVICES="${BASH_REMATCH[1]}"
+  fi
+  if [[ "${cluster_config}" =~ SelectType[[:space:]]*=[[:space:]]*([^[:space:]]+) ]]; then
+    export SLURM_SELECT_TYPE="${BASH_REMATCH[1]}"
+  fi
+  if [[ "${cluster_config}" =~ SelectTypeParameters[[:space:]]*=[[:space:]]*([^[:space:]]+) ]]; then
+    export SLURM_SELECT_TYPE_PARAMETERS="${BASH_REMATCH[1]}"
+  fi
+
+  gres_config_path="/etc/slurm/gres.conf"
+  if [[ -n "${node_name}" && -r "${gres_config_path}" ]]; then
+    while IFS= read -r gres_line; do
+      if [[ "${gres_line}" =~ (^|[[:space:]])NodeName=${node_name}([[:space:]]|$) ]] \
+        && [[ "${gres_line}" =~ (^|[[:space:]])Name=gpu([[:space:]]|$) ]] \
+        && [[ "${gres_line}" =~ File=([^[:space:]]+) ]]; then
+        export SLURM_GRES_CONFIG_ENTRY="${gres_line}"
+        export SLURM_GRES_DEVICE_FILE="${BASH_REMATCH[1]}"
+        break
+      fi
+    done < "${gres_config_path}"
+  fi
+
+  mode_text="${SLURM_GRES_TYPES:-} ${SLURM_GRES_CONFIG_ENTRY:-}"
+  mode_text="${mode_text,,}"
+  if [[ -z "${SLURM_GRES_TYPES:-}" || -z "${SLURM_GRES_CONFIG_ENTRY:-}" || -z "${SLURM_CONSTRAIN_DEVICES:-}" ]]; then
+    export SLURM_GRES_SHARING_MODE="unknown"
+  elif [[ "${mode_text}" == *mps* || "${mode_text}" == *mig* || "${mode_text}" == *shard* || "${mode_text}" == *fraction* || "${mode_text}" == *slice* ]]; then
+    export SLURM_GRES_SHARING_MODE="fractional_or_shared"
+  else
+    export SLURM_GRES_SHARING_MODE="none"
   fi
 fi
 
