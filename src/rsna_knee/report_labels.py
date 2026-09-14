@@ -241,15 +241,27 @@ class TargetDefinition:
             "rule_origin": self.rule_origin.to_public_dict(),
             "mention_pattern": self.mention_pattern,
             "positive_rules": [
-                {"rule_id": rule.rule_id, "rationale": rule.rationale}
+                {
+                    "rule_id": rule.rule_id,
+                    "pattern": rule.pattern,
+                    "rationale": rule.rationale,
+                }
                 for rule in self.positive_patterns
             ],
             "negative_rules": [
-                {"rule_id": rule.rule_id, "rationale": rule.rationale}
+                {
+                    "rule_id": rule.rule_id,
+                    "pattern": rule.pattern,
+                    "rationale": rule.rationale,
+                }
                 for rule in self.negative_patterns
             ],
             "unsupported_rules": [
-                {"rule_id": rule.rule_id, "rationale": rule.rationale}
+                {
+                    "rule_id": rule.rule_id,
+                    "pattern": rule.pattern,
+                    "rationale": rule.rationale,
+                }
                 for rule in self.unsupported_patterns
             ],
             "unresolved_interpretations": list(self.unresolved_interpretations),

@@ -567,3 +567,60 @@ authorization independently reloads those artifacts, rechecks the exact
 allocation and binds them to the active Slurm job. Execution is marked
 consumed before lazy loading, and public retry evidence does not expose raw
 exception text.
+
+## Ticket 15 fold-specific deterministic report extraction
+
+`rsna_knee.report_extraction` wraps the ticket-14 conservative rules in an
+immutable `FrozenDeterministicExtractor`. It joins a private report corpus to
+the checksum-covered ticket-04 fold manifest, admits only report-only studies
+from each fold's training partition as weak-label records, and keeps reports
+from held-out gold studies in a separate evaluation-only partition. Missing
+reports are counted, not treated as negatives. Positive and negative labels
+retain mask one only when the deterministic rule is criterion-backed and
+confident; not-mentioned, uncertain, unknown and extraction-failed states are
+masked.
+
+The private input JSON has this shape and must remain on the cluster:
+
+```json
+{
+  "schema_version": "rsna-knee-report-corpus-v1",
+  "source_version": "reports-YYYY-MM-DD",
+  "reports": [
+    {
+      "study_instance_uid": "...",
+      "source_report_ref": "private://...",
+      "report_text": "..."
+    }
+  ]
+}
+```
+
+Run the bounded adapter only after the private fold manifest and report corpus
+are available. It requests one non-exclusive `cluster1-cpu` node, two CPUs,
+8 GB and one hour:
+
+```bash
+export RSNA_TICKET15_FOLD_MANIFEST=/private/path/ticket-04-folds/private/fold-manifest.json
+export RSNA_TICKET15_REPORTS=/private/path/reports/private/report-corpus.json
+export RSNA_TICKET15_OUTPUT=/private/path/ticket-15-report-extraction
+sbatch --wait slurm/run_ticket15_report_extraction.sbatch
+```
+
+The public JSON contains aggregate per-target accuracy where defined, coverage,
+failure/abstention and uncertainty counts, fold variation, latency,
+reproducibility and privacy/boundary evidence. The private JSON contains
+identifier-bearing label evidence and report digests without copying raw
+report text. Held-out evaluation is performed only with the frozen extractor;
+no report-derived rule is shared across folds. Synthetic tests establish the
+mechanics, while real-report accuracy/coverage and any report-derived training
+benefit require the authorized private run and remain separate from
+competition inference.
+
+For a deliberately tiny fixture only, a local smoke run may use
+`--allow-local-smoke`; the CLI rejects more than 128 manifest studies or 32
+reports outside Slurm. The artifacts also record the extraction module
+fingerprint, resolved Git revision when available, environment fingerprint,
+execution identity, complete private fold eligibility/exclusion sets, and
+upstream manifest digests. No model checkpoint or learned adaptation is an
+upstream input for this deterministic comparator.

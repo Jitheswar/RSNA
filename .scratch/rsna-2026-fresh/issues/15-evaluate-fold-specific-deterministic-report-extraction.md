@@ -4,7 +4,7 @@
 
 **Blocked by:** 10: Produce complete three-fold OOF evidence; 14: Establish auditable report-to-target interpretation
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Authorization:** Planning artifact only. The owner has approved ticket publication, not implementation. Do not start work until separately instructed; ready-for-agent describes specification readiness, not execution permission.
 
@@ -12,11 +12,11 @@
 
 ## Acceptance criteria
 
-- [ ] Represent positive, negative, not_mentioned, uncertain and extraction_failed distinctly; only admissible confident positives/negatives have supervision mask one.
-- [ ] Record private source-report reference, extractor/configuration version, rule evidence, fold context and confidence; source text never leaves the cluster by default.
-- [ ] Develop each fold's rules only from its training-side reports or independently clean resources; materially report-derived rules cannot cross into an affected held-out fold.
-- [ ] Freeze the extractor before evaluation on held-out gold reports; separate evaluation outputs from training labels and do not tune from those report contents.
-- [ ] Report target accuracy where defined, coverage, failure/abstention, uncertainty handling, reproducibility, auditability and latency; unsupported targets are explicitly masked.
+- [x] Represent positive, negative, not_mentioned, uncertain and extraction_failed distinctly; only admissible confident positives/negatives have supervision mask one.
+- [x] Record private source-report reference, extractor/configuration version, rule evidence, fold context and confidence; source text never leaves the cluster by default.
+- [x] Develop each fold's rules only from its training-side reports or independently clean resources; materially report-derived rules cannot cross into an affected held-out fold.
+- [x] Freeze the extractor before evaluation on held-out gold reports; separate evaluation outputs from training labels and do not tune from those report contents.
+- [x] Report target accuracy where defined, coverage, failure/abstention, uncertainty handling, reproducibility, auditability and latency; unsupported targets are explicitly masked.
 
 ## Verification gates
 
@@ -36,4 +36,74 @@ These retain the parent specification's acceptance criteria and blocking consequ
 
 ## Completion evidence
 
-- [ ] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+- [x] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+
+## Comments
+
+### 2026-09-14 — Fold-clean deterministic extraction implementation
+
+Implemented the ticket-15 boundary in `src/rsna_knee/report_extraction.py`.
+`FrozenDeterministicExtractor` is an immutable wrapper around the ticket-14
+official-rule register and records both the configuration and complete ruleset
+fingerprints. `ReportCorpus` accepts private report text only as an input; the
+generated private audit artifact retains source references, report digests,
+fold context, rule evidence and confidence but never copies source text.
+
+`run_report_extraction()` builds one partition per canonical fold. Only
+report-only studies from that fold's training side become
+`admitted_training_labels`; reports from held-out gold studies are emitted as
+`held_out_evaluation` records and are never admitted to training. Missing gold
+reports are counted explicitly. The boundary validator rejects unknown studies,
+gold training labels, held-out training reports, wrong-fold evaluation reports,
+and overlapping partitions. Evaluation compares confident report values with
+the frozen manifest's reference labels and leaves all abstentions masked.
+
+The public result reports per-target accuracy where defined, coverage,
+failure/abstention, not-mentioned/uncertain/unknown/extraction-failed counts,
+confidence, fold metrics, latency, semantic repeatability, privacy and
+provenance. JSON publication is atomic and refuses overwrites. The bounded
+adapter is `slurm/run_ticket15_report_extraction.sbatch`; it uses one
+non-exclusive `cluster1-cpu` node, two CPUs, 8 GB and one hour. CLI and package
+exports are documented in `README.md`.
+
+Added seven public synthetic tests in `tests/test_report_extraction.py`.
+The fixture contains twelve gold and six report-only studies. The complete
+synthetic report cohort produced four held-out gold reports per fold, five/two/
+five training report-label records for folds 0/1/2, 100% defined-target
+accuracy and coverage, and a verified repeated semantic digest. Separate tests
+cover unsupported/uncertain masking, missing reports, boundary rejection,
+private/public serialization and corpus loading. Focused report tests passed;
+the full suite and typecheck are recorded in the external implementation
+report requested by the owner.
+
+The implementation demonstrates the clean synthetic/local mechanics only. No
+private competition report was inspected or processed, no report-derived
+training run was admitted, and no Slurm allocation was submitted. Real-report
+accuracy, coverage, latency and weak-supervision benefit remain pending the
+authorized private execution; competition inference remains report-free.
+
+## Answer
+
+### Closure decision — 2026-09-14
+
+Ticket 15 is resolved for the implemented, synthetic-testable extraction
+boundary. The public API now joins a checksum-covered canonical three-fold
+manifest to private reports, admits only report-only training records from the
+fold's training side, and evaluates held-out gold records in a separate
+partition with a frozen deterministic extractor. The artifact writer keeps
+aggregate evidence public and identifier-bearing audit evidence private; it
+does not persist source report text.
+
+The five acceptance criteria are covered by the implementation and seven
+synthetic tests. The fixture contains twelve gold and six report-only studies;
+each fold evaluates four gold reports, training-label counts are 5/2/5 for
+folds 0/1/2, and all defined synthetic target metrics have 100% accuracy and
+100% coverage. Repeated text-free semantic artifacts produce the same digest.
+
+V11 and V15 remain unchecked here because no private competition reports were
+processed and no report-derived training run or cluster execution was
+authorized or performed in this implementation turn. The authoritative rule
+register and synthetic masking mechanics from ticket 14 are reused, but they
+are not a claim of real-report clinical accuracy or complete production gate
+evidence. The detailed implementation and verification record is maintained
+outside the repository at `/home/ch.jitheswar/ticket-15-report.md`.
