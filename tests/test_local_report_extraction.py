@@ -25,7 +25,7 @@ from rsna_knee.local_report_extraction import (
 from rsna_knee.folds import FoldManifest, freeze_folds
 from rsna_knee.inventory import SourceManifest, SourceStudy
 from rsna_knee.report_extraction import ReportRecord
-from rsna_knee.report_labels import LabelState
+from rsna_knee.report_labels import LabelState, RuleOriginKind
 from rsna_knee.targets import TARGET_COLUMNS
 
 
@@ -106,6 +106,14 @@ def test_frozen_prompt_has_stable_identity_and_never_serializes_report_text() ->
     assert payload["target_order"]
 
 
+def test_frozen_prompt_reserves_extraction_failure_for_pipeline_failures() -> None:
+    rendered = freeze_local_prompt().render("A report")
+
+    assert "positive, negative, not-mentioned,\nuncertain, or unknown" in rendered
+    assert "extraction-failed is reserved for pipeline failures" in rendered
+    assert "Use uncertain or unknown\nfor semantic uncertainty" in rendered
+
+
 class _StaticGenerator:
     def __init__(self, output: str) -> None:
         self.output = output
@@ -132,7 +140,7 @@ def _model_output() -> str:
         ("Medial Meniscus", "not-mentioned", None),
         ("Lateral Meniscus", "uncertain", None),
         ("Medial OA", "unknown", None),
-        ("Lateral OA", "extraction-failed", None),
+        ("Lateral OA", "unknown", None),
         ("PF OA", "not-mentioned", None),
         ("Effusion", "negative", 0.77),
         ("Synovitis", "positive", 0.66),
@@ -183,7 +191,7 @@ def test_local_model_output_preserves_states_masks_and_private_audit_evidence() 
         LabelState.NOT_MENTIONED,
         LabelState.UNCERTAIN,
         LabelState.UNKNOWN,
-        LabelState.EXTRACTION_FAILED,
+        LabelState.UNKNOWN,
         LabelState.NOT_MENTIONED,
         LabelState.NEGATIVE,
         LabelState.POSITIVE,
@@ -194,6 +202,29 @@ def test_local_model_output_preserves_states_masks_and_private_audit_evidence() 
     assert interpretation.supervision_mask == (1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1)
     assert "The ACL is intact." not in json.dumps(interpretation.to_public_dict())
     assert "private://study-1" in json.dumps(interpretation.to_private_dict())
+
+
+def test_model_selected_extraction_failure_is_invalid_pipeline_output() -> None:
+    approval = _approved_for_generator()
+    payload = json.loads(_model_output())
+    target = next(item for item in payload["targets"] if item["target"] == "Lateral OA")
+    target["state"] = "extraction-failed"
+    extractor = LocalLanguageModelExtractor.from_verified_generator(
+        approval,
+        freeze_local_prompt(),
+        _StaticGenerator(json.dumps(payload)),
+        artifact_sha256=approval.artifact_sha256,
+    )
+
+    interpretation = extractor.extract(
+        ReportRecord("study-1", "private://study-1", "A report"),
+        fold=0,
+    )
+
+    label = interpretation.labels[TARGET_COLUMNS.index("Lateral OA")]
+    assert label.state is LabelState.EXTRACTION_FAILED
+    assert label.rule_origin.kind is RuleOriginKind.PROJECT_SAFETY_POLICY
+    assert interpretation.failure_code == "invalid-target-output"
 
 
 def test_invalid_local_model_json_is_recorded_as_extraction_failure() -> None:

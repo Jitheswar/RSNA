@@ -47,18 +47,28 @@ Implemented the ticket-16 mechanics without downloading or using a learned model
   SHA-256, source, license, cutoff, eligibility/leakage assessment, purpose,
   local transfer policy and bounded `cluster1-cpu` resources;
 - added owner-approval validation, local artifact verification, CPU-only
-  offline loading, frozen prompt/settings, strict six-state JSON parsing and
-  private audit digests;
+  offline loading, frozen prompt/settings, five-state semantic JSON parsing
+  with six-state failure-safe artifacts and private audit digests;
 - added same-manifest/same-report-cohort comparison against ticket 15 with
   coverage, uncertainty/failure states, auditability, latency, token/artifact
   cost and repeatability metrics; and
 - added synthetic tests, a local CLI and a bounded Slurm adapter.
 
-Focused ticket-16 tests pass (`9 passed`), the full suite passes (`260 passed`),
+Focused ticket-16 tests pass (`11 passed`), the full suite passes (`262 passed`),
 and mypy passes. V13 remains pending the owner's specific model eligibility
 approval; no private report, checkpoint, learned metric or Slurm execution was
 created by this change. V15 is enforced as a fail-closed lineage/fold-boundary
 contract but still needs private learned-artifact evidence.
+
+### 2026-09-14 — extraction-state semantics tightened
+
+The frozen model prompt now offers only the five semantic states: positive,
+negative, not-mentioned, uncertain and unknown. `extraction-failed` remains in
+the six-state artifact contract but is reserved for malformed, invalid or
+otherwise unusable pipeline output. A model-selected `extraction-failed` is
+converted into a policy-origin `invalid-target-output` failure rather than
+being accepted as semantic uncertainty. Focused Ticket 16 tests pass (`11`),
+and the complete suite passes (`262`).
 
 The detailed handoff report is outside the repository at
 `/home/ch.jitheswar/ticket-16-report.md`.

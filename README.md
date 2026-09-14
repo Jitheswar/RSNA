@@ -649,11 +649,14 @@ The optional `transformers` runtime is not part of the competition inference
 environment.
 
 The frozen prompt asks for one JSON object containing all twelve target states,
-model confidence and short audit evidence. Explicit positive/negative states
-alone receive mask one; not-mentioned, uncertain, unknown and
-extraction-failed states remain masked. Prompt, model, output, fold, source
-digest, response digest, latency, token counts and artifact provenance are
-recorded without persisting raw report text in either public or private JSON.
+model confidence and short audit evidence. Its model-facing semantic choices
+are positive, negative, not-mentioned, uncertain and unknown; the parser
+reserves extraction-failed for malformed or otherwise unusable pipeline output.
+Explicit positive/negative states alone receive mask one; not-mentioned,
+uncertain, unknown and extraction-failed states remain masked. Prompt, model,
+output, fold, source digest, response digest, latency, token counts and
+artifact provenance are recorded without persisting raw report text in either
+public or private JSON.
 
 The bounded adapter is `slurm/run_ticket16_local_report_extraction.sbatch`; it
 uses one non-exclusive `cluster1-cpu` node, at most 16 CPUs, 64 GB and six

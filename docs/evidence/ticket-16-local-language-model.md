@@ -73,18 +73,21 @@ flags. No report text is sent to a model hub, API or inference provider.
 `freeze_local_prompt()` returns an immutable prompt configuration. Its
 fingerprint covers the prompt text, the official target criteria, target order,
 greedy generation settings, input/output limits and JSON schema. The prompt
-requires all twelve targets and one of the preserved states:
+requires all twelve targets and one of five model-facing semantic states:
 
 - `positive`
 - `negative`
 - `not-mentioned`
 - `uncertain`
 - `unknown`
-- `extraction-failed`
 
-The six-state representation retains the ticket's five requested outcomes and
+The six-state artifact representation retains those five semantic outcomes and
 also keeps unsupported-but-readable `unknown` distinct from software/model
-failure. Positive and negative outputs require a finite confidence in `[0, 1]`
+failure. `extraction-failed` is reserved for the extraction pipeline: malformed
+or unusable model output, invalid schema/state/confidence, generation failure,
+or another system-level failure. The parser rejects a model-selected
+`extraction-failed` as a semantic answer and records it as invalid pipeline
+output. Positive and negative outputs require a finite confidence in `[0, 1]`
 and receive supervision mask one. All abstained states receive mask zero.
 Evidence is an optional single-line model snippet capped at 512 characters;
 raw model output is represented only by a digest and size in private audit
@@ -127,7 +130,7 @@ The synthetic suite in `tests/test_local_report_extraction.py` covers:
 - source-version mismatch rejection; and
 - public/private comparison artifact separation.
 
-Observed focused result: `9 passed`. Mypy passes for the new module, CLI,
+Observed focused result: `11 passed`. Mypy passes for the new module, CLI,
 package exports and the updated report-label provenance enum.
 
 No owner-approved manifest, local checkpoint, optional model runtime, private

@@ -616,12 +616,13 @@ DEFAULT_LOCAL_PROMPT_SYSTEM = (
 DEFAULT_LOCAL_PROMPT_TEMPLATE = """Classify this knee MRI report for the twelve competition targets.
 
 For every target return exactly one state: positive, negative, not-mentioned,
-uncertain, unknown, or extraction-failed. Use positive or negative only when
-the report explicitly supports the authoritative criterion. Use uncertain for
-possible/suspected/equivocal or historical findings. Treat an explicit
-negation as negative only when it satisfies the authoritative negative
-criterion. Use unknown for unsupported wording, not-mentioned when the target is not discussed, and
-extraction-failed only when the report cannot be interpreted.
+uncertain, or unknown. Use positive or negative only when the report explicitly
+supports the authoritative criterion. Use uncertain for possible, suspected,
+equivocal or historical findings. Treat an explicit negation as negative only
+when it satisfies the authoritative negative criterion. Use unknown for
+unsupported wording and not-mentioned when the target is not discussed.
+extraction-failed is reserved for pipeline failures. Use uncertain or unknown
+for semantic uncertainty; do not emit extraction-failed as a semantic answer.
 
 Return this JSON shape exactly:
 {{"schema_version":"{output_schema_version}","targets":[{{"target":"ACL","state":"not-mentioned","confidence":null,"evidence":""}}]}}
@@ -1217,11 +1218,14 @@ def parse_local_model_output(
     policy_origin = _local_output_policy_origin()
     labels: list[TargetLabel] = []
     target_failure = False
-    model_reported_failure = False
     for target in TARGET_COLUMNS:
         item = targets[target]
         try:
             state = _normalized_state(item.get("state"))
+            if state is LabelState.EXTRACTION_FAILED:
+                raise LocalModelOutputError(
+                    "extraction-failed is reserved for pipeline failures, not semantic answers"
+                )
             confidence = _model_confidence(item.get("confidence"), state)
             evidence = _model_evidence(item.get("evidence"))
             if "value" in item:
@@ -1229,8 +1233,6 @@ def parse_local_model_output(
                 expected_value = 1 if state is LabelState.POSITIVE else 0 if state is LabelState.NEGATIVE else None
                 if declared_value != expected_value:
                     raise LocalModelOutputError("model value disagrees with state")
-            if state is LabelState.EXTRACTION_FAILED:
-                model_reported_failure = True
             labels.append(
                 _local_label(
                     target,
@@ -1267,8 +1269,6 @@ def parse_local_model_output(
         failure_code=(
             "invalid-target-output"
             if target_failure
-            else "model-reported-failure"
-            if model_reported_failure
             else None
         ),
     )
