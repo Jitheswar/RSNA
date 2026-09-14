@@ -75,6 +75,7 @@ class RuleOriginKind(StrEnum):
     INDEPENDENT_SYNTHETIC = "independent-synthetic-case"
     PATIENT_REPORT = "patient-report-example"
     PARTICIPANT_INTERPRETATION = "participant-interpretation"
+    APPROVED_PRETRAINED_MODEL = "approved-pretrained-local-model"
 
 
 @dataclass(frozen=True)
@@ -896,6 +897,7 @@ def validate_rule_origin_for_folds(origin: RuleOrigin, consuming_folds: Iterable
     if origin.shared_across_folds and origin.kind not in {
         RuleOriginKind.OFFICIAL_DEFINITION,
         RuleOriginKind.PROJECT_SAFETY_POLICY,
+        RuleOriginKind.APPROVED_PRETRAINED_MODEL,
     }:
         raise ReportInterpretationError(
             f"shared rule {origin.rule_id!r} is not from an authoritative source"

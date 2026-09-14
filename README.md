@@ -624,3 +624,55 @@ fingerprint, resolved Git revision when available, environment fingerprint,
 execution identity, complete private fold eligibility/exclusion sets, and
 upstream manifest digests. No model checkpoint or learned adaptation is an
 upstream input for this deterministic comparator.
+
+## Ticket 16 approved local language-model comparison
+
+`rsna_knee.local_report_extraction` provides the approval-gated second
+extractor. The committed proposal is the exact Hugging Face
+[`google/flan-t5-small`](https://huggingface.co/google/flan-t5-small) checkpoint
+at revision `0fc9ddf78a1e988dac52e2dac162b0ede4fd74ab`, with the
+`model.safetensors` SHA-256
+`495fa51e204676f1a857a9fc13c4c89f3f5ba9f480b898cebca02add25e6d749` and its
+Apache-2.0 model-card license. This is a proposal, not an owner approval;
+the default manifest has `approved: false` and cannot load or use a model.
+The proposal records the source, version, revision, weight hash, public
+availability cutoff, eligibility and leakage assessment, intended purpose,
+expected benefit, reproducibility method, deterministic comparator, CPU
+location/budget, and the no-report-transfer policy.
+
+Before a run, the owner must provide a private approval JSON naming that exact
+resource and an already-present local model directory. The loader verifies the
+declared weight and supporting config/tokenizer hashes and calls `transformers`
+with `local_files_only=True`; it does not download from a model hub. GPU
+execution is rejected by this ticket's boundary and needs a separate approval.
+The optional `transformers` runtime is not part of the competition inference
+environment.
+
+The frozen prompt asks for one JSON object containing all twelve target states,
+model confidence and short audit evidence. Explicit positive/negative states
+alone receive mask one; not-mentioned, uncertain, unknown and
+extraction-failed states remain masked. Prompt, model, output, fold, source
+digest, response digest, latency, token counts and artifact provenance are
+recorded without persisting raw report text in either public or private JSON.
+
+The bounded adapter is `slurm/run_ticket16_local_report_extraction.sbatch`; it
+uses one non-exclusive `cluster1-cpu` node, at most 16 CPUs, 64 GB and six
+hours:
+
+```bash
+export RSNA_TICKET16_FOLD_MANIFEST=/private/path/ticket-04-folds/private/fold-manifest.json
+export RSNA_TICKET16_REPORTS=/private/path/reports/private/report-corpus.json
+export RSNA_TICKET16_MODEL_APPROVAL=/private/path/ticket-16/private/model-approval.json
+export RSNA_TICKET16_MODEL_DIR=/private/path/models/flan-t5-small
+export RSNA_TICKET16_OUTPUT=/private/path/ticket-16
+sbatch --wait slurm/run_ticket16_local_report_extraction.sbatch
+```
+
+The runner first computes the ticket-15 deterministic baseline, then runs the
+approved local model over the same training-label and held-out-gold cohorts.
+`compare_report_extractors` refuses different fold manifests, report sources,
+report digests or eligible cohorts. Public comparison JSON reports per-target
+accuracy where defined, coverage, all preserved states, failures, auditability,
+latency, token/artifact cost and repeatability; private JSON retains the
+identifier-bearing fold audit. No real model/report execution was performed
+by the implementation change until V13 approval is supplied.

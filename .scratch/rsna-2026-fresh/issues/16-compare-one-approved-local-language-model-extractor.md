@@ -4,9 +4,9 @@
 
 **Blocked by:** 01: Verify the competition delivery contract; 15: Evaluate fold-specific deterministic report extraction
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-**Authorization:** Planning artifact only. The owner has approved ticket publication, not implementation. Do not start work until separately instructed; ready-for-agent describes specification readiness, not execution permission.
+**Authorization:** Implementation was explicitly requested on 2026-09-14. The owner approval required before model use, private-data processing and Slurm execution remains outstanding.
 
 **Governing constraints:** Follow the approved parent specification. Significant compute uses Slurm, never KLEF-MASTER. Once implementation is authorized, autonomous CPU work is limited to cluster1-cpu, one node, at most 16 CPUs, 64 GB requested memory, six hours, two concurrent jobs and no exclusive allocation; actual memory use must also be bounded. Every GPU training job, heavier CPU request, protected deletion, paid resource, model/data upload and competition submission retains its specified approval boundary. Preserve private data, the 2 TB soft budget and immutable working candidates. No gate below is marked verified by ticket publication.
 
@@ -36,3 +36,29 @@ These retain the parent specification's acceptance criteria and blocking consequ
 ## Completion evidence
 
 - [ ] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+
+## Comments
+
+### 2026-09-14 — approval-gated implementation prepared
+
+Implemented the ticket-16 mechanics without downloading or using a learned model:
+
+- added an exact `google/flan-t5-small` proposal with immutable revision, weight
+  SHA-256, source, license, cutoff, eligibility/leakage assessment, purpose,
+  local transfer policy and bounded `cluster1-cpu` resources;
+- added owner-approval validation, local artifact verification, CPU-only
+  offline loading, frozen prompt/settings, strict six-state JSON parsing and
+  private audit digests;
+- added same-manifest/same-report-cohort comparison against ticket 15 with
+  coverage, uncertainty/failure states, auditability, latency, token/artifact
+  cost and repeatability metrics; and
+- added synthetic tests, a local CLI and a bounded Slurm adapter.
+
+Focused ticket-16 tests pass (`9 passed`), the full suite passes (`260 passed`),
+and mypy passes. V13 remains pending the owner's specific model eligibility
+approval; no private report, checkpoint, learned metric or Slurm execution was
+created by this change. V15 is enforced as a fail-closed lineage/fold-boundary
+contract but still needs private learned-artifact evidence.
+
+The detailed handoff report is outside the repository at
+`/home/ch.jitheswar/ticket-16-report.md`.
