@@ -40,21 +40,24 @@ The immutable authority register covers all twelve targets using the official
 Kaggle data description, the competition-host label description, and the host
 report clarification, each recorded with retrieval date `2026-09-14`.
 
-`interpret_report()` preserves positive, negative, not-mentioned, uncertain,
-unknown and extraction-failed states. Only explicit criterion-backed positive
-and negative states receive a binary value and supervision mask one. Historical,
-uncertain, unsupported, absent, empty and contradictory cases remain masked.
-The result records extractor version, report digest, fold context and rule
-provenance without retaining raw report text; public serialization excludes
-private report references and evidence snippets.
+`interpret_report()` requires a private source-report reference and preserves
+positive, negative, not-mentioned, uncertain, unknown and extraction-failed
+states. Only explicit criterion-backed positive and negative states receive a
+binary value and supervision mask one. Historical, uncertain, unsupported,
+absent, empty and contradictory cases remain masked, including negated
+osteochondral-fracture and nonspecific-marrow phrases. The result records
+extractor version/configuration fingerprint, rule confidence, report digest,
+fold context and rule provenance without retaining raw report text; public
+serialization excludes private report references and evidence snippets.
 
 `validate_rule_origin_for_folds()` rejects shared patient-report and participant
 interpretation rules. A future report-derived rule must be explicitly
-fold-scoped with an allowed-fold set covering every consumer. No patient or
-held-out report was inspected, and no report-derived label was admitted to
-training.
+fold-scoped with an allowed-fold set covering every consumer, private
+report/study references, source folds, and no overlap with a consuming fold's
+held-out source fold. No patient or held-out report was inspected, and no
+report-derived label was admitted to training.
 
-Added 34 public synthetic tests covering all twelve positive and negative
+Added 38 public synthetic tests covering all twelve positive and negative
 criteria, negation, uncertainty, historical findings, unsupported
 osteochondral wording, absent mention, empty input, conflicting evidence,
 public/private provenance and fold-scope enforcement. Focused tests passed and

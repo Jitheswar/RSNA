@@ -40,9 +40,11 @@ def test_explicit_positive_and_negative_report_evidence_is_supervisable() -> Non
     assert labels["ACL"].state is LabelState.POSITIVE
     assert labels["ACL"].value == 1
     assert labels["ACL"].supervision_mask == 1
+    assert labels["ACL"].confidence == 1.0
     assert labels["MCL"].state is LabelState.NEGATIVE
     assert labels["MCL"].value == 0
     assert labels["MCL"].supervision_mask == 1
+    assert labels["MCL"].confidence == 1.0
     assert labels["Medial Meniscus"].state is LabelState.NOT_MENTIONED
     assert labels["Medial Meniscus"].supervision_mask == 0
     assert interpretation.source_report_ref == "synthetic-positive-negative-01"
@@ -65,6 +67,25 @@ def test_uncertain_historical_and_unsupported_findings_remain_masked(
     assert label.state in {LabelState.UNCERTAIN, LabelState.UNKNOWN}
     assert label.value is None
     assert label.supervision_mask == 0
+    assert label.confidence is None
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        "No osteochondral fracture is identified.",
+        "No marrow edema is identified.",
+        "No patellofemoral chondropathy is identified.",
+    ],
+)
+def test_negated_unsupported_interpretations_remain_unknown_and_masked(report: str) -> None:
+    interpretation = interpret_report(report, source_report_ref="synthetic-unsupported-negative-01")
+    target = "Fracture" if "fracture" in report else "Contusion" if "marrow" in report else "PF OA"
+    label = next(item for item in interpretation.labels if item.target == target)
+
+    assert label.state is LabelState.UNKNOWN
+    assert label.value is None
+    assert label.supervision_mask == 0
 
 
 def test_empty_report_is_an_extraction_failure_not_a_negative() -> None:
@@ -72,6 +93,11 @@ def test_empty_report_is_an_extraction_failure_not_a_negative() -> None:
 
     assert all(item.state is LabelState.EXTRACTION_FAILED for item in interpretation.labels)
     assert all(item.supervision_mask == 0 for item in interpretation.labels)
+
+
+def test_report_reference_is_required_for_auditable_interpretation() -> None:
+    with pytest.raises(ReportInterpretationError, match="source_report_ref is required"):
+        interpret_report("The ACL is intact.")
 
 
 def test_report_derived_rule_cannot_be_shared_across_folds() -> None:
@@ -127,7 +153,7 @@ def test_each_target_requires_its_authoritative_positive_criterion(target: str, 
         ("Lateral Meniscus", "Lateral meniscus intrasubstance degeneration does not reach the surface."),
         ("Medial OA", "Only mild medial compartment cartilage wear is present."),
         ("Lateral OA", "Only mild lateral compartment cartilage wear is present."),
-        ("PF OA", "Mild patellofemoral chondropathy only."),
+        ("PF OA", "Mild patellofemoral osteoarthritis only."),
         ("Effusion", "Only a trace joint effusion is seen."),
         ("Synovitis", "The synovial lining is normal and not thickened."),
         ("Baker's", "There is only a small Baker's cyst."),
@@ -178,8 +204,10 @@ def test_fold_scoped_report_rule_is_allowed_only_for_its_declared_fold() -> None
         shared_across_folds=False,
         allowed_folds=(1,),
         source_report_refs=("report-example-01",),
+        source_study_refs=("study-example-01",),
+        source_folds=(0,),
     )
 
     validate_rule_origin_for_folds(origin, (1,))
-    with pytest.raises(ReportInterpretationError, match="not clean"):
+    with pytest.raises(ReportInterpretationError, match="held-out"):
         validate_rule_origin_for_folds(origin, (0,))

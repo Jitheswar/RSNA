@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
+from math import isfinite
 import re
 from typing import Iterable, Sequence
 
@@ -21,6 +22,16 @@ from .targets import TARGET_COLUMNS
 REPORT_INTERPRETATION_SCHEMA_VERSION = "rsna-knee-report-interpretation-v1"
 REPORT_EXTRACTOR_VERSION = "deterministic-synthetic-english-v1"
 AUTHORITY_RETRIEVED_ON = "2026-09-14"
+REPORT_EXTRACTOR_CONFIGURATION: tuple[tuple[str, str], ...] = (
+    ("language", "english synthetic vocabulary"),
+    ("normalization", "unicode apostrophe/dash normalization, casefold, whitespace collapse"),
+    ("matching", "sentence-local explicit regular-expression rules"),
+    ("authority_register", "official-label-description-v1"),
+    ("unknown_policy", "unsupported, uncertain, historical and absent states receive mask zero"),
+)
+REPORT_EXTRACTOR_CONFIGURATION_FINGERPRINT = sha256(
+    repr(REPORT_EXTRACTOR_CONFIGURATION).encode("utf-8")
+).hexdigest()
 
 DATA_DESCRIPTION_URL = "https://www.kaggle.com/competitions/rsna-knee-abnormality-detection/data"
 LABEL_DESCRIPTION_URL = (
@@ -123,6 +134,8 @@ class RuleOrigin:
     shared_across_folds: bool = True
     allowed_folds: tuple[int, ...] | None = None
     source_report_refs: tuple[str, ...] = ()
+    source_study_refs: tuple[str, ...] = ()
+    source_folds: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.rule_id.strip():
@@ -134,6 +147,9 @@ class RuleOrigin:
         _validate_fold_ids(self.allowed_folds or ())
         if len(set(self.source_report_refs)) != len(self.source_report_refs):
             raise ReportInterpretationError("rule origin source_report_refs must be unique")
+        if len(set(self.source_study_refs)) != len(self.source_study_refs):
+            raise ReportInterpretationError("rule origin source_study_refs must be unique")
+        _validate_fold_ids(self.source_folds)
 
     def to_public_dict(self) -> dict[str, object]:
         """Return rule provenance without report or study references."""
@@ -148,6 +164,7 @@ class RuleOrigin:
             "participant_interpretation": self.participant_interpretation,
             "shared_across_folds": self.shared_across_folds,
             "allowed_folds": list(self.allowed_folds) if self.allowed_folds is not None else None,
+            "source_folds": list(self.source_folds),
         }
 
     def to_private_dict(self) -> dict[str, object]:
@@ -155,6 +172,7 @@ class RuleOrigin:
 
         result = self.to_public_dict()
         result["source_report_refs"] = list(self.source_report_refs)
+        result["source_study_refs"] = list(self.source_study_refs)
         return result
 
 
@@ -189,6 +207,7 @@ class TargetDefinition:
     positive_patterns: tuple[PatternRule, ...]
     negative_patterns: tuple[PatternRule, ...]
     unresolved_interpretations: tuple[str, ...]
+    unsupported_patterns: tuple[PatternRule, ...] = ()
 
     def __post_init__(self) -> None:
         if self.target not in TARGET_COLUMNS:
@@ -229,6 +248,10 @@ class TargetDefinition:
                 {"rule_id": rule.rule_id, "rationale": rule.rationale}
                 for rule in self.negative_patterns
             ],
+            "unsupported_rules": [
+                {"rule_id": rule.rule_id, "rationale": rule.rationale}
+                for rule in self.unsupported_patterns
+            ],
             "unresolved_interpretations": list(self.unresolved_interpretations),
         }
 
@@ -241,6 +264,7 @@ class TargetLabel:
     state: LabelState
     rule_id: str
     rule_origin: RuleOrigin
+    confidence: float | None
     evidence: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -248,6 +272,13 @@ class TargetLabel:
             raise ReportInterpretationError(f"unknown target label {self.target!r}")
         if not self.rule_id.strip():
             raise ReportInterpretationError("target label rule_id must be non-empty")
+        if self.confidence is not None and (
+            isinstance(self.confidence, bool)
+            or not isinstance(self.confidence, (int, float))
+            or not isfinite(float(self.confidence))
+            or not 0.0 <= float(self.confidence) <= 1.0
+        ):
+            raise ReportInterpretationError("target label confidence must be None or within [0, 1]")
         if any("\n" in item or "\r" in item for item in self.evidence):
             raise ReportInterpretationError("target label evidence must be single-line snippets")
 
@@ -276,6 +307,7 @@ class TargetLabel:
             "value": self.value,
             "supervision_mask": self.supervision_mask,
             "rule_id": self.rule_id,
+            "confidence": self.confidence,
             "rule_origin": self.rule_origin.to_public_dict(),
         }
 
@@ -293,14 +325,17 @@ class ReportInterpretation:
     """A complete twelve-target interpretation with no raw report retention."""
 
     extractor_version: str
+    configuration_fingerprint: str
     report_sha256: str
     labels: tuple[TargetLabel, ...]
-    source_report_ref: str | None = None
+    source_report_ref: str
     consuming_folds: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         if self.extractor_version != REPORT_EXTRACTOR_VERSION:
             raise ReportInterpretationError("unsupported report extractor version")
+        if self.configuration_fingerprint != REPORT_EXTRACTOR_CONFIGURATION_FINGERPRINT:
+            raise ReportInterpretationError("unsupported report extractor configuration")
         if re.fullmatch(r"[0-9a-f]{64}", self.report_sha256) is None:
             raise ReportInterpretationError("report_sha256 must be a lowercase SHA-256 digest")
         if tuple(item.target for item in self.labels) != TARGET_COLUMNS:
@@ -308,8 +343,8 @@ class ReportInterpretation:
         _validate_fold_ids(self.consuming_folds)
         for label in self.labels:
             validate_rule_origin_for_folds(label.rule_origin, self.consuming_folds)
-        if self.source_report_ref is not None and not self.source_report_ref.strip():
-            raise ReportInterpretationError("source_report_ref must be non-empty when supplied")
+        if not self.source_report_ref.strip():
+            raise ReportInterpretationError("source_report_ref must be non-empty")
 
     @property
     def values(self) -> tuple[int | None, ...]:
@@ -329,6 +364,8 @@ class ReportInterpretation:
         return {
             "schema_version": REPORT_INTERPRETATION_SCHEMA_VERSION,
             "extractor_version": self.extractor_version,
+            "configuration_fingerprint": self.configuration_fingerprint,
+            "extractor_configuration": dict(REPORT_EXTRACTOR_CONFIGURATION),
             "target_order": list(TARGET_COLUMNS),
             "states": [item.state.value for item in self.labels],
             "values": list(self.values),
@@ -352,6 +389,7 @@ class _TargetEvent:
     state: LabelState
     rule_id: str
     evidence: str
+    confidence: float | None
 
 
 _DATA_SOURCE = AuthoritySource(
@@ -407,6 +445,7 @@ def _definition(
     positive_patterns: tuple[PatternRule, ...],
     negative_patterns: tuple[PatternRule, ...],
     unresolved_interpretations: tuple[str, ...],
+    unsupported_patterns: tuple[PatternRule, ...] = (),
 ) -> TargetDefinition:
     return TargetDefinition(
         target=target,
@@ -419,6 +458,7 @@ def _definition(
         positive_patterns=positive_patterns,
         negative_patterns=negative_patterns,
         unresolved_interpretations=unresolved_interpretations,
+        unsupported_patterns=unsupported_patterns,
     )
 
 
@@ -632,6 +672,13 @@ _TARGET_DEFINITIONS: tuple[TargetDefinition, ...] = (
             "patellar chondropathy or cartilage wear without the host OA threshold",
             "high-grade loss without a patellofemoral compartment or severity statement",
         ),
+        unsupported_patterns=(
+            _rule(
+                "pf-oa-chondropathy-unsupported-v1",
+                r"\b(?:pf|patellofemoral)\b.{0,35}\bchondropathy\b",
+                "the host distinguishes cartilage language from the supported OA threshold",
+            ),
+        ),
     ),
     _definition(
         "Effusion",
@@ -737,6 +784,13 @@ _TARGET_DEFINITIONS: tuple[TargetDefinition, ...] = (
             "nonspecific marrow edema, stress reaction, or osteochondral injury",
             "marrow edema without impact attribution or contusion wording",
         ),
+        unsupported_patterns=(
+            _rule(
+                "contusion-nonspecific-edema-unsupported-v1",
+                r"\b(?:bone\s+)?marrow\s+edema(?:[- ]like)?\b",
+                "marrow edema without impact/contusion wording is not sufficient",
+            ),
+        ),
     ),
     _definition(
         "Fracture",
@@ -761,6 +815,13 @@ _TARGET_DEFINITIONS: tuple[TargetDefinition, ...] = (
         (
             "osteochondral, subchondral, insufficiency, chronic or healed fracture",
             "fracture wording without the supported acute cortical-break criterion",
+        ),
+        unsupported_patterns=(
+            _rule(
+                "fracture-specific-type-unsupported-v1",
+                r"\b(?:osteochondral|subchondral|insufficiency)\s+fracture\b",
+                "the host source does not authorize mapping these specific types to acute fracture",
+            ),
         ),
     ),
 )
@@ -803,6 +864,14 @@ def validate_rule_origin_for_folds(origin: RuleOrigin, consuming_folds: Iterable
         if origin.allowed_folds is None:
             raise ReportInterpretationError(
                 f"report-derived rule {origin.rule_id!r} requires an allowed fold scope"
+            )
+        if not origin.source_report_refs or not origin.source_study_refs or not origin.source_folds:
+            raise ReportInterpretationError(
+                f"report-derived rule {origin.rule_id!r} requires report, study and source-fold provenance"
+            )
+        if set(origin.source_folds).intersection(folds):
+            raise ReportInterpretationError(
+                f"report-derived rule {origin.rule_id!r} uses a held-out source fold"
             )
     if origin.participant_interpretation or origin.kind is RuleOriginKind.PARTICIPANT_INTERPRETATION:
         raise ReportInterpretationError(
@@ -867,14 +936,18 @@ def _find_events(text: str, definition: TargetDefinition) -> tuple[_TargetEvent,
         local, before, after = _local_context(text, match.start(), match.end())
         if _HISTORICAL_PATTERN.search(local):
             events.append(
-                _TargetEvent(LabelState.UNKNOWN, "historical-finding-v1", match.group(0))
+                _TargetEvent(LabelState.UNKNOWN, "historical-finding-v1", match.group(0), None)
             )
             continue
         if _UNCERTAIN_PATTERN.search(local):
             events.append(
-                _TargetEvent(LabelState.UNCERTAIN, "uncertain-finding-v1", match.group(0))
+                _TargetEvent(LabelState.UNCERTAIN, "uncertain-finding-v1", match.group(0), None)
             )
             continue
+        matching_unsupported = next(
+            (rule for rule in definition.unsupported_patterns if re.search(rule.pattern, local)),
+            None,
+        )
         matching_negative = next(
             (rule for rule in definition.negative_patterns if re.search(rule.pattern, local)),
             None,
@@ -883,13 +956,17 @@ def _find_events(text: str, definition: TargetDefinition) -> tuple[_TargetEvent,
             (rule for rule in definition.positive_patterns if re.search(rule.pattern, local)),
             None,
         )
-        if matching_negative is not None or _has_local_negation(before, after):
+        if matching_unsupported is not None and matching_positive is None:
+            events.append(
+                _TargetEvent(LabelState.UNKNOWN, matching_unsupported.rule_id, match.group(0), None)
+            )
+        elif matching_negative is not None or _has_local_negation(before, after):
             rule_id = matching_negative.rule_id if matching_negative is not None else "explicit-negation-v1"
-            events.append(_TargetEvent(LabelState.NEGATIVE, rule_id, match.group(0)))
+            events.append(_TargetEvent(LabelState.NEGATIVE, rule_id, match.group(0), 1.0))
         elif matching_positive is not None:
-            events.append(_TargetEvent(LabelState.POSITIVE, matching_positive.rule_id, match.group(0)))
+            events.append(_TargetEvent(LabelState.POSITIVE, matching_positive.rule_id, match.group(0), 1.0))
         else:
-            events.append(_TargetEvent(LabelState.UNKNOWN, "unsupported-mention-v1", match.group(0)))
+            events.append(_TargetEvent(LabelState.UNKNOWN, "unsupported-mention-v1", match.group(0), None))
     return tuple(events)
 
 
@@ -903,6 +980,7 @@ def _label_from_events(
             state=LabelState.NOT_MENTIONED,
             rule_id="absence-is-not-negative-v1",
             rule_origin=_POLICY_ORIGIN,
+            confidence=None,
         )
     states = {event.state for event in events}
     if LabelState.POSITIVE in states and (
@@ -915,6 +993,7 @@ def _label_from_events(
             state=LabelState.EXTRACTION_FAILED,
             rule_id="conflicting-evidence-v1",
             rule_origin=_POLICY_ORIGIN,
+            confidence=None,
             evidence=tuple(event.evidence for event in events),
         )
     if LabelState.NEGATIVE in states and (
@@ -925,6 +1004,7 @@ def _label_from_events(
             state=LabelState.EXTRACTION_FAILED,
             rule_id="conflicting-evidence-v1",
             rule_origin=_POLICY_ORIGIN,
+            confidence=None,
             evidence=tuple(event.evidence for event in events),
         )
     event = events[0]
@@ -934,6 +1014,7 @@ def _label_from_events(
         state=event.state,
         rule_id=event.rule_id,
         rule_origin=origin,
+        confidence=event.confidence,
         evidence=tuple(item.evidence for item in events),
     )
 
@@ -954,6 +1035,8 @@ def interpret_report(
 
     if not isinstance(report, str):
         raise ReportInterpretationError("report must be a string")
+    if source_report_ref is None or not source_report_ref.strip():
+        raise ReportInterpretationError("source_report_ref is required for report provenance")
     folds = _validate_fold_ids(consuming_folds)
     for definition in _TARGET_DEFINITIONS:
         validate_rule_origin_for_folds(definition.rule_origin, folds)
@@ -966,6 +1049,7 @@ def interpret_report(
                 state=LabelState.EXTRACTION_FAILED,
                 rule_id="empty-report-v1",
                 rule_origin=_POLICY_ORIGIN,
+                confidence=None,
             )
             for definition in _TARGET_DEFINITIONS
         )
@@ -976,6 +1060,7 @@ def interpret_report(
         )
     return ReportInterpretation(
         extractor_version=REPORT_EXTRACTOR_VERSION,
+        configuration_fingerprint=REPORT_EXTRACTOR_CONFIGURATION_FINGERPRINT,
         report_sha256=digest,
         labels=labels,
         source_report_ref=source_report_ref,
@@ -993,6 +1078,8 @@ __all__ = [
     "ReportInterpretation",
     "ReportInterpretationError",
     "REPORT_EXTRACTOR_VERSION",
+    "REPORT_EXTRACTOR_CONFIGURATION",
+    "REPORT_EXTRACTOR_CONFIGURATION_FINGERPRINT",
     "REPORT_INTERPRETATION_SCHEMA_VERSION",
     "RuleOrigin",
     "RuleOriginKind",

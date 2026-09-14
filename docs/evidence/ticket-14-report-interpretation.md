@@ -55,7 +55,9 @@ contradictory evidence, and empty reports.
 
 ## State and masking contract
 
-`interpret_report()` emits one ordered record for every target. It preserves:
+`interpret_report()` requires a private `source_report_ref`, records the
+extractor version/configuration fingerprint, and emits one ordered record for
+every target. It preserves:
 
 - `positive` → value `1`, supervision mask `1`;
 - `negative` → value `0`, supervision mask `1`;
@@ -66,9 +68,11 @@ contradictory evidence, and empty reports.
 
 An empty report is an extraction failure. A non-empty report with no supported
 mention is not silently converted to a negative. Contradictory positive and
-negative evidence is also failed and masked.
+negative evidence is also failed and masked. A negated unsupported phrase such
+as an osteochondral fracture or nonspecific marrow edema remains `unknown`,
+not a confident negative.
 
-The result contains a SHA-256 report digest and optional private source-report
+The result contains a SHA-256 report digest and required private source-report
 reference, but never retains the raw report text. Public serialization omits
 the reference and matched evidence snippets; private serialization is the
 local audit form for a future approved fold-specific run.
@@ -77,14 +81,16 @@ local audit form for a future approved fold-specific run.
 
 `validate_rule_origin_for_folds()` permits shared rules only from the official
 definition or project safety-policy origins. A report-derived rule must be
-non-shared, name an explicit allowed-fold set, and cover every consuming fold.
-Participant interpretations are rejected. This prevents a patient-report
-example or an unverified discussion interpretation from becoming a universal
-rule while leaving a later fold-specific ticket a precise provenance seam.
+non-shared, name an explicit allowed-fold set, carry private report and study
+references, record its source folds, avoid the consuming fold's held-out source
+folds, and cover every consuming fold. Participant interpretations are
+rejected. This prevents a patient-report example or an unverified discussion
+interpretation from becoming a universal rule while leaving a later
+fold-specific ticket a precise provenance seam.
 
 ## Synthetic verification
 
-The focused suite passed with 34 tests:
+The focused suite passed with 38 tests:
 
 - one authority record covers all twelve target columns and all sources carry
   the retrieval date;
@@ -92,11 +98,14 @@ The focused suite passed with 34 tests:
   values and mask one;
 - twelve independently authored negative report sentences map to negative
   values and mask one;
-- possible, historical, osteochondral, absent, empty, and contradictory cases
-  remain unknown/uncertain/failed with mask zero;
+- possible, historical, osteochondral, nonspecific-marrow, absent, empty, and
+  contradictory cases remain unknown/uncertain/failed with mask zero;
 - public output does not include raw report text or a private source reference;
 - shared report-derived origins are rejected and correctly fold-scoped origins
-  are accepted only for their declared fold.
+  are accepted only for their declared fold and source-fold boundary;
+- every admitted deterministic positive/negative label records rule confidence,
+  while abstentions remain unconfident and masked, and the interpretation
+  carries a reproducible configuration fingerprint.
 
 Commands:
 
@@ -105,7 +114,7 @@ PYTHONPATH=src .venv/bin/python -m pytest tests/test_report_labels.py -q
 PYTHONPATH=src .venv/bin/python -m mypy src/rsna_knee/report_labels.py
 ```
 
-Observed result: `34 passed`; mypy reported no issues.
+Observed result: `38 passed`; mypy reported no issues.
 
 ## Limitations and unresolved review needs
 
