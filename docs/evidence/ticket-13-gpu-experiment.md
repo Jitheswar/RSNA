@@ -1,8 +1,8 @@
 # Ticket 13 GPU experiment evidence
 
-Recorded 2026-09-12 (Asia/Kolkata). This is public-safe implementation and
-synthetic-fixture evidence. No GPU allocation, owner approval artifact,
-competition data, private identifier, or model upload is included.
+Recorded 2026-09-14 (Asia/Kolkata). This public document contains safe
+implementation and bounded verification evidence. No competition data,
+private identifier, or model upload is included.
 
 ## Implemented seam
 
@@ -49,14 +49,14 @@ allocation is stopped before training. The bounded CPU preflight
 adapter is `slurm/run_ticket13_cpu_preflight.sbatch`.
 
 The repository `.venv` is CPU-only and is used only for the prerequisite
-preflight. GPU execution requires a separate Python 3.11 environment described
-by `environments/cluster-gpu/requirements.txt`; the adapter rejects the CPU
+preflight. GPU execution uses a separate Python 3.11 environment described by
+`environments/cluster-gpu/requirements.txt`; the adapter rejects the CPU
 interpreter, requires Python 3.11, and checks CUDA availability before
 private-data loading. The shared trainer also refuses CUDA execution outside
-an active Slurm job. The
-CUDA wheel/driver combination remains unverified until the approved cluster
-smoke run. Smoke requests are capped at 60 minutes; live Slurm CPU, memory,
-wall-time, GPU-count and sharing fields are required before training starts.
+an active Slurm job. The pinned CUDA wheel/driver combination was verified by
+the bounded smoke below. Smoke requests are capped at 60 minutes; live Slurm
+CPU, memory, wall-time, GPU-count and sharing fields are required before
+training starts.
 
 ## Demonstrated scope
 
@@ -77,12 +77,56 @@ The final checks run on 2026-09-13 are:
 - mypy for `src/rsna_knee`: passed;
 - Bash syntax checks for both ticket-13 adapters: passed.
 
+## Approved bounded smoke verification — 2026-09-14
+
+One fresh, exact request was approved and submitted once through `sbatch` after
+the passed CPU preflight. The scientific configuration and resource shape were
+unchanged from the prior failed attempts; commit
+`98fe68529cdb928c53c7989445c3ad9e8df84738` supplied the training-artifact
+isolation fix.
+
+| Item | Observed value |
+| --- | --- |
+| Request checksum | `6e80763415f8bd37cfaf73d0a2fcdea33af6786e9053ea5b5429d3f651fd5864` |
+| Approval checksum | `2dcdeaac28c8f0ed5936a7fbdabe48e4d60060dfd826adef6c02261521e7fed9` |
+| CPU preflight checksum | `33455298896a53ec634f4e425838e5292bfd2bd7a4882e1b3cc9d8a55f7ce50f` |
+| Slurm job / node | `6979` / `KLEF-G-NODE2` |
+| Partition / GRES | `cluster1-gpu-add` / `gpu:1(IDX:0)` |
+| Nodes / tasks / CPUs | `1 / 1 / 16` |
+| Host memory / wall time | `64 GB / 30 minutes` |
+| Sharing / isolation | non-fractional, `none`, device isolation `yes` |
+| GPU | NVIDIA A30X, compute capability `8.0` |
+| Driver / CUDA | `580.126.20` / `12.6` |
+| Assigned GPU memory | `25,337,004,032` bytes |
+| Free GPU memory before / after | `25,090,785,280` / `23,975,100,416` bytes |
+| Peak VRAM / assigned-bound check | `487,037,440` bytes / passed |
+| Runtime | `00:07:13`, exit `0:0` |
+| Retries | `0` |
+
+The live allocation proof had every required whole-device check true,
+including the concrete `gpu:1(IDX:0)` allocation, `/dev/nvidia0` mapping,
+node mapping, generic GRES device file, non-fractional mode and Slurm
+`select/cons_res`/`CR_CPU` configuration. The observed device is recorded
+honestly as an A30X; no nominal A40 capacity was used.
+
+The production private-data loader completed for the checksum-bound fold 0
+inputs, yielding 38 training studies and 20 held-out studies. The approved
+model shape completed one forward/backward pass and one successful Adam
+optimizer step with batch size 2. Loss was finite at
+`0.6996539831161499`; the trainer's finite-gradient guard passed. Three
+checkpoint events were recorded (initial, target-reached latest, and final),
+the final checkpoint reload passed, and the final checkpoint SHA-256 was
+`b5ead4b2e7bdc1081529cd4d8f684a25501f7ff672d9c0e7740855176f3ce907`.
+
+The execution root retained its evidence files, while all trainer outputs
+were written only below its `training/` child. This was one bounded smoke
+step, not full training, an A40 equivalence claim, a competition submission,
+or a Ticket 14 experiment.
+
 ## Verification limits
 
-No real `cluster1-cpu` preflight, owner-approved GPU request, `sbatch` GPU
-submission, `cluster1-gpu` or `cluster1-gpu-add` allocation, A40 driver/memory
-measurement, real-data forward/backward pass, or GPU checkpoint recovery was
-run. Consequently V10 and every approval- or hardware-dependent acceptance
-criterion remain open. The implementation does not mark those future checks
-as passed and does not claim GPU compatibility, full-training results, runtime,
-or scientific validity from synthetic tests.
+V10 is verified only for the exact one-step `cluster1-gpu-add` allocation
+recorded above. The evidence does not establish full-training performance,
+capacity for a nominal A40, behavior on another GPU/resource shape, or
+scientific validity beyond the bounded mechanics smoke. No full training,
+retry, Kaggle submission, or Ticket 14 work was performed.

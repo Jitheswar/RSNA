@@ -24,13 +24,13 @@ These retain the parent specification's acceptance criteria and blocking consequ
 
 ### V11 — Official clinical target definitions
 
-- [ ] For every target used in report-derived supervision, retain a dated authoritative competition definition or attributable host clarification that supports the implemented positive/negative criteria. Map severity, negation, uncertainty and historical/absent mention handling to that evidence; independent synthetic examples must exercise the mapping. Unsupported or ambiguous interpretations remain unknown with zero loss mask and local audit evidence. Participant interpretations alone do not satisfy authority.
+- [x] For every target used in report-derived supervision, retain a dated authoritative competition definition or attributable host clarification that supports the implemented positive/negative criteria. Map severity, negation, uncertainty and historical/absent mention handling to that evidence; independent synthetic examples must exercise the mapping. Unsupported or ambiguous interpretations remain unknown with zero loss mask and local audit evidence. Participant interpretations alone do not satisfy authority. The real run confirms this for the frozen narrow rule register; it does not establish complete clinical coverage.
 
 **Blocking consequence:** Block report-label rules for any target/interpretation lacking authoritative support; do not invent a clinical rule. Gold-reference mechanics can proceed without interpreting report text. If complete twelve-target clinical support is unavailable, document masked/unsupported targets and do not claim a complete trustworthy extractor.
 
 ### V15 — Derived-supervision provenance and isolation
 
-- [ ] For each extractor/rule/teacher/pseudo-label/student artifact, resolve versioned code/configuration, source and checkpoint hashes, fold/repeat, eligible/excluded study-set identities and all upstream adaptation inputs. Verify zero prohibited held-out input influence for the consuming fold and no unresolved lineage. Enforce reference precedence and zero-mask unknown/uncertain/failed states. Frozen evaluation-only outputs must be distinguishable from admitted training labels.
+- [x] For each extractor/rule/teacher/pseudo-label/student artifact, resolve versioned code/configuration, source and checkpoint hashes, fold/repeat, eligible/excluded study-set identities and all upstream adaptation inputs. Verify zero prohibited held-out input influence for the consuming fold and no unresolved lineage. Enforce reference precedence and zero-mask unknown/uncertain/failed states. Frozen evaluation-only outputs must be distinguishable from admitted training labels. The real deterministic artifact has complete lineage and zero held-out-gold training-label contamination; teacher/student artifacts are not applicable because no training was run.
 
 **Blocking consequence:** Reject artifacts with ambiguous or contaminated lineage from that fold's training and model-selection evidence. Invalidate and rerun materially affected comparisons after repair; an apparent AUC gain cannot override the gate. Clean reference-only work remains possible.
 
@@ -82,6 +82,26 @@ training run was admitted, and no Slurm allocation was submitted. Real-report
 accuracy, coverage, latency and weak-supervision benefit remain pending the
 authorized private execution; competition inference remains report-free.
 
+### 2026-09-14 — Report-only aggregate accounting audit
+
+Audited the real private label artifact without rerunning extraction. The
+stored states were complete and correct: all 4,349 unique report-only studies
+were present, each occurred in exactly two fold-training partitions, and no
+held-out gold study appeared in training labels. The evidence table was wrong
+because the ad hoc aggregate serializer looked up `not_mentioned` and
+`extraction_failed`, while the frozen `LabelState` values are
+`not-mentioned` and `extraction-failed`. This omitted those states from the
+displayed counts but did not alter stored labels, masks, supervised counts, or
+coverage.
+
+Added the reporting-only module `src/rsna_knee/report_only_aggregate.py` and
+two regression tests. It uses canonical enum values, validates one complete
+state per unique report/target, separates unique-study counts from repeated
+fold occurrences, and fails closed on missing or extra records. The corrected
+aggregate is regenerated at the private public-evidence path without raw text
+or identifiers. Held-out metrics, fingerprints, fold isolation, weak labels,
+and reproducibility evidence are unchanged.
+
 ## Answer
 
 ### Closure decision — 2026-09-14
@@ -100,10 +120,32 @@ each fold evaluates four gold reports, training-label counts are 5/2/5 for
 folds 0/1/2, and all defined synthetic target metrics have 100% accuracy and
 100% coverage. Repeated text-free semantic artifacts produce the same digest.
 
-V11 and V15 remain unchecked here because no private competition reports were
-processed and no report-derived training run or cluster execution was
-authorized or performed in this implementation turn. The authoritative rule
-register and synthetic masking mechanics from ticket 14 are reused, but they
-are not a claim of real-report clinical accuracy or complete production gate
-evidence. The detailed implementation and verification record is maintained
-outside the repository at `/home/ch.jitheswar/ticket-15-report.md`.
+### Real-corpus execution — 2026-09-14
+
+The authorized private run processed all 4,407 competition reports against the
+canonical v2 fold manifest: 58 held-out gold reports were evaluated (20/19/19
+by fold), and 4,349 report-only studies produced 8,698 fold-training record
+occurrences. No report-only accuracy was claimed. Pooled defined-target macro
+accuracy was 0.896054 over 11 targets, while the twelve-target macro remained
+undefined because Medial OA had zero confident extraction; mean pooled target
+coverage was 0.112069. The full per-target, per-fold, report-only, latency,
+privacy, and audit results are maintained outside the repository at
+`/home/ch.jitheswar/tsk3-report.md`.
+
+Slurm jobs 6983 and 6984 both completed with exit 0 on `cluster1-cpu` in 30 s
+and 27 s respectively. Their semantic digest was identical:
+`031e38507e474855e9762c31be018ff87699d4cf88490b4fe70ac9d2ef11d341`. The
+focused report suite passed (`45 passed`) and mypy reported no issues.
+
+The private audit found zero held-out-gold studies in training labels, exactly
+two eligible training folds per report-only study, consistent deterministic
+interpretations across those folds, and valid positive/negative-only masking.
+No rules or configuration were changed, no report-derived training run was
+performed, and no Ticket 16 work was started. V11 and V15 are now legitimately
+checked for the frozen narrow extractor and its provenance/isolation boundary,
+with the low real coverage documented as a limitation rather than hidden.
+
+Ticket 15 is scientifically complete as a deterministic real-corpus
+comparator, not as evidence of report-supervision benefit. Ticket 16 is safe
+to consider only after a separate explicit authorization; it must not start
+automatically.

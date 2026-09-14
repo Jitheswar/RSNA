@@ -12,22 +12,30 @@ from __future__ import annotations
 import ast
 import csv
 import hashlib
+import importlib
+import importlib.metadata as importlib_metadata
+import io
 import json
 import math
 import os
 import platform
 import re
+import resource
 import shutil
 import tempfile
 import time
-from dataclasses import dataclass
+import zipfile
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from email.parser import Parser
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, cast
 
 import numpy as np
 import pydicom
 import torch
+from pydicom.dataset import Dataset
 
 from .archive import atomic_json_write
 from .candidate import CandidateBundle, CandidateError, _load_candidate_models, load_candidate
@@ -56,6 +64,7 @@ KAGGLE_PROMOTION_SCHEMA_VERSION = "rsna-knee-kaggle-promotion-v1"
 KAGGLE_ENGINEERING_TARGET_SECONDS = 25_920
 KAGGLE_HARD_LIMIT_SECONDS = 32_400
 KAGGLE_TARGET_STUDIES = 1_300
+KAGGLE_COMPETITION_SLUG = "rsna-knee-abnormality-detection"
 KAGGLE_RUNTIME_STAGES = (
     "startup_setup",
     "imports",
@@ -65,6 +74,7 @@ KAGGLE_RUNTIME_STAGES = (
     "inference_ensembling",
     "csv_creation",
 )
+KAGGLE_PROFILE_SCHEMA_VERSION = "rsna-knee-kaggle-profile-v1"
 OWNER_APPROVAL_SCOPE = "ticket-12-exact-bundle-upload-and-execution"
 
 _NETWORK_TEXT_TOKENS = (
@@ -119,6 +129,20 @@ class KaggleDeliveryRequest:
 
 
 @dataclass(frozen=True)
+class _ValidatedKaggleInputs:
+    """The one-process integrity proof produced by :func:`discover_kaggle_inputs`."""
+
+    request: KaggleDeliveryRequest
+    candidate_bundle: CandidateBundle
+    candidate_reference: dict[str, object]
+    approval_sha256: str
+    delivery_notebook_sha256: str
+    delivery_adapter_sha256: str
+    runtime_wheel_audits: tuple[Mapping[str, object], ...]
+    candidate_load_hash_verification_seconds: float
+
+
+@dataclass(frozen=True)
 class KaggleVerification:
     """A checksum-verified record of one accepted Kaggle execution."""
 
@@ -145,12 +169,217 @@ class KaggleInferenceResult:
     private_evidence_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class KaggleInputLayout:
+    """Validated paths for one namespaced Kaggle notebook input mount."""
+
+    input_root: Path
+    delivery_root: Path
+    candidate_root: Path
+    candidate_code_root: Path
+    code_root: Path
+    request_path: Path
+    approval_path: Path
+    competition_root: Path
+    delivery_notebook_path: Path
+    delivery_adapter_path: Path
+    runtime_wheel_path: Path | None
+    runtime_wheel_sha256: str | None
+    request_checksum: str
+    candidate_manifest_checksum: str
+    runtime_wheel_paths: tuple[Path, ...] = ()
+    runtime_wheel_sha256s: tuple[str, ...] = ()
+    workload_kind: str = "hidden_test"
+    input_manifest_sha256: str | None = None
+    validation: _ValidatedKaggleInputs | None = None
+
+
+@dataclass
+class _KaggleDicomProfile:
+    """Wall-clock and access counters for one directory-backed Kaggle run."""
+
+    archive_index_discovery_seconds: float = 0.0
+    dicom_read_decode_seconds: float = 0.0
+    pixel_decode_seconds: float = 0.0
+    index_scan_count: int = 0
+    indexed_file_count: int = 0
+    dicom_file_open_count: int = 0
+    dicom_file_reopen_count: int = 0
+    decode_call_count: int = 0
+    per_study: list[dict[str, object]] = field(default_factory=list)
+
+    @property
+    def dicom_read_parse_seconds(self) -> float:
+        return max(0.0, self.dicom_read_decode_seconds - self.pixel_decode_seconds)
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "archive_index_discovery_seconds": self.archive_index_discovery_seconds,
+            "dicom_read_decode_seconds": self.dicom_read_decode_seconds,
+            "dicom_read_parse_seconds": self.dicom_read_parse_seconds,
+            "pixel_decode_seconds": self.pixel_decode_seconds,
+            "index_scan_count": self.index_scan_count,
+            "indexed_file_count": self.indexed_file_count,
+            "dicom_file_open_count": self.dicom_file_open_count,
+            "dicom_file_reopen_count": self.dicom_file_reopen_count,
+            "decode_call_count": self.decode_call_count,
+            "source_kind": "directory",
+            "archive_access_mode": "not_applicable_directory_input",
+            "dicom_access_mode": "serial_one_open_per_slice",
+        }
+
+
+@contextmanager
+def _timed_pixel_decoding(profile: _KaggleDicomProfile) -> Any:
+    """Time the frozen decoder's lazy pydicom pixel materialization."""
+
+    original_property = cast(property, getattr(Dataset, "pixel_array"))
+    getter = cast(Callable[[Dataset], Any] | None, original_property.fget)
+    if getter is None:
+        yield
+        return
+
+    def timed_pixel_array(dataset: Dataset) -> Any:
+        started = time.perf_counter()
+        try:
+            return getter(dataset)
+        finally:
+            profile.pixel_decode_seconds += time.perf_counter() - started
+
+    setattr(Dataset, "pixel_array", property(
+        timed_pixel_array,
+        original_property.fset,
+        original_property.fdel,
+        original_property.__doc__,
+    ))
+    try:
+        yield
+    finally:
+        setattr(Dataset, "pixel_array", original_property)
+
+
 def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"))
 
 
 def _json_sha256(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _distribution(values: Sequence[int]) -> dict[str, float | int]:
+    """Return stable summary statistics for one measured workload dimension."""
+
+    if not values:
+        raise KaggleDeliveryError("cannot summarize an empty workload dimension")
+    ordered = sorted(int(value) for value in values)
+    return {
+        "minimum": ordered[0],
+        "maximum": ordered[-1],
+        "average": sum(ordered) / len(ordered),
+        "median": ordered[len(ordered) // 2],
+    }
+
+
+def _percentile_threshold(values: Sequence[int], percentile: float) -> int:
+    """Use the nearest-rank threshold for a deterministic long-tail rule."""
+
+    if not values or not 0.0 < percentile <= 1.0:
+        raise KaggleDeliveryError("invalid workload percentile threshold")
+    ordered = sorted(int(value) for value in values)
+    index = min(len(ordered) - 1, max(0, math.ceil(percentile * len(ordered)) - 1))
+    return ordered[index]
+
+
+def _workload_profile(series_per_study: Sequence[int], slices_per_study: Sequence[int]) -> dict[str, object]:
+    """Describe study/series/slice distribution without exposing identifiers."""
+
+    if len(series_per_study) != len(slices_per_study) or not series_per_study:
+        raise KaggleDeliveryError("workload dimensions do not cover the same studies")
+    series_threshold = _percentile_threshold(series_per_study, 0.90)
+    slice_threshold = _percentile_threshold(slices_per_study, 0.90)
+    long_tail_count = sum(
+        series >= series_threshold or slices >= slice_threshold
+        for series, slices in zip(series_per_study, slices_per_study)
+    )
+    return {
+        "series_per_study": _distribution(series_per_study),
+        "slices_per_study": _distribution(slices_per_study),
+        "long_tail": {
+            "definition": "series or expected slices at or above the nearest-rank 90th percentile",
+            "percentile": 0.90,
+            "series_threshold": series_threshold,
+            "slice_threshold": slice_threshold,
+            "study_count": long_tail_count,
+        },
+    }
+
+
+def _directory_size_bytes(root: Path) -> int:
+    """Measure a mounted delivery tree without reading its file contents."""
+
+    if not root.is_dir() or root.is_symlink():
+        raise KaggleDeliveryError(f"cannot measure a non-directory delivery root: {root}")
+    total = 0
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise KaggleDeliveryError(f"delivery root contains a symlink: {path}")
+        if path.is_file():
+            total += path.stat().st_size
+    return total
+
+
+def _peak_rss_bytes() -> int:
+    """Return the process peak resident set size in bytes on supported hosts."""
+
+    usage = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    return usage if platform.system() == "Darwin" else usage * 1024
+
+
+def _fixed_plus_scaling_projection(
+    *,
+    whole_seconds: float,
+    study_count: int,
+    target_studies: int,
+    stages: Mapping[str, float],
+) -> dict[str, object]:
+    """Project fixed setup plus measured workload-dependent stage cost."""
+
+    if whole_seconds <= 0.0 or study_count <= 0 or target_studies <= 0:
+        raise KaggleDeliveryError("runtime projection inputs must be positive")
+    fixed_stage_names = (
+        "startup_setup",
+        "imports",
+        "input_discovery",
+        "adapter_preflight",
+        "model_metadata_loading",
+    )
+    scaling_stage_names = (
+        "dicom_read_decode",
+        "preprocessing",
+        "inference_ensembling",
+        "csv_creation",
+    )
+    fixed_observed = sum(max(0.0, float(stages.get(name, 0.0))) for name in fixed_stage_names)
+    scaling_observed = sum(max(0.0, float(stages.get(name, 0.0))) for name in scaling_stage_names)
+    unattributed_observed = max(0.0, whole_seconds - fixed_observed - scaling_observed)
+    fixed_total = fixed_observed + unattributed_observed
+    projected_scaling = scaling_observed * target_studies / study_count
+    projected = fixed_total + projected_scaling
+    return {
+        "target_studies": target_studies,
+        "projected_seconds_at_target": projected,
+        "method": "fixed_plus_measured_scaling",
+        "fixed_seconds_observed": fixed_total,
+        "fixed_stage_seconds_observed": fixed_observed,
+        "unattributed_seconds_counted_as_fixed": unattributed_observed,
+        "scaling_seconds_observed": scaling_observed,
+        "scaling_seconds_per_study_observed": scaling_observed / study_count,
+        "projected_scaling_seconds_at_target": projected_scaling,
+        "engineering_target_seconds": KAGGLE_ENGINEERING_TARGET_SECONDS,
+        "hard_limit_seconds": KAGGLE_HARD_LIMIT_SECONDS,
+        "engineering_margin_seconds": KAGGLE_ENGINEERING_TARGET_SECONDS - projected,
+        "hard_limit_margin_seconds": KAGGLE_HARD_LIMIT_SECONDS - projected,
+    }
 
 
 def _sha256_file(path: Path) -> str:
@@ -164,6 +393,198 @@ def _sha256_file(path: Path) -> str:
     except OSError as exc:
         raise KaggleDeliveryError(f"could not read artifact {path}") from exc
     return digest.hexdigest()
+
+
+def _normalize_package_name(value: object, field: str) -> str:
+    return re.sub(r"[-_.]+", "-", _nonempty(value, field).casefold())
+
+
+def audit_kaggle_runtime_wheel(
+    path: str | Path,
+    *,
+    expected_package: str | None = "pydicom",
+    expected_version: str | None = "3.0.1",
+) -> dict[str, object]:
+    """Validate one local wheel before an offline Kaggle installation."""
+
+    wheel_path = Path(path)
+    if not wheel_path.name.endswith(".whl"):
+        raise KaggleDeliveryError(f"offline runtime artifact is not a wheel: {wheel_path}")
+    try:
+        wheel_bytes = wheel_path.read_bytes()
+        with zipfile.ZipFile(io.BytesIO(wheel_bytes)) as archive:
+            members = tuple(archive.namelist())
+            metadata_members = tuple(
+                name for name in members if name.endswith(".dist-info/METADATA") and not name.startswith("/")
+            )
+            wheel_members = tuple(
+                name for name in members if name.endswith(".dist-info/WHEEL") and not name.startswith("/")
+            )
+            if len(metadata_members) != 1 or len(wheel_members) != 1:
+                raise KaggleDeliveryError("offline runtime wheel must contain one dist-info METADATA and WHEEL")
+            metadata = Parser().parsestr(archive.read(metadata_members[0]).decode("utf-8"))
+            wheel_metadata = archive.read(wheel_members[0]).decode("utf-8")
+        wheel_sha256 = hashlib.sha256(wheel_bytes).hexdigest()
+    except (OSError, UnicodeError, zipfile.BadZipFile, KeyError) as exc:
+        raise KaggleDeliveryError(f"could not inspect offline runtime wheel: {wheel_path}") from exc
+    package = _nonempty(metadata.get("Name"), "offline wheel package")
+    version = _nonempty(metadata.get("Version"), "offline wheel version")
+    if expected_package is not None:
+        expected_package_name = _normalize_package_name(expected_package, "expected wheel package")
+        if _normalize_package_name(package, "offline wheel package") != expected_package_name:
+            raise KaggleDeliveryError(
+                f"offline runtime wheel package {package!r} does not match {expected_package_name!r}"
+            )
+    if expected_version is not None:
+        expected_version_text = _nonempty(expected_version, "expected wheel version")
+        if version != expected_version_text:
+            raise KaggleDeliveryError(
+                f"offline runtime wheel version {version!r} does not match {expected_version_text!r}"
+            )
+    tags = tuple(
+        line.split(":", 1)[1].strip()
+        for line in wheel_metadata.splitlines()
+        if line.startswith("Tag:") and ":" in line
+    )
+    if not tags:
+        raise KaggleDeliveryError("offline runtime wheel does not declare a compatibility tag")
+    return {
+        "filename": wheel_path.name,
+        "sha256": wheel_sha256,
+        "package": package,
+        "version": version,
+        "tags": list(tags),
+    }
+
+
+def _runtime_wheel_references(value: object) -> tuple[Mapping[str, object], ...]:
+    """Normalize legacy and current request wheelhouse references."""
+
+    runtime = _mapping(value, "request delivery runtime")
+    if "offline_wheels" in runtime:
+        raw_wheels = runtime.get("offline_wheels")
+        if not isinstance(raw_wheels, list) or not raw_wheels:
+            raise KaggleDeliveryError("request offline runtime wheels must be a non-empty list")
+        return tuple(
+            _mapping(item, f"request offline runtime wheel {index}")
+            for index, item in enumerate(raw_wheels)
+        )
+    if "offline_wheel" in runtime:
+        return (_mapping(runtime.get("offline_wheel"), "request offline runtime wheel"),)
+    raise KaggleDeliveryError("request delivery runtime has no offline wheel references")
+
+
+def _runtime_wheel_paths(
+    singular: str | Path | None,
+    plural: Sequence[str | Path] | None,
+) -> tuple[Path, ...]:
+    """Normalize the versioned API's singular and wheelhouse arguments."""
+
+    if singular is not None and plural is not None:
+        raise KaggleDeliveryError("supply either one runtime wheel or a runtime wheelhouse, not both")
+    if plural is not None:
+        if isinstance(plural, (str, bytes, Path)):
+            raise KaggleDeliveryError("runtime wheelhouse must be a sequence of wheel paths")
+        paths = tuple(Path(item) for item in plural)
+    elif singular is not None:
+        paths = (Path(singular),)
+    else:
+        paths = ()
+    if len({str(path) for path in paths}) != len(paths):
+        raise KaggleDeliveryError("runtime wheelhouse contains duplicate paths")
+    return paths
+
+
+def _audit_runtime_wheels_for_pins(
+    paths: Sequence[Path],
+    runtime_pins: Mapping[str, object],
+    *,
+    require_all_pins: bool,
+) -> tuple[dict[str, object], ...]:
+    """Audit a local wheel set and bind each wheel to one frozen package pin."""
+
+    expected_pins = {
+        _normalize_package_name(package, "runtime package"): _nonempty(version, f"runtime pin {package}")
+        for package, version in runtime_pins.items()
+    }
+    if not expected_pins:
+        raise KaggleDeliveryError("candidate runtime pins are empty")
+    audited: list[dict[str, object]] = []
+    seen_packages: set[str] = set()
+    for path in paths:
+        wheel = audit_kaggle_runtime_wheel(path, expected_package=None, expected_version=None)
+        package = _normalize_package_name(wheel["package"], "offline wheel package")
+        if package not in expected_pins:
+            raise KaggleDeliveryError(f"offline runtime wheel package {package!r} is not frozen by the candidate")
+        if package in seen_packages:
+            raise KaggleDeliveryError(f"runtime wheelhouse contains duplicate package {package!r}")
+        expected_version = expected_pins[package]
+        if wheel["version"] != expected_version:
+            raise KaggleDeliveryError(
+                f"offline runtime wheel {package!r} is {wheel['version']!r}, expected frozen {expected_version!r}"
+            )
+        seen_packages.add(package)
+        audited.append(wheel)
+    if require_all_pins and seen_packages != set(expected_pins):
+        missing = sorted(set(expected_pins) - seen_packages)
+        raise KaggleDeliveryError("runtime wheelhouse does not cover every frozen pin: " + ", ".join(missing))
+    return tuple(sorted(audited, key=lambda item: (str(item["package"]).casefold(), str(item["filename"]))))
+
+
+def validate_kaggle_runtime_pins(
+    expected_pins: Mapping[str, object],
+    *,
+    expected_python_version: str | None = None,
+) -> dict[str, object]:
+    """Check every locked package and the Python runtime before DICOM work."""
+
+    normalized_expected = {
+        _normalize_package_name(package, "runtime package"): _nonempty(version, f"runtime pin {package}")
+        for package, version in expected_pins.items()
+    }
+    if not normalized_expected:
+        raise KaggleDeliveryError("candidate runtime pins are empty")
+    metadata_versions: dict[str, str] = {}
+    imported_versions: dict[str, str] = {}
+    importable_modules = {"numpy": "numpy", "pydicom": "pydicom", "torch": "torch"}
+    importlib.invalidate_caches()
+    for package, expected_version in sorted(normalized_expected.items()):
+        try:
+            actual_metadata_version = importlib_metadata.version(package)
+        except importlib_metadata.PackageNotFoundError as exc:
+            raise KaggleDeliveryError(f"required runtime package is not installed: {package}") from exc
+        metadata_versions[package] = actual_metadata_version
+        if actual_metadata_version != expected_version:
+            raise KaggleDeliveryError(
+                f"runtime package {package!r} is {actual_metadata_version!r}, expected pinned {expected_version!r}"
+            )
+        module_name = importable_modules.get(package)
+        if module_name is not None:
+            try:
+                module = importlib.import_module(module_name)
+            except ImportError as exc:
+                raise KaggleDeliveryError(f"required runtime module is not importable: {package}") from exc
+            actual_module_version = _nonempty(
+                getattr(module, "__version__", None),
+                f"runtime module {package} version",
+            )
+            imported_versions[package] = actual_module_version
+            if actual_module_version != expected_version:
+                raise KaggleDeliveryError(
+                    f"imported runtime module {package!r} is {actual_module_version!r}, "
+                    f"expected pinned {expected_version!r}"
+                )
+    python_version = platform.python_version()
+    if expected_python_version is not None and python_version != expected_python_version:
+        raise KaggleDeliveryError(
+            f"runtime Python {python_version!r} does not match pinned {expected_python_version!r}"
+        )
+    return {
+        "python_version": python_version,
+        "python_pin": expected_python_version,
+        "packages": metadata_versions,
+        "imported_packages": imported_versions,
+    }
 
 
 def _read_json(path: Path, description: str) -> Mapping[str, object]:
@@ -191,7 +612,7 @@ def _nonempty(value: object, field: str) -> str:
     return text
 
 
-def _safe_identifier(value: str, field: str) -> str:
+def _safe_identifier(value: object, field: str) -> str:
     text = _nonempty(value, field)
     if text in {".", ".."} or "/" in text or "\\" in text:
         raise KaggleDeliveryError(f"{field} must be path-safe")
@@ -635,6 +1056,8 @@ def load_kaggle_delivery(
     candidate_root: str | Path | None = None,
     delivery_notebook_path: str | Path | None = None,
     delivery_adapter_path: str | Path | None = None,
+    delivery_runtime_wheel_path: str | Path | None = None,
+    delivery_runtime_wheel_paths: Sequence[str | Path] | None = None,
 ) -> KaggleDeliveryRequest:
     """Load a request and optionally recheck the referenced local artifacts."""
 
@@ -658,6 +1081,28 @@ def load_kaggle_delivery(
         expected = _mapping(payload.get("delivery_adapter"), "request delivery adapter")
         if adapter["sha256"] != expected.get("sha256"):
             raise KaggleDeliveryError("request adapter checksum differs from the supplied adapter")
+    supplied_runtime_wheels = _runtime_wheel_paths(delivery_runtime_wheel_path, delivery_runtime_wheel_paths)
+    if supplied_runtime_wheels:
+        runtime_value = payload.get("delivery_runtime")
+        if runtime_value is None:
+            raise KaggleDeliveryError("supplied runtime wheels are not referenced by the request")
+        expected_wheels = _runtime_wheel_references(runtime_value)
+        if len(expected_wheels) != len(supplied_runtime_wheels):
+            raise KaggleDeliveryError("supplied runtime wheel count differs from the request")
+        for path, expected_wheel in zip(supplied_runtime_wheels, expected_wheels):
+            expected_package = _nonempty(expected_wheel.get("package"), "request runtime wheel package")
+            expected_version = _nonempty(expected_wheel.get("version"), "request runtime wheel version")
+            wheel = audit_kaggle_runtime_wheel(
+                path,
+                expected_package=expected_package,
+                expected_version=expected_version,
+            )
+            filename = _safe_identifier(expected_wheel.get("filename"), "request runtime wheel filename")
+            relative_path = _nonempty(expected_wheel.get("relative_path"), "request runtime wheel relative path")
+            if relative_path != f"runtime/{filename}":
+                raise KaggleDeliveryError("request runtime wheel path is not the canonical runtime layout")
+            if wheel["filename"] != filename or wheel["sha256"] != expected_wheel.get("sha256"):
+                raise KaggleDeliveryError("request runtime wheel checksum differs from the supplied wheel")
     return KaggleDeliveryRequest(request_root.resolve(), checksum, payload)
 
 
@@ -668,8 +1113,11 @@ def prepare_kaggle_delivery(
     *,
     delivery_notebook_path: str | Path | None = None,
     delivery_adapter_path: str | Path = DEFAULT_KAGGLE_ADAPTER_PATH,
+    delivery_runtime_wheel_path: str | Path | None = None,
+    delivery_runtime_wheel_paths: Sequence[str | Path] | None = None,
     local_submission_path: str | Path | None = None,
     expected_study_uids: Sequence[str] | None = None,
+    execution_input: Mapping[str, object] | None = None,
     request_id: str | None = None,
 ) -> KaggleDeliveryRequest:
     """Create one immutable, approval-required Kaggle execution request.
@@ -690,6 +1138,14 @@ def prepare_kaggle_delivery(
     notebook = _notebook_audit(notebook_path)
     adapter_path = Path(delivery_adapter_path)
     adapter = _adapter_audit(adapter_path)
+    candidate_environment = _mapping(candidate.get("environment"), "candidate environment")
+    runtime_pins = _mapping(candidate_environment.get("runtime_pins"), "candidate runtime pins")
+    supplied_runtime_wheels = _runtime_wheel_paths(delivery_runtime_wheel_path, delivery_runtime_wheel_paths)
+    runtime_wheels = _audit_runtime_wheels_for_pins(
+        supplied_runtime_wheels,
+        runtime_pins,
+        require_all_pins=delivery_runtime_wheel_paths is not None,
+    ) if supplied_runtime_wheels else ()
     evidence = _local_evidence_audit(
         evidence_path,
         candidate,
@@ -760,7 +1216,59 @@ def prepare_kaggle_delivery(
             "owner_selected_final": False,
         },
     }
+    if runtime_wheels:
+        if delivery_runtime_wheel_paths is None:
+            runtime_wheel = runtime_wheels[0]
+            payload["delivery_runtime"] = {
+                "offline_wheel": {
+                    **runtime_wheel,
+                    "relative_path": f"runtime/{runtime_wheel['filename']}",
+                    "source": "owner-authorized-local-wheel",
+                    "no_index": True,
+                    "no_deps": True,
+                },
+                "no_index": True,
+                "no_deps": True,
+                "local_wheel_only": True,
+            }
+        else:
+            payload["delivery_runtime"] = {
+                "offline_wheels": [
+                    {
+                        **runtime_wheel,
+                        "relative_path": f"runtime/{runtime_wheel['filename']}",
+                        "source": "owner-authorized-local-wheel",
+                        "no_index": True,
+                        "no_deps": True,
+                    }
+                    for runtime_wheel in runtime_wheels
+                ],
+                "no_index": True,
+                "no_deps": True,
+                "local_wheel_only": True,
+            }
     payload["request_checksum"] = _json_sha256(payload)
+
+    if execution_input is not None:
+        input_reference = dict(execution_input)
+        if _private_metadata_keys(input_reference):
+            raise KaggleDeliveryError("execution input reference contains identifier-bearing fields")
+        for field in (
+            "mount_slug",
+            "workload_kind",
+            "manifest_filename",
+            "manifest_sha256",
+            "test_csv_sha256",
+            "test_series_csv_sha256",
+        ):
+            _nonempty(input_reference.get(field), f"execution input {field}")
+        _safe_identifier(input_reference["mount_slug"], "execution input mount slug")
+        _safe_identifier(input_reference["manifest_filename"], "execution input manifest filename")
+        if input_reference["workload_kind"] not in {"hidden_test", "representative"}:
+            raise KaggleDeliveryError("execution input workload kind must be hidden_test or representative")
+        payload["execution_input"] = input_reference
+        payload.pop("request_checksum", None)
+        payload["request_checksum"] = _json_sha256(payload)
 
     def writer(staging: Path) -> None:
         atomic_json_write(staging / "request.json", payload)
@@ -808,6 +1316,504 @@ def _approval_payload(path: Path, request_checksum: str) -> Mapping[str, object]
     except ValueError as exc:
         raise KaggleDeliveryError("owner approval timestamp is not ISO-8601") from exc
     return payload
+
+
+def _execution_input_reference(
+    payload: Mapping[str, object],
+    *,
+    default_mount_slug: str,
+) -> Mapping[str, object]:
+    """Load and validate the request-bound input workload reference."""
+
+    value = payload.get("execution_input")
+    if value is None:
+        return {"mount_slug": default_mount_slug, "workload_kind": "hidden_test"}
+    reference = _mapping(value, "execution input reference")
+    mount_slug = _safe_identifier(reference.get("mount_slug"), "execution input mount slug")
+    workload_kind = _nonempty(reference.get("workload_kind"), "execution input workload kind")
+    if workload_kind not in {"hidden_test", "representative"}:
+        raise KaggleDeliveryError("execution input workload kind must be hidden_test or representative")
+    manifest_filename = _safe_identifier(
+        reference.get("manifest_filename"),
+        "execution input manifest filename",
+    )
+    for field in ("manifest_sha256", "test_csv_sha256", "test_series_csv_sha256"):
+        _nonempty(reference.get(field), f"execution input {field}")
+    return {
+        **dict(reference),
+        "mount_slug": mount_slug,
+        "workload_kind": workload_kind,
+        "manifest_filename": manifest_filename,
+    }
+
+
+def _input_mount_files(root: Path, filename: str, *, max_depth: int = 5) -> tuple[Path, ...]:
+    """Find a shallowly mounted input file without walking DICOM payloads."""
+
+    if not root.is_dir() or root.is_symlink():
+        raise KaggleDeliveryError(f"Kaggle input root is not a directory: {root}")
+    found: list[Path] = []
+    frontier: list[tuple[Path, int]] = [(root, 0)]
+    # These directories contain the competition payload or immutable bundle
+    # contents, never a delivery manifest or owner approval file.  Pruning
+    # them keeps startup discovery independent of the hidden DICOM count.
+    payload_directory_names = {"candidate", "code", "test_series", "train", "test"}
+    while frontier:
+        directory, depth = frontier.pop(0)
+        try:
+            children = sorted(directory.iterdir(), key=lambda path: str(path))
+        except OSError as exc:
+            raise KaggleDeliveryError(f"could not inspect Kaggle input directory: {directory}") from exc
+        found_in_directory = False
+        for child in children:
+            if child.is_symlink():
+                continue
+            if child.is_file() and child.name == filename:
+                found.append(child)
+                found_in_directory = True
+        if found_in_directory or depth >= max_depth:
+            continue
+        for child in children:
+            if child.is_symlink() or not child.is_dir() or child.name in payload_directory_names:
+                continue
+            frontier.append((child, depth + 1))
+    return tuple(found)
+
+
+def _input_mount_directories(root: Path, name: str, *, max_depth: int = 4) -> tuple[Path, ...]:
+    """Find shallowly mounted source directories without traversing their contents."""
+
+    if not root.is_dir() or root.is_symlink():
+        raise KaggleDeliveryError(f"Kaggle input root is not a directory: {root}")
+    found: list[Path] = []
+    frontier: list[tuple[Path, int]] = [(root, 0)]
+    payload_directory_names = {"candidate", "code", "test_series", "train", "test"}
+    while frontier:
+        directory, depth = frontier.pop(0)
+        try:
+            children = sorted(directory.iterdir(), key=lambda path: str(path))
+        except OSError as exc:
+            raise KaggleDeliveryError(f"could not inspect Kaggle input directory: {directory}") from exc
+        for child in children:
+            if child.is_symlink() or not child.is_dir():
+                continue
+            if child.name == name:
+                found.append(child)
+                continue
+            if depth >= max_depth or child.name in payload_directory_names:
+                continue
+            frontier.append((child, depth + 1))
+    return tuple(found)
+
+
+def _immutable_file_map(root: Path, description: str) -> dict[Path, str]:
+    """Return checksums for a regular, symlink-free input tree."""
+
+    if not root.is_dir() or root.is_symlink():
+        raise KaggleDeliveryError(f"{description} is not a regular directory: {root}")
+    files: dict[Path, str] = {}
+    try:
+        paths = sorted(root.rglob("*"), key=lambda path: str(path))
+    except OSError as exc:
+        raise KaggleDeliveryError(f"could not inspect {description}: {root}") from exc
+    for path in paths:
+        if path.is_symlink():
+            raise KaggleDeliveryError(f"{description} contains a symlink: {path}")
+        if path.is_file():
+            files[path.relative_to(root)] = _sha256_file(path)
+    return files
+
+
+def _verify_delivery_code_mirror(candidate_root: Path, code_root: Path, adapter_path: Path) -> None:
+    """Prove the imported package is the immutable candidate code plus adapter."""
+
+    candidate_code = _immutable_file_map(candidate_root / "code", "candidate code")
+    delivery_code = _immutable_file_map(code_root, "delivery code")
+    adapter_relative = adapter_path.relative_to(code_root)
+    expected_delivery_paths = set(candidate_code) | {adapter_relative}
+    if set(delivery_code) != expected_delivery_paths:
+        missing = sorted(str(path) for path in expected_delivery_paths - set(delivery_code))
+        unexpected = sorted(str(path) for path in set(delivery_code) - expected_delivery_paths)
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if unexpected:
+            details.append("unexpected=" + ",".join(unexpected))
+        raise KaggleDeliveryError("delivery code does not mirror immutable candidate code (" + "; ".join(details) + ")")
+    for relative_path, expected_sha256 in candidate_code.items():
+        # The adapter is the one deliberately versioned file shipped beside
+        # the frozen candidate.  Every other imported module must be byte
+        # identical to the candidate snapshot.
+        if relative_path == adapter_relative:
+            continue
+        if delivery_code[relative_path] != expected_sha256:
+            raise KaggleDeliveryError(f"delivery code differs from immutable candidate code: {relative_path}")
+
+
+def discover_kaggle_inputs(
+    input_root: str | Path = "/kaggle/input",
+    *,
+    expected_request_checksum: str,
+    expected_candidate_manifest_checksum: str,
+    competition_slug: str = KAGGLE_COMPETITION_SLUG,
+) -> KaggleInputLayout:
+    """Resolve and validate Kaggle's namespaced input mounts.
+
+    Kaggle may mount a dataset at ``/kaggle/input/datasets/<owner>/<slug>``
+    and a competition at ``/kaggle/input/competitions/<slug>``.  The notebook
+    must therefore discover inputs by their checksummed contents, then verify
+    every path before importing the delivery adapter or running inference.
+    """
+
+    root = Path(input_root)
+    request_checksum = _nonempty(expected_request_checksum, "expected request checksum")
+    candidate_manifest_checksum = _nonempty(
+        expected_candidate_manifest_checksum,
+        "expected candidate manifest checksum",
+    )
+    competition_name = _safe_identifier(competition_slug, "competition slug")
+
+    request_matches: list[tuple[Path, Mapping[str, object]]] = []
+    for path in _input_mount_files(root, "request.json"):
+        try:
+            payload = _request_payload(path.parent)
+        except KaggleDeliveryError:
+            continue
+        if payload.get("request_checksum") == request_checksum:
+            request_matches.append((path, payload))
+    if len(request_matches) != 1:
+        raise KaggleDeliveryError(
+            f"expected exactly one mounted request with checksum {request_checksum}; found {len(request_matches)}"
+        )
+    request_path, request_payload = request_matches[0]
+    delivery_root = request_path.parent
+    request = KaggleDeliveryRequest(
+        delivery_root.resolve(),
+        _nonempty(request_payload.get("request_checksum"), "request_checksum"),
+        request_payload,
+    )
+    request_candidate = _mapping(request.payload.get("candidate"), "request candidate")
+    if request_candidate.get("manifest_checksum") != candidate_manifest_checksum:
+        raise KaggleDeliveryError("mounted request does not reference the expected candidate manifest")
+    input_reference = _execution_input_reference(
+        request.payload,
+        default_mount_slug=competition_name,
+    )
+    if input_reference["mount_slug"] != competition_name:
+        raise KaggleDeliveryError("the requested input mount slug differs from the discovery slug")
+
+    candidate_started = time.perf_counter()
+    candidate_root = delivery_root / "candidate"
+    candidate_bundle = load_candidate(candidate_root)
+    candidate_reference = _candidate_reference(candidate_bundle)
+    candidate_load_hash_verification_seconds = time.perf_counter() - candidate_started
+    if candidate_bundle.manifest_checksum != candidate_manifest_checksum:
+        raise KaggleDeliveryError("mounted candidate manifest checksum differs from the expected candidate")
+    if request_candidate.get("candidate_id") != candidate_bundle.candidate_id:
+        raise KaggleDeliveryError("mounted request does not reference the mounted candidate")
+    if candidate_reference != dict(request_candidate):
+        raise KaggleDeliveryError("mounted request candidate reference differs from the mounted candidate")
+
+    notebook_reference = _mapping(request.payload.get("delivery_notebook"), "request delivery notebook")
+    notebook_name = _safe_identifier(notebook_reference.get("filename"), "delivery notebook filename")
+    delivery_notebook_path = delivery_root / notebook_name
+    adapter_reference = _mapping(request.payload.get("delivery_adapter"), "request delivery adapter")
+    adapter_name = _safe_identifier(adapter_reference.get("filename"), "delivery adapter filename")
+    code_root = delivery_root / "code"
+    delivery_adapter_path = code_root / "rsna_knee" / adapter_name
+    runtime_wheel_paths: tuple[Path, ...] = ()
+    runtime_wheel_sha256s: tuple[str, ...] = ()
+    runtime_wheel_audits: list[Mapping[str, object]] = []
+    runtime_value = request.payload.get("delivery_runtime")
+    if runtime_value is not None:
+        for index, wheel_reference in enumerate(_runtime_wheel_references(runtime_value)):
+            wheel_name = _safe_identifier(
+                wheel_reference.get("filename"),
+                f"request runtime wheel {index} filename",
+            )
+            wheel_relative_path = _nonempty(
+                wheel_reference.get("relative_path"),
+                f"request runtime wheel {index} relative path",
+            )
+            if wheel_relative_path != f"runtime/{wheel_name}":
+                raise KaggleDeliveryError("request runtime wheel path is not the canonical runtime layout")
+            wheel_path = delivery_root / wheel_relative_path
+            wheel_audit = audit_kaggle_runtime_wheel(
+                wheel_path,
+                expected_package=_nonempty(
+                    wheel_reference.get("package"),
+                    f"request runtime wheel {index} package",
+                ),
+                expected_version=_nonempty(
+                    wheel_reference.get("version"),
+                    f"request runtime wheel {index} version",
+                ),
+            )
+            if wheel_audit["filename"] != wheel_name or wheel_audit["sha256"] != wheel_reference.get("sha256"):
+                raise KaggleDeliveryError("mounted runtime wheel checksum differs from the request")
+            runtime_wheel_paths += (wheel_path,)
+            runtime_wheel_sha256s += (str(wheel_audit["sha256"]),)
+            runtime_wheel_audits.append(wheel_audit)
+    notebook_audit = _notebook_audit(delivery_notebook_path)
+    if notebook_audit["filename"] != notebook_name:
+        raise KaggleDeliveryError("request notebook filename differs from the mounted notebook")
+    if notebook_audit["sha256"] != notebook_reference.get("sha256"):
+        raise KaggleDeliveryError("request notebook checksum differs from the mounted notebook")
+    adapter_audit = _adapter_audit(delivery_adapter_path)
+    if adapter_audit["filename"] != adapter_name:
+        raise KaggleDeliveryError("request adapter filename differs from the mounted adapter")
+    if adapter_audit["sha256"] != adapter_reference.get("sha256"):
+        raise KaggleDeliveryError("request adapter checksum differs from the mounted adapter")
+    _verify_delivery_code_mirror(candidate_root, code_root, delivery_adapter_path)
+
+    approval_matches: list[Path] = []
+    for path in _input_mount_files(root, "owner-approval.json"):
+        try:
+            _approval_payload(path, request_checksum)
+        except KaggleDeliveryError:
+            continue
+        approval_matches.append(path)
+    if len(approval_matches) != 1:
+        raise KaggleDeliveryError(
+            f"expected exactly one owner approval for request {request_checksum}; found {len(approval_matches)}"
+    )
+    approval_path = approval_matches[0]
+    approval_sha256 = _sha256_file(approval_path)
+
+    competition_matches: list[Path] = []
+    for path in _input_mount_directories(root, competition_name):
+        required_files = (path / "test.csv", path / "test_series.csv")
+        test_series_root = path / "test_series"
+        if (
+            all(item.is_file() and not item.is_symlink() for item in required_files)
+            and test_series_root.is_dir()
+            and not test_series_root.is_symlink()
+        ):
+            competition_matches.append(path)
+    if len(competition_matches) != 1:
+        raise KaggleDeliveryError(
+            f"expected exactly one mounted input {competition_name}; found {len(competition_matches)}"
+        )
+    input_manifest_sha256: str | None = None
+    if request.payload.get("execution_input") is not None:
+        input_root_path = competition_matches[0]
+        manifest_path = input_root_path / str(input_reference["manifest_filename"])
+        if not manifest_path.is_file() or manifest_path.is_symlink():
+            raise KaggleDeliveryError(f"mounted execution input is missing its manifest: {manifest_path}")
+        input_manifest_sha256 = _sha256_file(manifest_path)
+        if input_manifest_sha256 != input_reference["manifest_sha256"]:
+            raise KaggleDeliveryError("mounted execution input manifest checksum differs from the request")
+        if _sha256_file(input_root_path / "test.csv") != input_reference["test_csv_sha256"]:
+            raise KaggleDeliveryError("mounted execution input test.csv checksum differs from the request")
+        if _sha256_file(input_root_path / "test_series.csv") != input_reference["test_series_csv_sha256"]:
+            raise KaggleDeliveryError("mounted execution input test_series.csv checksum differs from the request")
+
+    validation = _ValidatedKaggleInputs(
+        request=request,
+        candidate_bundle=candidate_bundle,
+        candidate_reference=candidate_reference,
+        approval_sha256=approval_sha256,
+        delivery_notebook_sha256=str(notebook_audit["sha256"]),
+        delivery_adapter_sha256=str(adapter_audit["sha256"]),
+        runtime_wheel_audits=tuple(runtime_wheel_audits),
+        candidate_load_hash_verification_seconds=candidate_load_hash_verification_seconds,
+    )
+
+    return KaggleInputLayout(
+        input_root=root,
+        delivery_root=delivery_root,
+        candidate_root=candidate_root,
+        candidate_code_root=candidate_root / "code",
+        code_root=code_root,
+        request_path=request_path,
+        approval_path=approval_path,
+        competition_root=competition_matches[0],
+        delivery_notebook_path=delivery_notebook_path,
+        delivery_adapter_path=delivery_adapter_path,
+        runtime_wheel_path=runtime_wheel_paths[0] if len(runtime_wheel_paths) == 1 else None,
+        runtime_wheel_sha256=runtime_wheel_sha256s[0] if len(runtime_wheel_sha256s) == 1 else None,
+        request_checksum=request_checksum,
+        candidate_manifest_checksum=candidate_manifest_checksum,
+        runtime_wheel_paths=runtime_wheel_paths,
+        runtime_wheel_sha256s=runtime_wheel_sha256s,
+        workload_kind=str(input_reference["workload_kind"]),
+        input_manifest_sha256=input_manifest_sha256,
+        validation=validation,
+    )
+
+
+def _reuse_discovered_kaggle_inputs(
+    layout: KaggleInputLayout,
+    *,
+    candidate_root: str | Path,
+    input_root: str | Path,
+    delivery_request_root: str | Path,
+    owner_approval_path: str | Path,
+    delivery_notebook_path: str | Path,
+    delivery_adapter_path: str | Path,
+    delivery_request_checksum: str | None,
+    delivery_notebook_sha256: str | None,
+    delivery_adapter_sha256: str | None,
+    delivery_runtime_wheel_path: str | Path | None,
+    delivery_runtime_wheel_paths: Sequence[str | Path] | None,
+) -> _ValidatedKaggleInputs:
+    """Reuse discovery's proof only when every run binding is unchanged.
+
+    This is intentionally an in-process handoff, not a serialized trust token.
+    Kaggle input mounts are immutable after discovery; callers that do not have
+    a layout returned by ``discover_kaggle_inputs`` retain full revalidation.
+    """
+
+    validation = layout.validation
+    if validation is None:
+        raise KaggleDeliveryError("run validation reuse requires a discovered Kaggle input layout")
+
+    candidate_path = Path(candidate_root).resolve()
+    input_path = Path(input_root).resolve()
+    request_root = Path(delivery_request_root).resolve()
+    approval_path = Path(owner_approval_path).resolve()
+    notebook_path = Path(delivery_notebook_path).resolve()
+    adapter_path = Path(delivery_adapter_path).resolve()
+
+    bindings = (
+        (layout.candidate_root.resolve(), candidate_path, "candidate root"),
+        (layout.competition_root.resolve(), input_path, "competition input root"),
+        (layout.delivery_root.resolve(), request_root, "delivery request root"),
+        (layout.approval_path.resolve(), approval_path, "owner approval path"),
+        (layout.delivery_notebook_path.resolve(), notebook_path, "delivery notebook path"),
+        (layout.delivery_adapter_path.resolve(), adapter_path, "delivery adapter path"),
+    )
+    for discovered, supplied, field in bindings:
+        if discovered != supplied:
+            raise KaggleDeliveryError(f"validated Kaggle layout does not match supplied {field}")
+
+    if layout.request_path.resolve() != request_root / "request.json":
+        raise KaggleDeliveryError("validated Kaggle layout has an unexpected request path")
+    if layout.candidate_code_root.resolve() != candidate_path / "code":
+        raise KaggleDeliveryError("validated Kaggle layout has an unexpected candidate code path")
+    if layout.code_root.resolve() != request_root / "code":
+        raise KaggleDeliveryError("validated Kaggle layout has an unexpected delivery code path")
+    if validation.request.root != request_root or validation.candidate_bundle.root != candidate_path:
+        raise KaggleDeliveryError("validated Kaggle proof is detached from its input layout")
+    if layout.request_checksum != validation.request.request_checksum:
+        raise KaggleDeliveryError("validated Kaggle layout request checksum is inconsistent")
+    if layout.candidate_manifest_checksum != validation.candidate_bundle.manifest_checksum:
+        raise KaggleDeliveryError("validated Kaggle layout candidate checksum is inconsistent")
+    if validation.candidate_reference.get("candidate_id") != validation.candidate_bundle.candidate_id:
+        raise KaggleDeliveryError("validated Kaggle candidate reference is inconsistent")
+    if validation.candidate_reference.get("manifest_checksum") != validation.candidate_bundle.manifest_checksum:
+        raise KaggleDeliveryError("validated Kaggle candidate reference checksum is inconsistent")
+
+    if delivery_request_checksum is not None and delivery_request_checksum != validation.request.request_checksum:
+        raise KaggleDeliveryError("supplied delivery request checksum differs from discovered request.json")
+    if delivery_notebook_sha256 is not None and delivery_notebook_sha256 != validation.delivery_notebook_sha256:
+        raise KaggleDeliveryError("supplied delivery notebook checksum differs from discovered notebook")
+    if delivery_adapter_sha256 is not None and delivery_adapter_sha256 != validation.delivery_adapter_sha256:
+        raise KaggleDeliveryError("supplied delivery adapter checksum differs from discovered adapter")
+
+    supplied_wheels = _runtime_wheel_paths(delivery_runtime_wheel_path, delivery_runtime_wheel_paths)
+    discovered_wheels = tuple(path.resolve() for path in layout.runtime_wheel_paths)
+    if tuple(path.resolve() for path in supplied_wheels) != discovered_wheels:
+        raise KaggleDeliveryError("supplied runtime wheelhouse differs from discovered runtime wheelhouse")
+    runtime_value = validation.request.payload.get("delivery_runtime")
+    expected_wheel_references = _runtime_wheel_references(runtime_value) if runtime_value is not None else ()
+    if len(expected_wheel_references) != len(supplied_wheels):
+        raise KaggleDeliveryError("supplied runtime wheelhouse does not match discovered request.json")
+    if tuple(layout.runtime_wheel_sha256s) != tuple(
+        str(audit.get("sha256")) for audit in validation.runtime_wheel_audits
+    ):
+        raise KaggleDeliveryError("validated runtime wheel checksums are inconsistent")
+    for audit, expected in zip(validation.runtime_wheel_audits, expected_wheel_references):
+        if (
+            audit.get("filename") != expected.get("filename")
+            or audit.get("sha256") != expected.get("sha256")
+            or audit.get("package") != expected.get("package")
+            or audit.get("version") != expected.get("version")
+        ):
+            raise KaggleDeliveryError("validated runtime wheel audit differs from request.json")
+
+    return validation
+
+
+def _runtime_install_audit(
+    value: Mapping[str, object] | None,
+    request: KaggleDeliveryRequest,
+    runtime_audit: Mapping[str, object],
+) -> dict[str, object] | None:
+    """Validate the recorded before/after offline wheel installation."""
+
+    runtime_value = request.payload.get("delivery_runtime")
+    if runtime_value is None:
+        if value is not None:
+            raise KaggleDeliveryError("runtime installation evidence is not allowed without a delivery wheel")
+        return None
+    if value is None:
+        raise KaggleDeliveryError("offline runtime installation evidence is required for this delivery")
+    evidence = dict(value)
+    if _private_metadata_keys(evidence):
+        raise KaggleDeliveryError("runtime installation evidence contains identifier-bearing fields")
+    if evidence.get("status") != "installed_offline":
+        raise KaggleDeliveryError("runtime installation was not recorded as offline")
+    installation = _mapping(evidence.get("installation"), "runtime installation evidence")
+    for field in ("no_index", "no_deps", "local_wheel_only"):
+        if installation.get(field) is not True:
+            raise KaggleDeliveryError(f"runtime installation does not confirm {field}")
+    if installation.get("internet_enabled") is not False:
+        raise KaggleDeliveryError("runtime installation does not confirm internet is disabled")
+    runtime = _mapping(runtime_value, "request delivery runtime")
+    expected_wheels = _runtime_wheel_references(runtime)
+    if "wheels" in evidence:
+        raw_observed_wheels = evidence.get("wheels")
+        if not isinstance(raw_observed_wheels, list):
+            raise KaggleDeliveryError("runtime installation wheels must be a list")
+        observed_wheels = tuple(
+            _mapping(item, f"runtime installation wheel {index}")
+            for index, item in enumerate(raw_observed_wheels)
+        )
+    elif len(expected_wheels) == 1 and "wheel" in evidence:
+        observed_wheels = (_mapping(evidence.get("wheel"), "runtime installation wheel"),)
+    else:
+        raise KaggleDeliveryError("runtime installation evidence does not list every offline wheel")
+    if len(observed_wheels) != len(expected_wheels):
+        raise KaggleDeliveryError("runtime installation wheel count differs from the request")
+    for index, (observed_wheel, expected_wheel) in enumerate(zip(observed_wheels, expected_wheels)):
+        for field in ("filename", "sha256", "package", "version"):
+            if observed_wheel.get(field) != expected_wheel.get(field):
+                raise KaggleDeliveryError(f"runtime installation wheel {index} {field} differs from the request")
+        if "tags" in expected_wheel and observed_wheel.get("tags") != expected_wheel.get("tags"):
+            raise KaggleDeliveryError(f"runtime installation wheel {index} tags differ from the request")
+
+    candidate = _mapping(request.payload.get("candidate"), "request candidate")
+    environment = _mapping(candidate.get("environment"), "request candidate environment")
+    expected_pins = {
+        _normalize_package_name(package, "runtime package"): _nonempty(version, f"runtime pin {package}")
+        for package, version in _mapping(environment.get("runtime_pins"), "request runtime pins").items()
+    }
+    before = _mapping(evidence.get("environment_before"), "runtime environment before installation")
+    after = _mapping(evidence.get("environment_after"), "runtime environment after installation")
+    _nonempty(before.get("python_version"), "runtime Python before installation")
+    if _nonempty(after.get("python_version"), "runtime Python after installation") != runtime_audit.get("python_version"):
+        raise KaggleDeliveryError("runtime installation evidence has a different Python version")
+    before_packages = _mapping(before.get("packages"), "runtime packages before installation")
+    after_packages = _mapping(after.get("packages"), "runtime packages after installation")
+    if set(str(key) for key in after_packages) != set(expected_pins):
+        raise KaggleDeliveryError("runtime installation evidence does not cover every locked package")
+    if {str(key): str(value) for key, value in after_packages.items()} != expected_pins:
+        raise KaggleDeliveryError("runtime packages after installation differ from the frozen pins")
+    if dict(after_packages) != dict(_mapping(runtime_audit.get("packages"), "runtime package audit")):
+        raise KaggleDeliveryError("runtime package evidence differs from the imported runtime audit")
+    if set(str(key) for key in before_packages) != set(expected_pins):
+        raise KaggleDeliveryError("runtime packages before installation do not cover every locked package")
+    for package in expected_pins:
+        _nonempty(before_packages.get(package), f"runtime package before installation {package}")
+    imported_after = _mapping(after.get("imported_packages"), "imported runtime packages after installation")
+    imported_audit = _mapping(runtime_audit.get("imported_packages"), "imported runtime package audit")
+    if dict(imported_after) != dict(imported_audit):
+        raise KaggleDeliveryError("imported runtime package evidence differs from the runtime audit")
+    installation_wheel_sha256s = tuple(str(item.get("sha256")) for item in observed_wheels)
+    if len(set(installation_wheel_sha256s)) != len(installation_wheel_sha256s):
+        raise KaggleDeliveryError("runtime installation evidence repeats a wheel checksum")
+    return evidence
 
 
 def _private_execution_audit(
@@ -930,7 +1936,10 @@ def _execution_payload(
     _required_int(workload.get("slice_count"), "Kaggle workload slice count")
     if workload.get("actual_workload_recorded") is not True:
         raise KaggleDeliveryError("Kaggle execution does not record its actual workload")
-    if workload.get("hidden_test") is not True or workload.get("example_only") is not False:
+    workload_kind = str(workload.get("workload_kind", "hidden_test")).strip()
+    if workload_kind not in {"hidden_test", "representative"}:
+        raise KaggleDeliveryError("Kaggle execution has an unsupported workload kind")
+    if workload.get("hidden_test") is not (workload_kind == "hidden_test") or workload.get("example_only") is not False:
         raise KaggleDeliveryError("example-only execution cannot establish Kaggle verification")
     private_evidence_result = (
         _private_execution_audit(
@@ -1090,8 +2099,12 @@ def _execution_payload(
             "series_count": _required_int(workload.get("series_count"), "Kaggle workload series count"),
             "slice_count": _required_int(workload.get("slice_count"), "Kaggle workload slice count"),
             "actual_workload_recorded": True,
-            "hidden_test": True,
+            "workload_kind": workload_kind,
+            "hidden_test": workload_kind == "hidden_test",
             "example_only": False,
+            "series_per_study": workload.get("series_per_study"),
+            "slices_per_study": workload.get("slices_per_study"),
+            "long_tail": workload.get("long_tail"),
         },
         "timing": {
             "whole_notebook_seconds": whole_seconds,
@@ -1468,7 +2481,15 @@ def _series_input_files(series_dir: Path, input_root: Path) -> tuple[Path, ...]:
 def _load_kaggle_studies(
     input_root: Path,
     decoder: DecoderPolicy,
-) -> tuple[tuple[StudyRecord, ...], dict[str, object], tuple[dict[str, object], ...], float]:
+    *,
+    profile: _KaggleDicomProfile | None = None,
+) -> tuple[
+    tuple[StudyRecord, ...],
+    dict[str, object],
+    tuple[dict[str, object], ...],
+    float,
+    _KaggleDicomProfile,
+]:
     if not input_root.is_dir() or input_root.is_symlink():
         raise KaggleDeliveryError(f"Kaggle input root is not a directory: {input_root}")
     test_csv = input_root / "test.csv"
@@ -1507,7 +2528,12 @@ def _load_kaggle_studies(
     decoded_slices = 0
     failure_reasons: dict[str, int] = {}
     studies: list[StudyRecord] = []
+    timing_profile = profile or _KaggleDicomProfile()
     for study_uid in study_uids:
+        study_index_seconds = 0.0
+        study_read_decode_seconds = 0.0
+        study_pixel_decode_started = timing_profile.pixel_decode_seconds
+        study_series_timings: list[dict[str, object]] = []
         series_records: list[SeriesRecord] = []
         study_private: dict[str, object] = {"StudyInstanceUID": study_uid, "series": []}
         private_series = cast(list[dict[str, object]], study_private["series"])
@@ -1517,15 +2543,29 @@ def _load_kaggle_studies(
             series_dir = study_dir / _safe_input_component(series_uid, "SeriesInstanceUID")
             if series_dir.exists() and series_dir.is_symlink():
                 raise KaggleDeliveryError(f"Kaggle series directory is a symlink: {series_dir}")
+            index_started = time.perf_counter()
             files = _series_input_files(series_dir, input_root)
+            index_seconds = time.perf_counter() - index_started
+            timing_profile.archive_index_discovery_seconds += index_seconds
+            timing_profile.index_scan_count += 1
+            timing_profile.indexed_file_count += len(files)
+            study_index_seconds += index_seconds
+            series_read_decode_started = time.perf_counter()
+            series_pixel_decode_started = timing_profile.pixel_decode_seconds
+            series_file_open_count = 0
             slices = []
             failures: list[dict[str, object]] = []
             expected_slices += len(files)
             for path in files:
                 relative = path.relative_to(input_root).as_posix()
+                timing_profile.decode_call_count += 1
+                timing_profile.dicom_file_open_count += 1
+                series_file_open_count += 1
+                file_decode_started = time.perf_counter()
                 try:
                     with path.open("rb") as handle:
-                        decoded = decode_stream(handle, filename=relative, policy=decoder)
+                        with _timed_pixel_decoding(timing_profile):
+                            decoded = decode_stream(handle, filename=relative, policy=decoder)
                     if decoded.study_instance_uid not in (None, study_uid):
                         raise DicomDecodeError("decoded StudyInstanceUID disagrees with test.csv")
                     if decoded.series_instance_uid not in (None, series_uid):
@@ -1538,9 +2578,27 @@ def _load_kaggle_studies(
                     reason = type(exc).__name__
                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
                     failures.append({"source_entry_name": relative, "reason": reason, "detail": str(exc)})
+                finally:
+                    timing_profile.dicom_read_decode_seconds += time.perf_counter() - file_decode_started
             if not files:
                 failure_reasons["missing_series_input"] = failure_reasons.get("missing_series_input", 0) + 1
                 failures.append({"source_entry_name": "", "reason": "missing_series_input", "detail": str(series_dir)})
+            series_read_decode_seconds = time.perf_counter() - series_read_decode_started
+            series_pixel_decode_seconds = timing_profile.pixel_decode_seconds - series_pixel_decode_started
+            series_timing: dict[str, object] = {
+                "index_seconds": index_seconds,
+                "dicom_read_decode_seconds": series_read_decode_seconds,
+                "dicom_read_parse_seconds": max(
+                    0.0,
+                    series_read_decode_seconds - series_pixel_decode_seconds,
+                ),
+                "pixel_decode_seconds": series_pixel_decode_seconds,
+                "indexed_file_count": len(files),
+                "file_open_count": series_file_open_count,
+                "file_reopen_count": 0,
+                "decode_call_count": len(files),
+            }
+            study_series_timings.append(series_timing)
             series_records.append(
                 SeriesRecord(
                     study_instance_uid=study_uid,
@@ -1561,22 +2619,65 @@ def _load_kaggle_studies(
                     "expected_slice_count": len(files),
                     "decoded_slice_count": len(slices),
                     "failures": failures,
+                    "timing": series_timing,
                 }
             )
+        study_read_decode_seconds = sum(
+            float(str(item["dicom_read_decode_seconds"])) for item in study_series_timings
+        )
+        study_pixel_decode_seconds = timing_profile.pixel_decode_seconds - study_pixel_decode_started
+        study_timing = {
+            "index_seconds": study_index_seconds,
+            "dicom_read_decode_seconds": study_read_decode_seconds,
+            "dicom_read_parse_seconds": max(
+                0.0,
+                study_read_decode_seconds - study_pixel_decode_seconds,
+            ),
+            "pixel_decode_seconds": study_pixel_decode_seconds,
+            "indexed_file_count": sum(int(str(item["indexed_file_count"])) for item in study_series_timings),
+            "file_open_count": sum(int(str(item["file_open_count"])) for item in study_series_timings),
+            "file_reopen_count": 0,
+            "decode_call_count": sum(int(str(item["decode_call_count"])) for item in study_series_timings),
+            "series": study_series_timings,
+        }
+        study_private["timing"] = study_timing
+        timing_profile.per_study.append({"StudyInstanceUID": study_uid, **study_timing})
         studies.append(StudyRecord(study_uid, tuple(series_records)))
         private_records.append(study_private)
     decode_seconds = time.perf_counter() - decode_started
+    series_per_study = [len(study.series) for study in studies]
+    slices_per_study = [
+        sum(
+            int(str(cast(Mapping[str, object], private)["expected_slice_count"]))
+            for private in cast(list[Mapping[str, object]], record["series"])
+        )
+        for record, study in zip(private_records, studies)
+    ]
+    workload_profile = _workload_profile(series_per_study, slices_per_study)
+    long_tail = cast(Mapping[str, object], workload_profile["long_tail"])
+    series_threshold = int(str(long_tail["series_threshold"]))
+    slice_threshold = int(str(long_tail["slice_threshold"]))
+    for record, series_count, slice_count in zip(private_records, series_per_study, slices_per_study):
+        record["workload"] = {
+            "series_count": series_count,
+            "expected_slice_count": slice_count,
+            "long_tail": series_count >= series_threshold or slice_count >= slice_threshold,
+        }
+    input_summary = {
+        "study_count": len(studies),
+        "series_count": len(series_rows),
+        "slice_count": expected_slices,
+        "decoded_slice_count": decoded_slices,
+        "failure_reasons": dict(sorted(failure_reasons.items())),
+        "decode_failure_count": sum(failure_reasons.values()),
+        **workload_profile,
+    }
     return (
         tuple(studies),
-        {
-            "study_count": len(studies),
-            "series_count": len(series_rows),
-            "slice_count": expected_slices,
-            "decoded_slice_count": decoded_slices,
-            "failure_reasons": dict(sorted(failure_reasons.items())),
-        },
+        input_summary,
         tuple(private_records),
         decode_seconds,
+        timing_profile,
     )
 
 
@@ -1588,13 +2689,16 @@ def _predict_kaggle_study(
 ) -> tuple[StudyPrediction, dict[str, float]]:
     preprocessing_started = time.perf_counter()
     prepared = prepare_study(study, engine.preprocess_config)
+    preprocessing_resize_seconds = time.perf_counter() - preprocessing_started
+    packing_started = time.perf_counter()
     packed = pack_study(
         study,
         prepared.series,
         engine.preprocess_config,
         packing_config=engine.packing_config,
     )
-    preprocessing_seconds = time.perf_counter() - preprocessing_started
+    packing_seconds = time.perf_counter() - packing_started
+    preprocessing_seconds = preprocessing_resize_seconds + packing_seconds
     valid_series_count = int(packed.series_mask.sum())
     rejected_series = tuple(input_failures) + prepared.failures
     warnings = tuple(input_warnings) + prepared.warnings
@@ -1609,7 +2713,12 @@ def _predict_kaggle_study(
                 sampled_source_indices=packed.sampled_source_indices,
                 warnings=warnings,
             ),
-            {"preprocessing_seconds": preprocessing_seconds, "inference_ensembling_seconds": 0.0},
+            {
+                "preprocessing_seconds": preprocessing_seconds,
+                "preprocessing_resize_seconds": preprocessing_resize_seconds,
+                "packing_seconds": packing_seconds,
+                "inference_ensembling_seconds": 0.0,
+            },
         )
     inference_started = time.perf_counter()
     images = torch.from_numpy(packed.images).unsqueeze(0).to(engine.device)
@@ -1631,7 +2740,12 @@ def _predict_kaggle_study(
             sampled_source_indices=packed.sampled_source_indices,
             warnings=warnings,
         ),
-        {"preprocessing_seconds": preprocessing_seconds, "inference_ensembling_seconds": inference_seconds},
+        {
+            "preprocessing_seconds": preprocessing_seconds,
+            "preprocessing_resize_seconds": preprocessing_resize_seconds,
+            "packing_seconds": packing_seconds,
+            "inference_ensembling_seconds": inference_seconds,
+        },
     )
 
 
@@ -1649,7 +2763,12 @@ def run_kaggle_baseline(
     owner_approval_path: str | Path | None = None,
     delivery_notebook_path: str | Path | None = None,
     delivery_adapter_path: str | Path | None = None,
+    delivery_runtime_wheel_path: str | Path | None = None,
+    delivery_runtime_wheel_paths: Sequence[str | Path] | None = None,
+    runtime_install_evidence: Mapping[str, object] | None = None,
     notebook_stage_timings: Mapping[str, float] | None = None,
+    notebook_timing_details: Mapping[str, object] | None = None,
+    validated_layout: KaggleInputLayout | None = None,
     device: str | torch.device = "cpu",
     allow_local_smoke: bool = False,
     notebook_started_at: float | None = None,
@@ -1667,7 +2786,21 @@ def run_kaggle_baseline(
         os.environ.get("KAGGLE_KERNEL_RUN_TYPE") or os.environ.get("KAGGLE_URL_BASE")
     ):
         raise KaggleDeliveryError("Kaggle baseline must run in a Kaggle notebook; use local smoke only explicitly")
+    adapter_preflight_started = time.perf_counter()
+    process_wall_started = adapter_preflight_started
+    process_cpu_started = os.times()
+    timing_details_input = dict(notebook_timing_details or {})
+    delivery_request_validation_seconds = 0.0
+    candidate_load_hash_verification_seconds = 0.0
+    runtime_pin_gate_seconds = 0.0
     approval_sha256: str | None = None
+    delivery_validation_reused = False
+    candidate_hashes_reused = False
+    request: KaggleDeliveryRequest | None = None
+    bundle: CandidateBundle | None = None
+    candidate: dict[str, object] | None = None
+    workload_kind = "local_smoke"
+    input_manifest_sha256: str | None = None
     if not allow_local_smoke:
         required_paths = (
             (delivery_request_root, "delivery_request_root"),
@@ -1682,38 +2815,114 @@ def run_kaggle_baseline(
             raise KaggleDeliveryError("actual Kaggle execution requires a notebook-start timer")
         if notebook_stage_timings is None:
             raise KaggleDeliveryError("actual Kaggle execution requires notebook startup/import timings")
-        request = load_kaggle_delivery(
-            cast(str | Path, delivery_request_root),
-            candidate_root=candidate_root,
-            delivery_notebook_path=cast(str | Path, delivery_notebook_path),
-            delivery_adapter_path=cast(str | Path, delivery_adapter_path),
-        )
-        if delivery_request_checksum is not None and delivery_request_checksum != request.request_checksum:
-            raise KaggleDeliveryError("supplied delivery request checksum differs from request.json")
-        delivery_request_checksum = request.request_checksum
-        request_notebook = _mapping(request.payload.get("delivery_notebook"), "request delivery notebook")
-        request_adapter = _mapping(request.payload.get("delivery_adapter"), "request delivery adapter")
-        request_notebook_sha256 = _nonempty(request_notebook.get("sha256"), "delivery notebook sha256")
-        request_adapter_sha256 = _nonempty(request_adapter.get("sha256"), "delivery adapter sha256")
-        if delivery_notebook_sha256 is not None and delivery_notebook_sha256 != request_notebook_sha256:
-            raise KaggleDeliveryError("supplied delivery notebook checksum differs from request.json")
-        if delivery_adapter_sha256 is not None and delivery_adapter_sha256 != request_adapter_sha256:
-            raise KaggleDeliveryError("supplied delivery adapter checksum differs from request.json")
-        delivery_notebook_sha256 = request_notebook_sha256
-        delivery_adapter_sha256 = request_adapter_sha256
-        approval_path = Path(cast(str | Path, owner_approval_path))
-        _approval_payload(approval_path, request.request_checksum)
-        approval_sha256 = _sha256_file(approval_path)
+        if validated_layout is not None:
+            validation = _reuse_discovered_kaggle_inputs(
+                validated_layout,
+                candidate_root=candidate_root,
+                input_root=input_root,
+                delivery_request_root=cast(str | Path, delivery_request_root),
+                owner_approval_path=cast(str | Path, owner_approval_path),
+                delivery_notebook_path=cast(str | Path, delivery_notebook_path),
+                delivery_adapter_path=cast(str | Path, delivery_adapter_path),
+                delivery_request_checksum=delivery_request_checksum,
+                delivery_notebook_sha256=delivery_notebook_sha256,
+                delivery_adapter_sha256=delivery_adapter_sha256,
+                delivery_runtime_wheel_path=delivery_runtime_wheel_path,
+                delivery_runtime_wheel_paths=delivery_runtime_wheel_paths,
+            )
+            request = validation.request
+            bundle = validation.candidate_bundle
+            candidate = dict(validation.candidate_reference)
+            delivery_request_checksum = request.request_checksum
+            delivery_notebook_sha256 = validation.delivery_notebook_sha256
+            delivery_adapter_sha256 = validation.delivery_adapter_sha256
+            approval_sha256 = validation.approval_sha256
+            candidate_load_hash_verification_seconds = validation.candidate_load_hash_verification_seconds
+            delivery_validation_reused = True
+            candidate_hashes_reused = True
+            workload_kind = validated_layout.workload_kind
+            input_manifest_sha256 = validated_layout.input_manifest_sha256
+        else:
+            request_validation_started = time.perf_counter()
+            request = load_kaggle_delivery(
+                cast(str | Path, delivery_request_root),
+                candidate_root=candidate_root,
+                delivery_notebook_path=cast(str | Path, delivery_notebook_path),
+                delivery_adapter_path=cast(str | Path, delivery_adapter_path),
+                delivery_runtime_wheel_path=delivery_runtime_wheel_path,
+                delivery_runtime_wheel_paths=delivery_runtime_wheel_paths,
+            )
+            if request.payload.get("delivery_runtime") is not None and not _runtime_wheel_paths(
+                delivery_runtime_wheel_path,
+                delivery_runtime_wheel_paths,
+            ):
+                raise KaggleDeliveryError("actual execution requires the request's offline runtime wheelhouse")
+            if delivery_request_checksum is not None and delivery_request_checksum != request.request_checksum:
+                raise KaggleDeliveryError("supplied delivery request checksum differs from request.json")
+            delivery_request_checksum = request.request_checksum
+            request_notebook = _mapping(request.payload.get("delivery_notebook"), "request delivery notebook")
+            request_adapter = _mapping(request.payload.get("delivery_adapter"), "request delivery adapter")
+            request_notebook_sha256 = _nonempty(request_notebook.get("sha256"), "delivery notebook sha256")
+            request_adapter_sha256 = _nonempty(request_adapter.get("sha256"), "delivery adapter sha256")
+            if delivery_notebook_sha256 is not None and delivery_notebook_sha256 != request_notebook_sha256:
+                raise KaggleDeliveryError("supplied delivery notebook checksum differs from request.json")
+            if delivery_adapter_sha256 is not None and delivery_adapter_sha256 != request_adapter_sha256:
+                raise KaggleDeliveryError("supplied delivery adapter checksum differs from request.json")
+            delivery_notebook_sha256 = request_notebook_sha256
+            delivery_adapter_sha256 = request_adapter_sha256
+            approval_path = Path(cast(str | Path, owner_approval_path))
+            _approval_payload(approval_path, request.request_checksum)
+            approval_sha256 = _sha256_file(approval_path)
+            delivery_request_validation_seconds = time.perf_counter() - request_validation_started
+            input_reference = _execution_input_reference(
+                request.payload,
+                default_mount_slug=KAGGLE_COMPETITION_SLUG,
+            )
+            workload_kind = str(input_reference["workload_kind"])
+            if request.payload.get("execution_input") is not None:
+                manifest_path = Path(input_root) / str(input_reference["manifest_filename"])
+                if manifest_path.is_file() and not manifest_path.is_symlink():
+                    input_manifest_sha256 = _sha256_file(manifest_path)
         _nonempty(delivery_request_checksum, "delivery_request_checksum")
         for stage in ("startup_setup", "imports"):
             _required_float(notebook_stage_timings.get(stage), f"notebook {stage} seconds")
     else:
         notebook_stage_timings = {"startup_setup": 0.0, "imports": 0.0}
-    bundle = load_candidate(candidate_root)
-    candidate = _candidate_reference(bundle)
+    if bundle is None or candidate is None:
+        candidate_started = time.perf_counter()
+        bundle = load_candidate(candidate_root)
+        candidate = _candidate_reference(bundle)
+        candidate_load_hash_verification_seconds = time.perf_counter() - candidate_started
     candidate_checkpoints = candidate.get("model_checkpoints")
     if not isinstance(candidate_checkpoints, list):
         raise KaggleDeliveryError("candidate checkpoint reference is invalid")
+    runtime_environment = _mapping(candidate.get("environment"), "candidate environment")
+    runtime_pin_started = time.perf_counter()
+    runtime_audit = validate_kaggle_runtime_pins(
+        _mapping(runtime_environment.get("runtime_pins"), "candidate runtime pins")
+    )
+    runtime_pin_gate_seconds = time.perf_counter() - runtime_pin_started
+    audited_runtime_install: dict[str, object] | None = None
+    if not allow_local_smoke:
+        if request is None:
+            raise KaggleDeliveryError("actual Kaggle execution did not load a delivery request")
+        audited_runtime_install = _runtime_install_audit(runtime_install_evidence, request, runtime_audit)
+    elif runtime_install_evidence is not None:
+        raise KaggleDeliveryError("local smoke cannot claim an offline Kaggle runtime installation")
+    delivery_size_bytes = _directory_size_bytes(request.root) if request is not None else None
+    checkpoint_sizes_bytes = {
+        str(item["path"]): (bundle.root / str(item["path"])).stat().st_size
+        for item in candidate_checkpoints
+    }
+    runtime_package_sizes_bytes = {
+        str(audit.get("package")): int(path.stat().st_size)
+        for path, audit in zip(
+            _runtime_wheel_paths(delivery_runtime_wheel_path, delivery_runtime_wheel_paths),
+            _runtime_wheel_references(request.payload.get("delivery_runtime"))
+            if request is not None and request.payload.get("delivery_runtime") is not None
+            else (),
+        )
+    }
     output = Path(output_path)
     evidence_destination = Path(evidence_path) if evidence_path is not None else None
     private_destination = Path(private_evidence_path) if private_evidence_path is not None else None
@@ -1732,14 +2941,17 @@ def run_kaggle_baseline(
     if private_destination is not None:
         _ensure_outside(private_destination, (Path(candidate_root).resolve(),), "Kaggle private evidence")
 
+    adapter_preflight_seconds = time.perf_counter() - adapter_preflight_started
     started = notebook_started_at if notebook_started_at is not None else time.perf_counter()
     input_path = Path(input_root)
     metadata_started = time.perf_counter()
     metadata_paths = (input_path / "test.csv", input_path / "test_series.csv")
     decoder, preprocess, packing = _candidate_runtime(bundle)
-    studies, input_summary, private_records, decode_seconds = _load_kaggle_studies(
+    dicom_profile = _KaggleDicomProfile()
+    studies, input_summary, private_records, decode_seconds, dicom_profile = _load_kaggle_studies(
         input_path,
         decoder,
+        profile=dicom_profile,
     )
     metadata_seconds = time.perf_counter() - metadata_started - decode_seconds
     device_object = torch.device(device)
@@ -1759,6 +2971,8 @@ def run_kaggle_baseline(
     )
     predictions: list[StudyPrediction] = []
     preprocessing_seconds = 0.0
+    preprocessing_resize_seconds = 0.0
+    packing_seconds = 0.0
     inference_seconds = 0.0
     private_by_uid = {str(item["StudyInstanceUID"]): item for item in private_records}
     for study in studies:
@@ -1773,6 +2987,8 @@ def run_kaggle_baseline(
         prediction, timing = _predict_kaggle_study(engine, study, input_failures)
         predictions.append(prediction)
         preprocessing_seconds += timing["preprocessing_seconds"]
+        preprocessing_resize_seconds += timing.get("preprocessing_resize_seconds", timing["preprocessing_seconds"])
+        packing_seconds += timing.get("packing_seconds", 0.0)
         inference_seconds += timing["inference_ensembling_seconds"]
         private_prediction = private_by_uid[study.study_instance_uid]
         private_prediction["prediction"] = {
@@ -1798,6 +3014,19 @@ def run_kaggle_baseline(
     submission_validation = validate_submission_csv(output, expected_uids)
     csv_seconds = time.perf_counter() - output_started
     whole_seconds = time.perf_counter() - started
+    process_wall_seconds = time.perf_counter() - process_wall_started
+    process_cpu_finished = os.times()
+    process_user_seconds = process_cpu_finished.user - process_cpu_started.user
+    process_system_seconds = process_cpu_finished.system - process_cpu_started.system
+    process_cpu_seconds = process_user_seconds + process_system_seconds
+    try:
+        affinity_cpu_count = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        affinity_cpu_count = None
+    try:
+        interop_thread_count: int | None = torch.get_num_interop_threads()
+    except RuntimeError:
+        interop_thread_count = None
     fallback_numerator = sum(item.used_fallback for item in predictions)
     fallback_denominator = len(predictions)
     fallback_rate = fallback_numerator / fallback_denominator
@@ -1805,7 +3034,6 @@ def run_kaggle_baseline(
         peak_vram_bytes = int(torch.cuda.max_memory_allocated(device_object))
     else:
         peak_vram_bytes = 0
-    projection_seconds = whole_seconds * KAGGLE_TARGET_STUDIES / len(studies)
     stage_timings = {
         "startup_setup": float(notebook_stage_timings["startup_setup"]),
         "imports": float(notebook_stage_timings["imports"]),
@@ -1814,6 +3042,97 @@ def run_kaggle_baseline(
         "preprocessing": preprocessing_seconds,
         "inference_ensembling": inference_seconds,
         "csv_creation": csv_seconds,
+    }
+    def timing_detail_seconds(name: str, fallback: float = 0.0) -> float:
+        return _required_float(timing_details_input.get(name, fallback), f"Kaggle timing detail {name}")
+
+    projection = _fixed_plus_scaling_projection(
+        whole_seconds=whole_seconds,
+        study_count=len(studies),
+        target_studies=KAGGLE_TARGET_STUDIES,
+        stages={
+            **stage_timings,
+            "input_discovery": timing_detail_seconds("input_discovery_seconds"),
+            "adapter_preflight": adapter_preflight_seconds,
+        },
+    )
+
+    notebook_startup_preflight_seconds = timing_detail_seconds(
+        "notebook_startup_preflight_seconds",
+        stage_timings["startup_setup"],
+    )
+    offline_wheel_verification_seconds = timing_detail_seconds("offline_wheel_verification_seconds")
+    offline_wheel_install_seconds = timing_detail_seconds("offline_wheel_install_seconds")
+    offline_runtime_probe_seconds = timing_detail_seconds("offline_runtime_probe_seconds")
+    input_discovery_seconds = timing_detail_seconds("input_discovery_seconds")
+    accounted_seconds = (
+        notebook_startup_preflight_seconds
+        + stage_timings["imports"]
+        + input_discovery_seconds
+        + adapter_preflight_seconds
+        + stage_timings["model_metadata_loading"]
+        + stage_timings["dicom_read_decode"]
+        + stage_timings["preprocessing"]
+        + stage_timings["inference_ensembling"]
+        + stage_timings["csv_creation"]
+    )
+    detailed_timing = {
+        "schema_version": KAGGLE_PROFILE_SCHEMA_VERSION,
+        "notebook_startup_preflight_seconds": notebook_startup_preflight_seconds,
+        "offline_wheel_verification_seconds": offline_wheel_verification_seconds,
+        "offline_wheel_install_seconds": offline_wheel_install_seconds,
+        "offline_runtime_probe_seconds": offline_runtime_probe_seconds,
+        "input_discovery_seconds": input_discovery_seconds,
+        "adapter_preflight_seconds": adapter_preflight_seconds,
+        "delivery_validation_mode": (
+            "discovered_layout_reused" if delivery_validation_reused else "full_request_revalidation"
+        ),
+        "delivery_validation_reused": delivery_validation_reused,
+        "candidate_hashes_reused": candidate_hashes_reused,
+        "runtime_wheel_hashes_reused": delivery_validation_reused,
+        "approval_hash_reused": delivery_validation_reused,
+        "delivery_request_validation_seconds": delivery_request_validation_seconds,
+        "candidate_load_hash_verification_seconds": candidate_load_hash_verification_seconds,
+        "runtime_pin_gate_seconds": runtime_pin_gate_seconds,
+        "dicom_archive_index_discovery_seconds": dicom_profile.archive_index_discovery_seconds,
+        "dicom_read_decode_seconds": dicom_profile.dicom_read_decode_seconds,
+        "dicom_read_parse_seconds": dicom_profile.dicom_read_parse_seconds,
+        "pixel_decode_seconds": dicom_profile.pixel_decode_seconds,
+        "preprocessing_resize_seconds": preprocessing_resize_seconds,
+        "preprocessing_packing_seconds": packing_seconds,
+        "model_metadata_loading_seconds": max(0.0, metadata_seconds),
+        "model_load_seconds": model_seconds,
+        "model_inference_seconds": inference_seconds,
+        "csv_generation_validation_seconds": csv_seconds,
+        "total_runtime_seconds": whole_seconds,
+        "accounted_runtime_seconds": accounted_seconds,
+        "unattributed_runtime_seconds": max(0.0, whole_seconds - accounted_seconds),
+        "dicom_file_open_count": dicom_profile.dicom_file_open_count,
+        "dicom_file_reopen_count": dicom_profile.dicom_file_reopen_count,
+        "dicom_decode_call_count": dicom_profile.decode_call_count,
+        "dicom_index_scan_count": dicom_profile.index_scan_count,
+        "dicom_indexed_file_count": dicom_profile.indexed_file_count,
+        "dicom_access": {
+            "source_kind": "directory",
+            "archive_access_mode": "not_applicable_directory_input",
+            "dicom_access_mode": "serial_one_open_per_slice",
+            "files_reopened_or_rescanned": False,
+        },
+        "cpu": {
+            "logical_cpu_count": os.cpu_count(),
+            "affinity_cpu_count": affinity_cpu_count,
+            "torch_num_threads": torch.get_num_threads(),
+            "torch_num_interop_threads": interop_thread_count,
+            "process_user_seconds": process_user_seconds,
+            "process_system_seconds": process_system_seconds,
+            "process_cpu_seconds": process_cpu_seconds,
+            "process_wall_seconds": process_wall_seconds,
+            "process_cpu_utilization_ratio": (
+                process_cpu_seconds / process_wall_seconds if process_wall_seconds > 0.0 else 0.0
+            ),
+        },
+        "peak_ram_bytes": _peak_rss_bytes(),
+        "dicom_profile": dicom_profile.public_dict(),
     }
     evidence: dict[str, object] = {
         "schema_version": KAGGLE_EXECUTION_SCHEMA_VERSION,
@@ -1834,18 +3153,27 @@ def run_kaggle_baseline(
             "internet_enabled": False,
             "runtime_network_download": False,
             "reports_required": False,
-            "python_version": platform.python_version(),
-            "torch_version": torch.__version__,
+            "python_version": runtime_audit["python_version"],
+            "torch_version": _mapping(runtime_audit.get("imported_packages"), "runtime imported packages")["torch"],
             "accelerator": str(device),
-            "installed_runtime_pins": {
-                "numpy": np.__version__,
-                "pydicom": pydicom.__version__,
-                "torch": torch.__version__,
-            },
+            "cpu_count": os.cpu_count(),
+            "gpu_name": (
+                torch.cuda.get_device_name(device_object)
+                if device_object.type == "cuda" and torch.cuda.is_available()
+                else None
+            ),
+            "installed_runtime_pins": dict(_mapping(runtime_audit.get("packages"), "runtime package audit")),
+            "imported_runtime_pins": dict(
+                _mapping(runtime_audit.get("imported_packages"), "runtime imported package audit")
+            ),
         },
         "resources": {
             "model_size_bytes": candidate["model_size_bytes"],
             "candidate_bundle_size_bytes": candidate["candidate_bundle_size_bytes"],
+            "delivery_size_bytes": delivery_size_bytes,
+            "checkpoint_sizes_bytes": checkpoint_sizes_bytes,
+            "runtime_package_sizes_bytes": runtime_package_sizes_bytes,
+            "peak_ram_bytes": detailed_timing["peak_ram_bytes"],
             "peak_vram_bytes": peak_vram_bytes,
             "ensemble_model_count": len(candidate_checkpoints),
         },
@@ -1853,6 +3181,9 @@ def run_kaggle_baseline(
             "test_csv_sha256": _sha256_file(metadata_paths[0]),
             "test_series_csv_sha256": _sha256_file(metadata_paths[1]),
             "input_layout": "test.csv + test_series.csv + test_series/",
+            "source": "competition_hidden_test" if workload_kind == "hidden_test" else "private_representative_dataset",
+            "workload_kind": workload_kind,
+            "manifest_sha256": input_manifest_sha256,
         },
         "workload": {
             "study_count": input_summary["study_count"],
@@ -1860,24 +3191,29 @@ def run_kaggle_baseline(
             "slice_count": input_summary["slice_count"],
             "decoded_slice_count": input_summary["decoded_slice_count"],
             "actual_workload_recorded": True,
-            "hidden_test": not allow_local_smoke,
+            "workload_kind": workload_kind,
+            "hidden_test": workload_kind == "hidden_test",
             "example_only": allow_local_smoke,
+            "series_per_study": input_summary["series_per_study"],
+            "slices_per_study": input_summary["slices_per_study"],
+            "long_tail": input_summary["long_tail"],
         },
         "timing": {
             "whole_notebook_seconds": whole_seconds,
             "stages": stage_timings,
+            "detailed": detailed_timing,
             "stage_timing_source": "notebook_wall_clock" if not allow_local_smoke else "local_smoke_adapter",
-            "projection": {
-                "target_studies": KAGGLE_TARGET_STUDIES,
-                "projected_seconds_at_target": projection_seconds,
-                "method": "linear_study_count_scaling",
-            },
+            "projection": projection,
         },
         "output": {
             "filename": "submission.csv",
             "accepted_by_kaggle": False,
             "accepted_by_local_contract": True,
             **submission_validation,
+            "expected_row_count": len(studies),
+            "missing_rows": 0,
+            "duplicate_rows": 0,
+            "decode_failure_count": input_summary["decode_failure_count"],
             "sha256": _sha256_file(output),
         },
         "fallback": {
@@ -1905,6 +3241,8 @@ def run_kaggle_baseline(
     }
     if approval_sha256 is not None:
         evidence["approval"] = {"sha256": approval_sha256}
+    if audited_runtime_install is not None:
+        evidence["runtime_install"] = audited_runtime_install
     if evidence_destination is not None:
         atomic_json_write(evidence_destination, evidence)
     if private_destination is not None:
@@ -1922,21 +3260,26 @@ def run_kaggle_baseline(
 
 __all__ = [
     "KAGGLE_APPROVAL_SCHEMA_VERSION",
+    "KAGGLE_COMPETITION_SLUG",
     "DEFAULT_KAGGLE_ADAPTER_PATH",
     "KAGGLE_DELIVERY_SCHEMA_VERSION",
     "KAGGLE_ENGINEERING_TARGET_SECONDS",
     "KAGGLE_EXECUTION_SCHEMA_VERSION",
     "KAGGLE_HARD_LIMIT_SECONDS",
     "KAGGLE_PROMOTION_SCHEMA_VERSION",
+    "KAGGLE_PROFILE_SCHEMA_VERSION",
     "KAGGLE_RUNTIME_STAGES",
     "KAGGLE_TARGET_STUDIES",
     "KAGGLE_VERIFICATION_SCHEMA_VERSION",
     "KaggleDeliveryError",
     "KaggleDeliveryRequest",
     "KaggleInferenceResult",
+    "KaggleInputLayout",
     "KagglePromotion",
     "KaggleVerification",
     "OWNER_APPROVAL_SCOPE",
+    "audit_kaggle_runtime_wheel",
+    "discover_kaggle_inputs",
     "load_kaggle_delivery",
     "load_kaggle_promotion",
     "load_kaggle_verification",
@@ -1944,4 +3287,5 @@ __all__ = [
     "promote_kaggle_candidate",
     "record_kaggle_verification",
     "run_kaggle_baseline",
+    "validate_kaggle_runtime_pins",
 ]
