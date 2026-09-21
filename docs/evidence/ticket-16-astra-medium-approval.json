@@ -1,0 +1,36 @@
+{
+  "approval": {
+    "execution_approved_by": "task-owner instruction",
+    "execution_approved_on": "2026-09-14",
+    "execution_reference": "tsk3.txt (preparation only; operator must still start manually)",
+    "identity_approved_by": "task-owner instruction",
+    "identity_approved_on": "2026-09-14",
+    "identity_reference": "tsk3.txt"
+  },
+  "approval_fingerprint": "ab59a3f7521e3646dcc3d4e6b409dd884c51640bdc5a33b6272f6bdac3221603",
+  "approval_id": "ticket16-astra-medium-codex-subscription-approval-v1",
+  "approval_scope": {
+    "identity_approved": true,
+    "private_report_execution_approved": true,
+    "prompt_approval_required": true
+  },
+  "data_transfer_policy": "private-reports-remain-in-user-controlled-codex-session",
+  "effort": "medium",
+  "execution_mode": "manual-sequential-codex-handoff",
+  "experiment_id": "ticket16-astra-medium-codex-subscription-v1",
+  "integration_policy": {
+    "no_api_integration": true,
+    "no_api_key_handling": true,
+    "no_external_model_wrapper": true,
+    "no_provider_sdk": true
+  },
+  "model": {
+    "identity_fingerprint": "2654972af4dd98d598cba35f4965e1152910df421fcf525417633fe01a837a93",
+    "name": "Astra Medium",
+    "revision": "subscription-selected-astra-medium",
+    "surface": "Codex subscription model switch"
+  },
+  "reasoning_effort": "medium",
+  "schema_version": "rsna-knee-ticket16-astra-approval-v1",
+  "status": "approved-for-prompt-review-and-manual-handoff"
+}

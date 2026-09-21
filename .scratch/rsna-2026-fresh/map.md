@@ -12,6 +12,9 @@ repository artifacts.
   synthetic-testable fold boundary. The ticket remains explicit about pending
   private-report and report-derived-training evidence: [ticket 15](issues/15-evaluate-fold-specific-deterministic-report-extraction.md)
   · [detailed external report](../../../ticket-15-report.md).
+- 2026-09-21 — Ticket 16 is resolved/closed with a mixed/review-required
+  scientific outcome after the corrected Astra aggregation review: [ticket 16](issues/16-compare-one-approved-local-language-model-extractor.md)
+  · [corrected final report](../../../tsk2-report.md).
 
 ## Fog
 

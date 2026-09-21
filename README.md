@@ -625,57 +625,108 @@ execution identity, complete private fold eligibility/exclusion sets, and
 upstream manifest digests. No model checkpoint or learned adaptation is an
 upstream input for this deterministic comparator.
 
-## Ticket 16 approved local language-model comparison
+## Ticket 16 Astra Medium Codex handoff
 
-`rsna_knee.local_report_extraction` provides the approval-gated second
-extractor. The committed proposal is the exact Hugging Face
-[`google/flan-t5-small`](https://huggingface.co/google/flan-t5-small) checkpoint
-at revision `0fc9ddf78a1e988dac52e2dac162b0ede4fd74ab`, with the
-`model.safetensors` SHA-256
-`495fa51e204676f1a857a9fc13c4c89f3f5ba9f480b898cebca02add25e6d749` and its
-Apache-2.0 model-card license. This is a proposal, not an owner approval;
-the default manifest has `approved: false` and cannot load or use a model.
-The proposal records the source, version, revision, weight hash, public
-availability cutoff, eligibility and leakage assessment, intended purpose,
-expected benefit, reproducibility method, deterministic comparator, CPU
-location/budget, and the no-report-transfer policy.
+The intended learned extractor is now **Astra Medium through a Codex
+subscription model switch**. There is no API integration, API-key handling,
+provider SDK, billing/token API, model download, or external model wrapper.
+`rsna_knee.astra_handoff` prepares private inputs and validates responses saved
+by the operator; it never invokes Astra. The former FLAN-T5/local-checkpoint
+path is retained only as a deprecated synthetic compatibility seam and its
+CLI now fails closed.
 
-Before a run, the owner must provide a private approval JSON naming that exact
-resource and an already-present local model directory. The loader verifies the
-declared weight and supporting config/tokenizer hashes and calls `transformers`
-with `local_files_only=True`; it does not download from a model hub. GPU
-execution is rejected by this ticket's boundary and needs a separate approval.
-The optional `transformers` runtime is not part of the competition inference
-environment.
-
-The frozen prompt asks for one JSON object containing all twelve target states,
-model confidence and short audit evidence. Its model-facing semantic choices
-are positive, negative, not-mentioned, uncertain and unknown; the parser
-reserves extraction-failed for malformed or otherwise unusable pipeline output.
-Explicit positive/negative states alone receive mask one; not-mentioned,
-uncertain, unknown and extraction-failed states remain masked. Prompt, model,
-output, fold, source digest, response digest, latency, token counts and
-artifact provenance are recorded without persisting raw report text in either
-public or private JSON.
-
-The bounded adapter is `slurm/run_ticket16_local_report_extraction.sbatch`; it
-uses one non-exclusive `cluster1-cpu` node, at most 16 CPUs, 64 GB and six
-hours:
+The fixed experiment identity is
+`ticket16-astra-medium-codex-subscription-v1`. Its model identity is
+`Astra Medium` / `Codex subscription model switch`, with revision
+`subscription-selected-astra-medium`, reasoning effort `medium`, effort
+`medium`, and execution mode `manual-sequential-codex-handoff`. The identity
+approval record is written with:
 
 ```bash
-export RSNA_TICKET16_FOLD_MANIFEST=/private/path/ticket-04-folds/private/fold-manifest.json
-export RSNA_TICKET16_REPORTS=/private/path/reports/private/report-corpus.json
-export RSNA_TICKET16_MODEL_APPROVAL=/private/path/ticket-16/private/model-approval.json
-export RSNA_TICKET16_MODEL_DIR=/private/path/models/flan-t5-small
-export RSNA_TICKET16_OUTPUT=/private/path/ticket-16
-sbatch --wait slurm/run_ticket16_local_report_extraction.sbatch
+PYTHONPATH=src .venv/bin/python -m rsna_knee.astra_handoff_cli \
+  write-approval --output /private/ticket-16/astra-approval.json
 ```
 
-The runner first computes the ticket-15 deterministic baseline, then runs the
-approved local model over the same training-label and held-out-gold cohorts.
-`compare_report_extractors` refuses different fold manifests, report sources,
-report digests or eligible cohorts. Public comparison JSON reports per-target
-accuracy where defined, coverage, all preserved states, failures, auditability,
-latency, token/artifact cost and repeatability; private JSON retains the
-identifier-bearing fold audit. No real model/report execution was performed
-by the implementation change until V13 approval is supplied.
+The medical prompt is deliberately absent from the repository until the owner
+supplies and approves it. A prompt artifact records the exact prompt text,
+prompt SHA-256, target order, output-schema version, approval reference and a
+prompt fingerprint. Batch preparation refuses a missing or unapproved prompt.
+
+The private handoff uses sorted unique reports in batches of at most 16. For
+`N` available reports the expected count is `ceil(N / 16)`; the batch ID is
+derived from the experiment, prompt, fold manifest, source digest, ordered
+study/report digests and batch position. Each report is sent once: a gold
+study is assigned only to its held-out fold, while a report-only study is
+available only to the other two training folds. Missing reports remain explicit
+Ticket 15 cohort metadata. No reference labels are placed in the Astra input.
+
+After the prompt is approved, preparation is:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m rsna_knee.astra_handoff_cli prepare \
+  --fold-manifest /private/ticket-04/private/fold-manifest.json \
+  --reports /private/reports/private/report-corpus.json \
+  --approval /private/ticket-16/astra-approval.json \
+  --prompt /private/ticket-16/approved-prompt.json \
+  --public-plan /private/ticket-16/public/plan.json \
+  --private-dir /private/ticket-16/private
+```
+
+For each pending input, switch Codex to Astra Medium, set reasoning/effort to
+Medium, attach exactly one immutable `input.json`, and instruct Astra only to
+apply the supplied frozen prompt and emit the exact output JSON. Save the
+response verbatim, then validate it locally:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m rsna_knee.astra_handoff_cli record \
+  --private-plan /private/ticket-16/private/plan.json \
+  --private-dir /private/ticket-16/private \
+  --batch-id <stable-batch-id> \
+  --raw-output /private/ticket-16/responses/<stable-batch-id>.json
+PYTHONPATH=src .venv/bin/python -m rsna_knee.astra_handoff_cli pending \
+  --private-plan /private/ticket-16/private/plan.json \
+  --private-dir /private/ticket-16/private
+```
+
+The exact response contract is a top-level object with only
+`schema_version`, `experiment_id`, `model_identity_fingerprint`,
+`reasoning_effort`, `effort`, `prompt_fingerprint`, `batch_id`, `input_digest`
+and `studies`. Each study has only `study_instance_uid` and `targets`; targets
+are the twelve canonical columns in order and each target has only `target`
+and `state`. The only semantic states are `positive`, `negative`,
+`not-mentioned`, `uncertain` and `unknown`. `extraction-failed` is never a
+model-selected state: invalid JSON, wrong schema, duplicate/missing studies or
+targets, invalid states, and incomplete output produce all-target
+`extraction-failed` records with mask zero. A response from another
+prompt/model/effort/batch is rejected rather than mixed.
+
+Raw responses are immutable private files. Private audits retain digests,
+fold/cohort metadata and validated states; public evidence contains only
+counts, hashes, statuses and policy flags. Resume selects only batches without
+a completed validated or extraction-failed audit, so completed batches are not
+silently repeated. This handoff performs no prompt tuning, held-out
+adaptation, weak-label training, aggregation, comparator metrics, or
+report-only accuracy claim; Luna performs those later using Ticket 15's exact
+cohorts and frozen gold-label precedence.
+
+### Ticket 16 final closure
+
+Ticket 16 is resolved/closed with the final outcome:
+
+`TICKET 16 SCIENTIFIC EXPERIMENT COMPLETE — MIXED / REVIEW REQUIRED`
+
+The corrected scientific report is maintained outside the repository at
+`/home/ch.jitheswar/tsk2-report.md`. The final Astra Medium handoff completed
+276/276 validated batches over 4,407 studies with zero validation failures and
+zero retries. Astra materially increased weak-label coverage for all 12
+targets, but held-out behavior was target-dependent. Common-target macro
+selective accuracy was Astra 0.8614 versus Ticket 15 0.8961; micro selective
+accuracy was Astra 325/370 (87.8%) versus Ticket 15 68/78 (87.2%). The two
+extractors agreed on all 75 held-out target calls where both were supervised.
+
+The corrected aggregation in `src/rsna_knee/astra_aggregation.py` separates
+selective confusion metrics from full-reference capture metrics and documents
+the exact macro target sets. Astra labels are not generally approved for
+training because Ticket 16 did not predeclare an admission rule. No Astra
+rerun, report reinterpretation, training run, new scientific decision or
+Ticket 17 work was performed.

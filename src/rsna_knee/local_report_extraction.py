@@ -54,8 +54,9 @@ LOCAL_MODEL_PROMPT_SCHEMA_VERSION = "rsna-knee-local-model-prompt-v1"
 LOCAL_MODEL_OUTPUT_SCHEMA_VERSION = "rsna-knee-local-model-output-v1"
 LOCAL_MODEL_EXTRACTION_SCHEMA_VERSION = "rsna-knee-local-model-extraction-v1"
 LOCAL_MODEL_COMPARISON_SCHEMA_VERSION = "rsna-knee-local-model-comparison-v1"
-LOCAL_MODEL_EXTRACTOR_VERSION = "approved-local-language-model-v1"
-LOCAL_MODEL_PROMPT_VERSION = "flan-t5-report-json-v1"
+LOCAL_MODEL_EXTRACTOR_VERSION = "legacy-synthetic-local-model-compat-v1"
+LOCAL_MODEL_PROMPT_VERSION = "legacy-local-model-report-json-v1"
+LOCAL_MODEL_IMPLEMENTATION_STATUS = "deprecated-synthetic-compatibility-only"
 LOCAL_MODEL_APPROVAL_DATE = "2026-09-14"
 
 FLAN_T5_SMALL_MODEL_ID = "google/flan-t5-small"
@@ -538,7 +539,13 @@ def verify_local_model_artifact(
 
 
 def proposed_flan_t5_small_approval() -> LocalModelApproval:
-    """Return the exact ticket-16 proposal; it is intentionally unapproved."""
+    """Return the legacy FLAN proposal for migration tests only.
+
+    This compatibility factory is not the Ticket 16 intended extractor.  It
+    remains readable so old synthetic artifacts fail or migrate explicitly;
+    ``from_local_directory`` rejects the old runtime path.  New work must use
+    :mod:`rsna_knee.astra_handoff`.
+    """
 
     return LocalModelApproval(
         approval_id="ticket16-proposal-flan-t5-small-v1",
@@ -599,7 +606,7 @@ def write_local_model_proposal(
     path: str | Path,
     proposal: LocalModelApproval | None = None,
 ) -> Path:
-    """Write a non-overwriting public proposal for owner review."""
+    """Write the legacy proposal for migration audit; do not use for Ticket 16."""
 
     selected = proposal or proposed_flan_t5_small_approval()
     if selected.approved:
@@ -1276,7 +1283,12 @@ def parse_local_model_output(
 
 @dataclass(frozen=True)
 class LocalLanguageModelExtractor:
-    """Frozen local model + approval + prompt identity used for ticket 16."""
+    """Legacy in-memory synthetic extractor retained for prior tests/artifacts.
+
+    It is not the intended Ticket 16 learned extractor.  Real Ticket 16 work
+    uses :class:`rsna_knee.astra_handoff.AstraBatchPlan` and a manual Codex
+    handoff; this class has no production model-loading path.
+    """
 
     approval: LocalModelApproval
     prompt: FrozenLocalPrompt
@@ -1354,25 +1366,16 @@ class LocalLanguageModelExtractor:
         prompt: FrozenLocalPrompt | None = None,
         device: str = "cpu",
     ) -> "LocalLanguageModelExtractor":
-        """Load one approved model directory with the optional runtime offline."""
+        """Reject the superseded local-checkpoint path.
 
-        if device != "cpu":
-            raise LocalModelApprovalError(
-                "ticket-16 model loading is CPU-only; GPU execution needs separate approval"
-            )
-        started = time.perf_counter_ns()
-        generator = TransformersLocalTextGenerator(
-            approval,
-            model_directory,
-            device=device,
-        )
-        return cls(
-            approval=approval,
-            prompt=prompt or freeze_local_prompt(),
-            generator=generator,
-            verified_artifact_sha256=generator.verification.sha256,
-            verified_artifact_size_bytes=generator.verification.size_bytes,
-            model_load_elapsed_ns=time.perf_counter_ns() - started,
+        The old method remains as a loud compatibility seam so callers do not
+        accidentally download or load FLAN-T5.  Ticket 16's intended path is
+        the manual Astra handoff in :mod:`rsna_knee.astra_handoff`.
+        """
+
+        del approval, model_directory, prompt, device
+        raise LocalModelApprovalError(
+            "the local-checkpoint Ticket 16 path is deprecated; use the manual Astra Medium Codex handoff"
         )
 
     def extract(self, report: ReportRecord, *, fold: int) -> LocalReportInterpretation:
@@ -1426,80 +1429,6 @@ class LocalLanguageModelExtractor:
             model_fingerprint=self.fingerprint,
             prompt_fingerprint=self.prompt.fingerprint,
             prompt_char_count=len(prompt_text),
-        )
-
-
-class TransformersLocalTextGenerator:
-    """Offline ``transformers`` adapter for the approved seq2seq checkpoint."""
-
-    def __init__(
-        self,
-        approval: LocalModelApproval,
-        model_directory: str | Path,
-        *,
-        device: str = "cpu",
-    ) -> None:
-        if not isinstance(approval, LocalModelApproval):
-            raise LocalModelApprovalError(
-                "local transformers loading requires LocalModelApproval"
-            )
-        approval.require_approved()
-        if device != "cpu":
-            raise LocalModelApprovalError(
-                "TransformersLocalTextGenerator supports CPU only in ticket 16"
-            )
-        self.verification = verify_local_model_artifact(approval, model_directory)
-        try:
-            import torch
-            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer  # type: ignore[import-not-found]
-        except ImportError as exc:
-            raise LocalModelDependencyError(
-                "ticket-16 requires the optional local transformers runtime"
-            ) from exc
-        root = Path(model_directory)
-        try:
-            self._tokenizer = AutoTokenizer.from_pretrained(
-                str(root),
-                local_files_only=True,
-                trust_remote_code=False,
-            )
-            self._model = AutoModelForSeq2SeqLM.from_pretrained(
-                str(root),
-                local_files_only=True,
-                trust_remote_code=False,
-                use_safetensors=True,
-            )
-            self._torch = torch
-            self._model.to(device)
-            self._model.eval()
-        except Exception as exc:
-            raise LocalModelDependencyError(
-                "could not load the approved local model with local_files_only=True"
-            ) from exc
-
-    def generate(
-        self,
-        prompt: str,
-        *,
-        max_new_tokens: int,
-        do_sample: bool,
-        temperature: float,
-    ) -> LocalModelGeneration:
-        encoded = self._tokenizer(prompt, return_tensors="pt", truncation=False)
-        input_token_count = int(encoded["input_ids"].numel())
-        with self._torch.inference_mode():
-            generation_kwargs: dict[str, object] = {
-                "max_new_tokens": max_new_tokens,
-                "do_sample": do_sample,
-            }
-            if do_sample:
-                generation_kwargs["temperature"] = temperature
-            generated = self._model.generate(**encoded, **generation_kwargs)
-        text = self._tokenizer.decode(generated[0], skip_special_tokens=True).strip()
-        return LocalModelGeneration(
-            text,
-            input_token_count=input_token_count,
-            output_token_count=int(generated.shape[-1]),
         )
 
 
@@ -2444,7 +2373,7 @@ def _local_code_revision() -> str:
 
 def _local_environment_fingerprint() -> str:
     package_versions: dict[str, str] = {}
-    for package_name in ("rsna-knee", "numpy", "torch", "transformers"):
+    for package_name in ("rsna-knee", "numpy", "torch"):
         try:
             package_versions[package_name] = version(package_name)
         except PackageNotFoundError:
@@ -2872,6 +2801,7 @@ __all__ = [
     "LOCAL_MODEL_MAX_MEMORY_GB",
     "LOCAL_MODEL_MAX_WALL_TIME_HOURS",
     "LOCAL_MODEL_OUTPUT_SCHEMA_VERSION",
+    "LOCAL_MODEL_IMPLEMENTATION_STATUS",
     "LOCAL_MODEL_PROMPT_SCHEMA_VERSION",
     "LOCAL_MODEL_PROMPT_VERSION",
     "LocalModelApproval",
@@ -2894,7 +2824,6 @@ __all__ = [
     "LocalTargetReportMetrics",
     "ExtractorTargetComparison",
     "ReportExtractorComparison",
-    "TransformersLocalTextGenerator",
     "CallableLocalTextGenerator",
     "compare_report_extractors",
     "freeze_local_prompt",

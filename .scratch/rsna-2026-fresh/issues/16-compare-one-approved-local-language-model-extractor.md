@@ -4,9 +4,9 @@
 
 **Blocked by:** 01: Verify the competition delivery contract; 15: Evaluate fold-specific deterministic report extraction
 
-**Status:** ready-for-human
+**Status:** resolved
 
-**Authorization:** Implementation was explicitly requested on 2026-09-14. The owner approval required before model use, private-data processing and Slurm execution remains outstanding.
+**Authorization:** The owner-approved Astra Medium identity, manual private-report handoff, frozen prompt, and execution scope were recorded before the completed run. No API, model download, or unapproved transfer was used.
 
 **Governing constraints:** Follow the approved parent specification. Significant compute uses Slurm, never KLEF-MASTER. Once implementation is authorized, autonomous CPU work is limited to cluster1-cpu, one node, at most 16 CPUs, 64 GB requested memory, six hours, two concurrent jobs and no exclusive allocation; actual memory use must also be bounded. Every GPU training job, heavier CPU request, protected deletion, paid resource, model/data upload and competition submission retains its specified approval boundary. Preserve private data, the 2 TB soft budget and immutable working candidates. No gate below is marked verified by ticket publication.
 
@@ -35,7 +35,7 @@ These retain the parent specification's acceptance criteria and blocking consequ
 
 ## Completion evidence
 
-- [ ] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+- [x] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Final aggregate evidence is linked below; the scientific outcome remains mixed/review required.
 
 ## Comments
 
@@ -72,3 +72,55 @@ and the complete suite passes (`262`).
 
 The detailed handoff report is outside the repository at
 `/home/ch.jitheswar/ticket-16-report.md`.
+
+### 2026-09-14 — Astra Medium Codex handoff supersedes local FLAN path
+
+Ticket 16's intended learned extractor is now the explicitly identified
+`Astra Medium` model selected through the Codex subscription, with reasoning
+and effort fixed to `medium`. The old FLAN-T5/local-checkpoint implementation
+is deprecated compatibility code only; its runtime CLI and Slurm adapter fail
+closed and no model loader remains in the intended path.
+
+Added `rsna_knee.astra_handoff` and its CLI. The handoff requires an
+owner-approved prompt artifact and records its text SHA-256/fingerprint before
+batch preparation. It creates stable private batches of at most 16 unique
+reports, binds Ticket 15's canonical fold cohorts and gold-label precedence,
+validates an exact twelve-target response schema, rejects context mixing, and
+turns malformed/incomplete output into all-masked `extraction-failed` audit
+records. Raw outputs and private audit artifacts are immutable; public status
+is text-free. Resume skips completed batches. No Astra invocation, private
+report interpretation, weak-label training, prompt tuning or Ticket 17 work
+was performed.
+
+Readiness evidence is in `docs/evidence/ticket-16-local-language-model.md` and
+the detailed owner report is outside the repository at
+`/home/ch.jitheswar/ticket-16-astra-medium-readiness.md`.
+
+## Answer
+
+### Closure decision — 2026-09-21
+
+Ticket 16 is resolved/closed with the final outcome:
+
+`TICKET 16 SCIENTIFIC EXPERIMENT COMPLETE — MIXED / REVIEW REQUIRED`
+
+The authoritative corrected scientific report is outside the repository at
+`/home/ch.jitheswar/tsk2-report.md`. The corrected aggregation definitions and
+regression coverage are implemented in
+`src/rsna_knee/astra_aggregation.py` and
+`tests/test_astra_aggregation.py`.
+
+Operational completion was verified at 276/276 Astra batches over 4,407
+studies, with zero validation failures and zero retries. On the held-out gold
+cohort, the common-target macro selective accuracy was Astra 0.8614 versus
+Ticket 15 0.8961; micro selective accuracy was Astra 325/370 (87.8%) versus
+Ticket 15 68/78 (87.2%). Astra materially increased weak-label coverage for
+all 12 targets, but performance was target-dependent. Astra and Ticket 15
+agreed on all 75 held-out target calls where both were supervised, with zero
+disagreements.
+
+The evidence does not generally approve Astra labels for training: Ticket 16
+did not predeclare an admission rule, and no such policy is invented here.
+The frozen Astra outputs, prompt, fingerprints, Ticket 15 artifacts, and gold
+labels remain unchanged. No new scientific decision, Astra rerun, report
+reinterpretation, training run, or Ticket 17 work was performed.
