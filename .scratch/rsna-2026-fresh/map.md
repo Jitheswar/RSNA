@@ -20,9 +20,14 @@ repository artifacts.
   [ticket 17](issues/17-train-one-fold-with-admissible-weak-labels.md)
   · [public evidence](../../docs/evidence/ticket-17-weak-supervision.md)
   · [external report](../../../ticket-17-report.md).
+- 2026-09-21 — Ticket 17 completed exactly one real fold-0 run using the
+  pre-existing frozen Ticket 15 labels; Astra remained excluded and no benefit
+  claim was made:
+  [public evidence](../../docs/evidence/ticket-17-weak-supervision.md)
+  · [external report beside tsk.txt](../../../tsk-report.md).
 
 ## Fog
 
-- Real-report accuracy, coverage, latency, clinical review, report-derived
-  training benefit and Slurm execution remain pending their authorization and
-  private-data boundary.
+- Real-report accuracy, coverage, latency, clinical review and report-derived
+  training benefit remain outside Ticket 17; Slurm execution is evidenced for
+  the one bounded fold above.

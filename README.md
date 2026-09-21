@@ -750,22 +750,28 @@ ticket because Ticket 16 did not predeclare a training admission policy.
 
 The bounded adapter is `slurm/run_ticket17_train_weak_fold.sbatch`; it requests
 one non-exclusive `cluster1-cpu` node, 16 CPUs, 64 GB and six hours. It
-re-runs the frozen deterministic extractor from the private report corpus,
-publishes text-free public admission evidence plus private label provenance,
-then trains one fold through `train_one_fold(..., supervision=...)`:
+replays and validates the stored Ticket 15 frozen artifact against the private
+report corpus, publishes text-free public admission evidence plus private
+label provenance, then trains one fold through
+`train_one_fold(..., supervision=...)`:
 
 ```bash
 export RSNA_TICKET17_INTEGRATION_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json
 export RSNA_TICKET17_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
 export RSNA_TICKET17_FOLD_MANIFEST=/private/path/ticket-04-folds/private/fold-manifest.json
 export RSNA_TICKET17_REPORTS=/private/path/reports/private/report-corpus.json
+export RSNA_TICKET17_FROZEN_REPORT_ARTIFACT=/private/path/ticket-15/private/report-labels.json
 export RSNA_TICKET17_FOLD=0
 export RSNA_TICKET17_OUTPUT=/private/path/ticket-17-fold-0
 export RSNA_TICKET17_SOURCE_VERSION=rsna-2026-08-04
 sbatch --wait slurm/run_ticket17_train_weak_fold.sbatch
 ```
 
-Synthetic tests cover lineage rejection, fold isolation, reference precedence,
-masking and one fixed-budget weak-label training/evaluation pass. This
-implementation does not claim a private real-corpus run or improvement over
-the gold-only baseline; those are Ticket 18's controlled comparison.
+The completed real fold-0 run used the existing 158-study representative
+image integration: 38 gold training studies and 65 image-covered report-only
+studies were consumed; 2,782 otherwise eligible report-only studies were
+recorded as image-scope exclusions. The run completed the unchanged 100-step
+CPU mechanics budget and produced held-out evaluation artifacts. Synthetic
+tests cover lineage rejection, fold isolation, reference precedence and
+masking; the run does not claim that weak supervision improves performance.
+Ticket 18 owns that controlled comparison.

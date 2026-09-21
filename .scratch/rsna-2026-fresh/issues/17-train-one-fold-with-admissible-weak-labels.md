@@ -58,3 +58,31 @@ public evidence in `docs/evidence/ticket-17-weak-supervision.md`. Synthetic
 tests cover clean admission, masking, reference precedence, lineage rejection
 and one fold training/evaluation pass. No private data was processed and no
 Ticket 17 Slurm allocation or report-supervision benefit was claimed.
+
+### 2026-09-21 — One real fold with the frozen Ticket 15 artifact
+
+The pre-existing Ticket 15 frozen deterministic report labels were confirmed
+admissible under the committed `report-only-confident-binary-v1` policy. The
+Ticket 16 Astra outputs were not used because Ticket 16 had no predeclared
+training-admission rule; no Astra-derived policy, threshold, or target choice
+was introduced.
+
+Exactly one real fold-0 run was submitted through
+`slurm/run_ticket17_train_weak_fold.sbatch` as Slurm job `7056`. It completed
+on `cluster1-cpu` in `00:11:30` with one node, 16 CPUs, 64 GB requested
+memory, no exclusive allocation, and exit code `0:0`. The full fold contained
+2,885 training studies: 38 gold/reference and 2,847 eligible/admitted
+report-only studies. The existing representative image integration covered
+38 gold and 65 report-only training studies; 2,782 eligible report-only rows
+were recorded as image-scope exclusions. The run used 456 gold supervised
+entries plus 115 weak supervised entries; 665 weak entries were masked. There
+were zero gold-vs-weak disagreements, so no conflict override was needed.
+
+The canonical fold checksum, frozen report semantic digest, extractor
+fingerprints, training configuration fingerprint, final checkpoint checksum,
+100-step fixed budget, finite-loss result, final/latest checkpoint reload,
+held-out separation, and 20-study held-out evaluation artifact were all
+independently verified. No performance improvement claim is made. Public
+aggregate evidence is in `docs/evidence/ticket-17-weak-supervision.md`; the
+detailed private-safe execution report is beside `tsk.txt` as
+`/home/ch.jitheswar/tsk-report.md`.
