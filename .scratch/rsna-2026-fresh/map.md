@@ -15,6 +15,11 @@ repository artifacts.
 - 2026-09-21 — Ticket 16 is resolved/closed with a mixed/review-required
   scientific outcome after the corrected Astra aggregation review: [ticket 16](issues/16-compare-one-approved-local-language-model-extractor.md)
   · [corrected final report](../../../tsk2-report.md).
+- 2026-09-21 — Ticket 17 is implemented for the synthetic, locally testable
+  admission and training scope; no private run or benefit claim is made:
+  [ticket 17](issues/17-train-one-fold-with-admissible-weak-labels.md)
+  · [public evidence](../../docs/evidence/ticket-17-weak-supervision.md)
+  · [external report](../../../ticket-17-report.md).
 
 ## Fog
 

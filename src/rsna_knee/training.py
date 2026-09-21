@@ -1,10 +1,11 @@
-"""Reference-only training and experiment recording for the mechanics baseline.
+"""Fixed-budget image training and experiment recording.
 
 The module deliberately owns the scientific training boundary: image inputs
-are already represented by the shared ``StudyRecord``/packing interfaces,
-labels come from a frozen reference fold manifest, and report-derived
-supervision is not an accepted input.  The Slurm adapter is a thin caller of
-the functions here; it does not contain a second training implementation.
+are already represented by the shared ``StudyRecord``/packing interfaces and
+labels arrive as resolved fold-scoped supervision.  The default remains the
+reference-only mechanics baseline; Ticket 17 can inject a separately
+validated report-supervision admission result without making reports part of
+the imaging dataset or model path.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from .preprocessing import (
     prepare_study,
 )
 from .series_cache import SeriesCache
+from .supervision import AdmittedFoldSupervision
 from .targets import NUM_TARGETS
 
 if TYPE_CHECKING:
@@ -529,10 +531,15 @@ class SupervisionProvenance:
     held_out_excluded: bool = True
     eligible_study_uids: tuple[str, ...] = ()
     excluded_study_uids: tuple[str, ...] = ()
+    weak_label_version: str | None = None
+    mixture_policy: str = "reference-only-v1"
+    source_report_ref: str | None = None
+    source_report_sha256: str | None = None
+    source_disagreement_count: int = 0
 
     def __post_init__(self) -> None:
-        if self.source_kind != "reference":
-            raise TrainingDataError("ticket 08 accepts reference supervision only")
+        if self.source_kind not in {"reference", "weak", "mixed"}:
+            raise TrainingDataError("supervision provenance has an unsupported source kind")
         if not self.source_id.strip():
             raise TrainingDataError("supervision provenance requires a source identity")
         if self.fold is not None and self.fold not in FOLD_IDS:
@@ -543,6 +550,24 @@ class SupervisionProvenance:
             raise TrainingDataError("eligible supervision studies must be unique")
         if len(set(self.excluded_study_uids)) != len(self.excluded_study_uids):
             raise TrainingDataError("excluded supervision studies must be unique")
+        if not self.mixture_policy.strip():
+            raise TrainingDataError("supervision provenance requires a mixture policy")
+        if self.source_disagreement_count < 0:
+            raise TrainingDataError("supervision disagreement count cannot be negative")
+        if self.source_kind in {"weak", "mixed"}:
+            if not self.weak_label_version:
+                raise TrainingDataError("weak supervision provenance requires a label version")
+            if not self.source_report_ref or not self.source_report_sha256:
+                raise TrainingDataError("weak supervision provenance requires a report identity")
+            if len(self.source_report_sha256) != 64 or any(
+                character not in "0123456789abcdef" for character in self.source_report_sha256
+            ):
+                raise TrainingDataError("weak supervision report identity must be a SHA-256 digest")
+        elif any(
+            value is not None
+            for value in (self.weak_label_version, self.source_report_ref, self.source_report_sha256)
+        ):
+            raise TrainingDataError("reference supervision must not carry weak-label provenance")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -552,6 +577,11 @@ class SupervisionProvenance:
             "held_out_excluded": self.held_out_excluded,
             "eligible_study_uids": list(self.eligible_study_uids),
             "excluded_study_uids": list(self.excluded_study_uids),
+            "weak_label_version": self.weak_label_version,
+            "mixture_policy": self.mixture_policy,
+            "source_report_ref": self.source_report_ref,
+            "source_report_sha256": self.source_report_sha256,
+            "source_disagreement_count": self.source_disagreement_count,
         }
 
 
@@ -593,8 +623,8 @@ class TrainingExample:
             raise TrainingDataError("supervised target entries must be finite")
         if np.any((targets[supervised] < 0.0) | (targets[supervised] > 1.0)):
             raise TrainingDataError("supervised target entries must be binary values")
-        if self.provenance.source_kind != "reference":
-            raise TrainingDataError("ticket 08 accepts reference supervision only")
+        if self.provenance.source_kind not in {"reference", "weak", "mixed"}:
+            raise TrainingDataError("training example has an unsupported supervision source")
 
     @classmethod
     def from_packed(
@@ -670,6 +700,10 @@ class TrainingResult:
     replayed_batches: int = 0
     checkpoint_events: tuple[Mapping[str, object], ...] = ()
     semantic_fingerprint_value: str | None = None
+    sample_exposures: int = 0
+    supervised_entry_exposures: int = 0
+    supervision: Mapping[str, object] = field(default_factory=lambda: {"kind": "reference"})
+    supervision_private: Mapping[str, object] | None = None
 
     @property
     def final_loss(self) -> float | None:
@@ -695,6 +729,8 @@ class TrainingResult:
                 "attempted_batches": self.attempted_batches,
                 "skipped_all_masked_batches": self.skipped_batches,
                 "supervised_entries_per_step": NUM_TARGETS,
+                "sample_exposures": self.sample_exposures,
+                "supervised_entry_exposures": self.supervised_entry_exposures,
             },
             "loss": {
                 "first": self.loss_history[0] if self.loss_history else None,
@@ -718,7 +754,8 @@ class TrainingResult:
                 "checkpoint_events": len(self.checkpoint_events),
             },
             "evaluation": evaluation,
-            "reference_supervision_only": True,
+            "supervision": dict(self.supervision),
+            "reference_supervision_only": self.supervision.get("kind") == "reference",
             "held_out_inputs_excluded_from_fitting": True,
             "learned_normalization": False,
         }
@@ -733,6 +770,9 @@ class TrainingResult:
         payload["execution_attempt_id"] = self.execution_attempt_id
         payload["resumed_from_checkpoint"] = self.resumed_from_checkpoint
         payload["replayed_batches"] = self.replayed_batches
+        payload["sample_exposures"] = self.sample_exposures
+        payload["supervised_entry_exposures"] = self.supervised_entry_exposures
+        payload["supervision"] = dict(self.supervision_private or self.supervision)
         payload["checkpoint_events"] = [dict(event) for event in self.checkpoint_events]
         payload["predictions"] = {
             uid: np.asarray(scores, dtype=float).tolist() for uid, scores in self.predictions.items()
@@ -817,35 +857,54 @@ def build_fold_examples(
     packing_config: PackingConfig | None = None,
     series_cache: SeriesCache | None = None,
     allow_partial_inputs: bool = False,
+    admitted_supervision: AdmittedFoldSupervision | None = None,
 ) -> tuple[TrainingExample, ...]:
-    """Prepare only gold studies from one declared training or held-out partition.
+    """Prepare one declared partition with already-resolved supervision.
 
     Preprocessing is fixed and series-local; no statistics are fitted from the
-    selected studies.  Report-only memberships and arbitrary label mappings
-    cannot enter this ticket's training path.
+    selected studies.  Report labels can enter only through the separate
+    ``AdmittedFoldSupervision`` seam, never through the image input records.
     """
 
     if fold not in FOLD_IDS:
         raise TrainingDataError(f"fold must be one of {FOLD_IDS}")
     if partition not in {"training", "held_out"}:
         raise TrainingDataError("partition must be 'training' or 'held_out'")
+    if admitted_supervision is not None:
+        if admitted_supervision.fold != fold:
+            raise TrainingDataError("admitted supervision fold does not match the requested fold")
+        if admitted_supervision.fold_manifest_checksum != fold_manifest.manifest_checksum:
+            raise TrainingDataError("admitted supervision does not match the fold manifest")
+        if set(admitted_supervision.held_out_study_uids) != set(
+            fold_manifest.held_out_study_uids(fold)
+        ):
+            raise TrainingDataError("admitted supervision held-out identities do not match the fold")
     source = _study_mapping(studies)
-    memberships = tuple(
-        item
-        for item in fold_manifest.gold_memberships
-        if (item.fold != fold if partition == "training" else item.fold == fold)
-    )
+    if partition == "training" and admitted_supervision is not None:
+        selected_uids = admitted_supervision.training_study_uids
+        membership_by_uid = {
+            item.study_instance_uid: item
+            for item in fold_manifest.memberships
+            if item.study_instance_uid in set(selected_uids)
+        }
+        memberships = tuple(membership_by_uid[uid] for uid in selected_uids)
+    else:
+        memberships = tuple(
+            item
+            for item in fold_manifest.gold_memberships
+            if (item.fold != fold if partition == "training" else item.fold == fold)
+        )
+        membership_by_uid = {item.study_instance_uid: item for item in memberships}
     if not memberships:
         raise TrainingDataError(f"fold {fold} has no gold studies in the {partition} partition")
-    selected_uids = tuple(sorted(item.study_instance_uid for item in memberships))
+    selected_uids = tuple(item.study_instance_uid for item in memberships)
     missing = sorted(set(selected_uids) - set(source))
     if missing:
         raise TrainingDataError(f"{partition} study inputs are incomplete; missing {missing[:3]}")
     if partition == "training":
         fold_manifest.assert_adaptation_input_is_training_only(fold, selected_uids)
-    membership_by_uid = {item.study_instance_uid: item for item in memberships}
     held_out_uids = tuple(sorted(fold_manifest.held_out_study_uids(fold)))
-    provenance = SupervisionProvenance(
+    default_provenance = SupervisionProvenance(
         source_kind="reference",
         source_id=f"fold-manifest:{fold_manifest.manifest_checksum}",
         fold=fold,
@@ -874,10 +933,51 @@ def build_fold_examples(
                 f"fold {fold} {partition} study {study_uid} has no usable image series"
             )
         packed = pack_study(study, prepared.series, preprocess_config, packing_config=packing)
+        targets: Sequence[int | None] = membership_by_uid[study_uid].reference_labels
+        provenance = default_provenance
+        if partition == "training" and admitted_supervision is not None:
+            resolved = admitted_supervision.by_study.get(study_uid)
+            if resolved is None:
+                raise TrainingDataError(
+                    f"admitted supervision has no resolved labels for {study_uid}"
+                )
+            targets = resolved.targets
+            provenance_payload = admitted_supervision.provenance_for(study_uid)
+            provenance = SupervisionProvenance(
+                source_kind=str(provenance_payload["source_kind"]),
+                source_id=str(provenance_payload["source_id"]),
+                fold=cast(int, provenance_payload["fold"]),
+                held_out_excluded=bool(provenance_payload["held_out_excluded"]),
+                eligible_study_uids=tuple(
+                    cast(Sequence[str], provenance_payload["eligible_study_uids"])
+                ),
+                excluded_study_uids=tuple(
+                    cast(Sequence[str], provenance_payload["excluded_study_uids"])
+                ),
+                weak_label_version=(
+                    str(provenance_payload["weak_label_version"])
+                    if provenance_payload["weak_label_version"] is not None
+                    else None
+                ),
+                mixture_policy=str(provenance_payload["mixture_policy"]),
+                source_report_ref=(
+                    str(provenance_payload["source_report_ref"])
+                    if provenance_payload["source_report_ref"] is not None
+                    else None
+                ),
+                source_report_sha256=(
+                    str(provenance_payload["source_report_sha256"])
+                    if provenance_payload["source_report_sha256"] is not None
+                    else None
+                ),
+                source_disagreement_count=int(
+                    cast(Any, provenance_payload["source_disagreement_count"])
+                ),
+            )
         examples.append(
             TrainingExample.from_packed(
                 packed,
-                membership_by_uid[study_uid].reference_labels,
+                targets,
                 provenance=provenance,
                 rejected_series=prepared.failures,
             )
@@ -894,6 +994,7 @@ def build_fold_training_examples(
     packing_config: PackingConfig | None = None,
     series_cache: SeriesCache | None = None,
     allow_partial_inputs: bool = False,
+    admitted_supervision: AdmittedFoldSupervision | None = None,
 ) -> tuple[TrainingExample, ...]:
     """Named convenience wrapper for the fitting partition."""
 
@@ -906,6 +1007,7 @@ def build_fold_training_examples(
         packing_config=packing_config,
         series_cache=series_cache,
         allow_partial_inputs=allow_partial_inputs,
+        admitted_supervision=admitted_supervision,
     )
 
 
@@ -952,8 +1054,8 @@ def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConf
             raise TrainingDataError(
                 f"study {example.study_instance_uid} has shape {example.images.shape}; expected {expected_shape}"
             )
-        if example.provenance.source_kind != "reference":
-            raise TrainingDataError("ticket 08 accepts reference supervision only")
+        if example.provenance.source_kind not in {"reference", "weak", "mixed"}:
+            raise TrainingDataError("training example has an unsupported supervision source")
         if not example.provenance.held_out_excluded:
             raise TrainingDataError("training provenance does not exclude held-out inputs")
 
@@ -1048,6 +1150,8 @@ def save_training_checkpoint(
     successful_optimizer_steps: int,
     attempted_batches: int,
     skipped_batches: int,
+    sample_exposures: int = 0,
+    supervised_entry_exposures: int = 0,
     loss_history: Sequence[float],
     fold: int | None = None,
     run_id: str | None = None,
@@ -1080,6 +1184,8 @@ def save_training_checkpoint(
 
     if successful_optimizer_steps < 0 or attempted_batches < successful_optimizer_steps:
         raise CheckpointError("checkpoint progress counters are inconsistent")
+    if sample_exposures < 0 or supervised_entry_exposures < 0:
+        raise CheckpointError("checkpoint exposure counters cannot be negative")
     if fold is not None and fold not in FOLD_IDS:
         raise CheckpointError(f"checkpoint fold must be one of {FOLD_IDS}")
     if checkpoint_kind not in {"latest_resumable", "final_selected"}:
@@ -1147,6 +1253,8 @@ def save_training_checkpoint(
             "scheduler_steps": scheduler_steps,
             "attempted_batches": attempted_batches,
             "skipped_all_masked_batches": skipped_batches,
+            "sample_exposures": sample_exposures,
+            "supervised_entry_exposures": supervised_entry_exposures,
             "loss_history": list(losses),
             "batch_in_epoch": batch_in_epoch,
             "next_batch_index": (
@@ -1508,6 +1616,14 @@ def load_training_checkpoint(
         for name in integer_progress
     ):
         raise CheckpointError("checkpoint progress counters are invalid")
+    for exposure_name in ("sample_exposures", "supervised_entry_exposures"):
+        exposure_value = progress.get(exposure_name, 0)
+        if (
+            not isinstance(exposure_value, int)
+            or isinstance(exposure_value, bool)
+            or exposure_value < 0
+        ):
+            raise CheckpointError("checkpoint exposure counters are invalid")
     if progress["attempted_batches"] < progress["successful_optimizer_steps"]:
         raise CheckpointError("checkpoint attempted and successful batch counts disagree")
     loss_values = progress["loss_history"]
@@ -1555,7 +1671,14 @@ def _checkpoint_identity(
     fold_manifest_checksum: str | None,
     integration_manifest_checksum: str | None,
     fold: int | None,
+    supervision_identity: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
+    supervision = dict(supervision_identity or {})
+    label_source = (
+        "reference-only:frozen-fold-manifest"
+        if supervision.get("kind") in (None, "reference")
+        else "admitted-fold-supervision"
+    )
     return {
         "training_schema_version": TRAINING_SCHEMA_VERSION,
         "model_source": "local:HierarchicalStudyModel;weights=deterministic-initialization",
@@ -1571,8 +1694,8 @@ def _checkpoint_identity(
             "fold_manifest_checksum": fold_manifest_checksum,
         },
         "labels": {
-            "source": "reference-only:frozen-fold-manifest",
-            "supervision": "masked_reference_entries",
+            "source": label_source,
+            "supervision": supervision,
         },
         "source_version": source_version,
         "source_fingerprint": source_fingerprint,
@@ -1581,7 +1704,8 @@ def _checkpoint_identity(
         "fold_manifest_checksum": fold_manifest_checksum,
         "integration_manifest_checksum": integration_manifest_checksum,
         "fold": fold,
-        "label_source": "reference-only:frozen-fold-manifest",
+        "label_source": label_source,
+        "supervision": supervision,
         "preprocessing": config.preprocess_config().cache_config(),
         "packing": config.packing_config().to_dict(),
         "architecture": config.model_config().__dict__,
@@ -2003,6 +2127,8 @@ def _train_fixed_budget_impl(
     scheduler_steps = 0
     attempted_batches = 0
     skipped_batches = 0
+    sample_exposures = 0
+    supervised_entry_exposures = 0
     consecutive_no_progress = 0
     loss_history: list[float] = []
     epoch = 0
@@ -2026,6 +2152,10 @@ def _train_fixed_budget_impl(
         scheduler_steps = int(cast(Any, progress["scheduler_steps"]))
         attempted_batches = int(cast(Any, progress["attempted_batches"]))
         skipped_batches = int(cast(Any, progress["skipped_all_masked_batches"]))
+        sample_exposures = int(cast(Any, progress.get("sample_exposures", 0)))
+        supervised_entry_exposures = int(
+            cast(Any, progress.get("supervised_entry_exposures", 0))
+        )
         consecutive_no_progress = int(cast(Any, progress["consecutive_no_progress"]))
         loss_history = [
             float(cast(Any, value))
@@ -2153,6 +2283,8 @@ def _train_fixed_budget_impl(
                 successful_optimizer_steps=successful_steps,
                 attempted_batches=attempted_batches,
                 skipped_batches=skipped_batches,
+                sample_exposures=sample_exposures,
+                supervised_entry_exposures=supervised_entry_exposures,
                 loss_history=loss_history,
                 fold=fold,
                 run_id=effective_run_id,
@@ -2230,6 +2362,8 @@ def _train_fixed_budget_impl(
             )
             attempted_batches += 1
             batch_mask = np.stack([example.supervision_mask for example in batch_examples])
+            sample_exposures += len(batch_examples)
+            supervised_entry_exposures += int(batch_mask.sum())
             loss_value: float | None = None
             if not bool(batch_mask.any()):
                 skipped_batches += 1
@@ -2414,6 +2548,8 @@ def _train_fixed_budget_impl(
         scheduler_steps=scheduler_steps,
         attempted_batches=attempted_batches,
         skipped_batches=skipped_batches,
+        sample_exposures=sample_exposures,
+        supervised_entry_exposures=supervised_entry_exposures,
         loss_history=tuple(loss_history),
         final_checkpoint_path=final_path,
         latest_checkpoint_path=latest_path,
@@ -2853,6 +2989,7 @@ def _train_one_fold_impl(
     cache_fingerprint: str | None = None,
     integration_manifest_checksum: str | None = None,
     series_cache: SeriesCache | None = None,
+    supervision: AdmittedFoldSupervision | None = None,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
     preflight: CpuPreflightResult | None = None,
@@ -2867,7 +3004,7 @@ def _train_one_fold_impl(
     execution_attempt_id: str | None = None,
     interrupt_after_steps: int | None = None,
 ) -> TrainingResult:
-    """Train the reference-only partition and evaluate the reloaded final checkpoint."""
+    """Train one admitted image fold and evaluate its reloaded final checkpoint."""
 
     if fold not in FOLD_IDS:
         raise TrainingDataError(f"fold must be one of {FOLD_IDS}")
@@ -2943,6 +3080,7 @@ def _train_one_fold_impl(
         preprocess_config=config.preprocess_config(),
         packing_config=config.packing_config(),
         series_cache=series_cache,
+        admitted_supervision=supervision,
     )
     held_out_examples = build_fold_held_out_examples(
         studies,
@@ -2956,6 +3094,30 @@ def _train_one_fold_impl(
     training_uids = tuple(example.study_instance_uid for example in training_examples)
     if set(training_uids).intersection(held_out_uids):
         raise TrainingDataError("training and held-out study partitions overlap")
+    supervision_public: dict[str, object]
+    supervision_private: Mapping[str, object] | None
+    if supervision is None:
+        supervision_public = {
+            "kind": "reference",
+            "policy": "reference-only-v1",
+            "fold_manifest_checksum": fold_manifest.manifest_checksum,
+            "counts": {
+                "training_studies": len(training_examples),
+                "reference_studies": len(training_examples),
+                "weak_studies": 0,
+                "supervised_entries": sum(
+                    int(example.supervision_mask.sum()) for example in training_examples
+                ),
+                "source_disagreements": 0,
+            },
+            "held_out_inputs_excluded": True,
+        }
+        supervision_identity: Mapping[str, object] = supervision_public
+        supervision_private = None
+    else:
+        supervision_public = {"kind": "weak", **supervision.to_public_dict()}
+        supervision_identity = supervision.to_private_dict()
+        supervision_private = supervision.to_private_dict()
     identity = _checkpoint_identity(
         config,
         training_examples,
@@ -2972,6 +3134,7 @@ def _train_one_fold_impl(
         fold_manifest_checksum=fold_manifest.manifest_checksum,
         integration_manifest_checksum=integration_manifest_checksum,
         fold=fold,
+        supervision_identity=supervision_identity,
     )
     identity["held_out_data_fingerprint"] = fingerprint_training_examples(held_out_examples)
     identity["held_out_inputs_excluded_from_fitting"] = True
@@ -3001,14 +3164,18 @@ def _train_one_fold_impl(
                     **dict(requested_resources or _default_requested_resources()),
                     "slurm_attempt_id": os.environ.get("SLURM_JOB_ID"),
                 },
-                "supervision": {
-                    "kind": "reference",
-                    "fold_manifest_checksum": fold_manifest.manifest_checksum,
-                    "training_studies": list(training_uids),
-                    "held_out_studies": list(held_out_uids),
-                    "held_out_inputs_excluded": True,
-                    "reports_used": False,
-                },
+                "supervision": (
+                    supervision.to_private_dict()
+                    if supervision is not None
+                    else {
+                        "kind": "reference",
+                        "fold_manifest_checksum": fold_manifest.manifest_checksum,
+                        "training_studies": list(training_uids),
+                        "held_out_studies": list(held_out_uids),
+                        "held_out_inputs_excluded": True,
+                        "reports_used": False,
+                    }
+                ),
                 "inference_configuration": {
                     "model": {
                         "image_size": list(model_config.image_size),
@@ -3107,6 +3274,10 @@ def _train_one_fold_impl(
         replayed_batches=result.replayed_batches,
         checkpoint_events=result.checkpoint_events,
         semantic_fingerprint_value=scientific_identity,
+        sample_exposures=result.sample_exposures,
+        supervised_entry_exposures=result.supervised_entry_exposures,
+        supervision=supervision_public,
+        supervision_private=supervision_private,
     )
     atomic_json_write(destination / "metrics.json", evaluation.to_private_dict())
     atomic_json_write(destination / "run.json", completed.to_private_dict())
@@ -3125,6 +3296,7 @@ def train_one_fold(
     cache_fingerprint: str | None = None,
     integration_manifest_checksum: str | None = None,
     series_cache: SeriesCache | None = None,
+    supervision: AdmittedFoldSupervision | None = None,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
     preflight: CpuPreflightResult | None = None,
@@ -3158,6 +3330,7 @@ def train_one_fold(
         cache_fingerprint=cache_fingerprint,
         integration_manifest_checksum=integration_manifest_checksum,
         series_cache=series_cache,
+        supervision=supervision,
         preprocess_config=preprocess_config,
         packing_config=packing_config,
         preflight=preflight,

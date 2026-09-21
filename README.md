@@ -730,3 +730,42 @@ the exact macro target sets. Astra labels are not generally approved for
 training because Ticket 16 did not predeclare an admission rule. No Astra
 rerun, report reinterpretation, training run, new scientific decision or
 Ticket 17 work was performed.
+
+## Ticket 17 fold training with admissible weak labels
+
+`rsna_knee.supervision` is the dedicated supervision seam between report
+artifacts and image training. `admit_fold_supervision` accepts only a
+reproducibility-verified Ticket 15 deterministic extraction run whose fold,
+report-set, extractor and held-out exclusion lineage exactly matches the
+canonical fold manifest. It admits report-only training records for the
+requested fold; held-out reports remain evaluation-only and missing reports
+remain excluded.
+
+Reference labels take precedence over any weak call. Only authoritative,
+confidence-one positive/negative states receive mask one. Not-mentioned,
+uncertain, unknown and extraction-failed states remain zero-masked. The
+existing 8/16/32 image model, preprocessing, masked BCE, optimizer and final
+checkpoint evaluation are unchanged. Astra outputs are not admitted by this
+ticket because Ticket 16 did not predeclare a training admission policy.
+
+The bounded adapter is `slurm/run_ticket17_train_weak_fold.sbatch`; it requests
+one non-exclusive `cluster1-cpu` node, 16 CPUs, 64 GB and six hours. It
+re-runs the frozen deterministic extractor from the private report corpus,
+publishes text-free public admission evidence plus private label provenance,
+then trains one fold through `train_one_fold(..., supervision=...)`:
+
+```bash
+export RSNA_TICKET17_INTEGRATION_MANIFEST=/private/path/ticket-05-real-inference/private/integration-manifest.json
+export RSNA_TICKET17_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET17_FOLD_MANIFEST=/private/path/ticket-04-folds/private/fold-manifest.json
+export RSNA_TICKET17_REPORTS=/private/path/reports/private/report-corpus.json
+export RSNA_TICKET17_FOLD=0
+export RSNA_TICKET17_OUTPUT=/private/path/ticket-17-fold-0
+export RSNA_TICKET17_SOURCE_VERSION=rsna-2026-08-04
+sbatch --wait slurm/run_ticket17_train_weak_fold.sbatch
+```
+
+Synthetic tests cover lineage rejection, fold isolation, reference precedence,
+masking and one fixed-budget weak-label training/evaluation pass. This
+implementation does not claim a private real-corpus run or improvement over
+the gold-only baseline; those are Ticket 18's controlled comparison.

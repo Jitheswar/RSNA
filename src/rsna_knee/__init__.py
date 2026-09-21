@@ -242,6 +242,17 @@ from .report_extraction import (
     validate_fold_report_boundaries,
     write_report_extraction_reports,
 )
+from .supervision import (
+    ADMISSION_SCHEMA_VERSION,
+    MIXTURE_POLICY_VERSION,
+    WEAK_LABEL_VERSION,
+    AdmittedFoldSupervision,
+    ResolvedLabelVector,
+    SupervisionAdmissionError,
+    SupervisionDisagreement,
+    admit_fold_supervision,
+    merge_reference_and_weak_labels,
+)
 from .local_report_extraction import (
     DEFAULT_LOCAL_PROMPT_SYSTEM,
     DEFAULT_LOCAL_PROMPT_TEMPLATE,
@@ -698,6 +709,15 @@ __all__ = [
     "run_report_extraction",
     "validate_fold_report_boundaries",
     "write_report_extraction_reports",
+    "ADMISSION_SCHEMA_VERSION",
+    "MIXTURE_POLICY_VERSION",
+    "WEAK_LABEL_VERSION",
+    "AdmittedFoldSupervision",
+    "ResolvedLabelVector",
+    "SupervisionAdmissionError",
+    "SupervisionDisagreement",
+    "admit_fold_supervision",
+    "merge_reference_and_weak_labels",
     "DEFAULT_LOCAL_PROMPT_SYSTEM",
     "DEFAULT_LOCAL_PROMPT_TEMPLATE",
     "FLAN_T5_SMALL_LICENSE",
