@@ -339,6 +339,7 @@ class AdmittedFoldSupervision:
     missing_report_only_study_uids: tuple[str, ...]
     resolved: tuple[ResolvedLabelVector, ...]
     source_disagreements: tuple[SupervisionDisagreement, ...] = ()
+    excluded_image_report_only_study_uids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.fold not in FOLD_IDS:
@@ -353,6 +354,10 @@ class AdmittedFoldSupervision:
             ("eligible_report_only_study_uids", self.eligible_report_only_study_uids),
             ("admitted_report_only_study_uids", self.admitted_report_only_study_uids),
             ("missing_report_only_study_uids", self.missing_report_only_study_uids),
+            (
+                "excluded_image_report_only_study_uids",
+                self.excluded_image_report_only_study_uids,
+            ),
         ):
             if tuple(sorted(values)) != values or len(set(values)) != len(values):
                 raise SupervisionAdmissionError(f"{name} must be unique and sorted")
@@ -363,7 +368,19 @@ class AdmittedFoldSupervision:
             raise SupervisionAdmissionError("admitted weak studies are outside the eligible set")
         if set(self.admitted_report_only_study_uids).intersection(self.missing_report_only_study_uids):
             raise SupervisionAdmissionError("admitted and missing weak studies overlap")
-        if eligible != set(self.admitted_report_only_study_uids).union(self.missing_report_only_study_uids):
+        if set(self.admitted_report_only_study_uids).intersection(
+            self.excluded_image_report_only_study_uids
+        ):
+            raise SupervisionAdmissionError("admitted and image-excluded weak studies overlap")
+        if set(self.missing_report_only_study_uids).intersection(
+            self.excluded_image_report_only_study_uids
+        ):
+            raise SupervisionAdmissionError("missing and image-excluded weak studies overlap")
+        if eligible != (
+            set(self.admitted_report_only_study_uids)
+            | set(self.missing_report_only_study_uids)
+            | set(self.excluded_image_report_only_study_uids)
+        ):
             raise SupervisionAdmissionError("eligible weak studies do not reconcile with missing reports")
         resolved_by_uid = {item.study_instance_uid: item for item in self.resolved}
         if len(resolved_by_uid) != len(self.resolved):
@@ -394,6 +411,71 @@ class AdmittedFoldSupervision:
     @property
     def supervised_entry_count(self) -> int:
         return sum(item.supervised_entry_count for item in self.resolved)
+
+    def for_image_studies(
+        self,
+        available_study_uids: Sequence[str],
+    ) -> "AdmittedFoldSupervision":
+        """Scope admitted training labels to an existing image manifest.
+
+        This does not change the report admission policy or source artifact. It
+        only records report-only studies whose image inputs are unavailable to
+        the bounded mechanics run as a separate exclusion. All gold training
+        studies must remain image-covered so the corresponding reference-only
+        baseline population is unchanged.
+        """
+
+        available = set(_tuple_of_strings(available_study_uids, "available study identifiers"))
+        known = set(self.training_study_uids).union(self.held_out_study_uids)
+        unknown = sorted(available - known)
+        if unknown:
+            raise SupervisionAdmissionError(
+                f"image scope contains studies outside the admitted fold: {unknown[:3]}"
+            )
+        available_training = set(self.training_study_uids).intersection(available)
+        missing_reference = sorted(set(self.reference_study_uids) - available_training)
+        if missing_reference:
+            raise SupervisionAdmissionError(
+                "image scope is missing reference training studies: "
+                f"{missing_reference[:3]}"
+            )
+        selected_resolved = tuple(
+            item for item in self.resolved if item.study_instance_uid in available_training
+        )
+        selected_weak = set(self.admitted_report_only_study_uids).intersection(available_training)
+        image_excluded = (
+            set(self.excluded_image_report_only_study_uids)
+            | (set(self.admitted_report_only_study_uids) - selected_weak)
+        )
+        return AdmittedFoldSupervision(
+            fold=self.fold,
+            fold_manifest_checksum=self.fold_manifest_checksum,
+            source_artifact_digest=self.source_artifact_digest,
+            source_schema_version=self.source_schema_version,
+            extractor_version=self.extractor_version,
+            extractor_configuration_fingerprint=self.extractor_configuration_fingerprint,
+            extractor_ruleset_fingerprint=self.extractor_ruleset_fingerprint,
+            report_source_version=self.report_source_version,
+            weak_label_version=self.weak_label_version,
+            mixture_policy=self.mixture_policy,
+            training_study_uids=tuple(sorted(available_training)),
+            held_out_study_uids=self.held_out_study_uids,
+            eligible_report_only_study_uids=self.eligible_report_only_study_uids,
+            admitted_report_only_study_uids=tuple(sorted(selected_weak)),
+            missing_report_only_study_uids=self.missing_report_only_study_uids,
+            resolved=selected_resolved,
+            source_disagreements=tuple(
+                disagreement
+                for disagreement in self.source_disagreements
+                if disagreement.source_report_sha256
+                in {
+                    item.source_report_sha256
+                    for item in selected_resolved
+                    if item.source_report_sha256 is not None
+                }
+            ),
+            excluded_image_report_only_study_uids=tuple(sorted(image_excluded)),
+        )
 
     def provenance_for(self, study_instance_uid: str) -> dict[str, object]:
         item = self.by_study.get(study_instance_uid)
@@ -441,6 +523,9 @@ class AdmittedFoldSupervision:
                 "eligible_report_only_studies": len(self.eligible_report_only_study_uids),
                 "admitted_report_only_studies": len(self.admitted_report_only_study_uids),
                 "missing_report_only_studies": len(self.missing_report_only_study_uids),
+                "image_excluded_report_only_studies": len(
+                    self.excluded_image_report_only_study_uids
+                ),
                 "supervised_entries": self.supervised_entry_count,
                 "source_disagreements": len(self.source_disagreements),
             },
@@ -450,6 +535,7 @@ class AdmittedFoldSupervision:
                 "reference_labels_take_precedence": True,
                 "unknown_uncertain_failed_masked": True,
                 "fallback_source": "trusted_reference_labels_only",
+                "image_scope_restricted": bool(self.excluded_image_report_only_study_uids),
             },
         }
 
@@ -460,6 +546,9 @@ class AdmittedFoldSupervision:
         payload["eligible_report_only_study_uids"] = list(self.eligible_report_only_study_uids)
         payload["admitted_report_only_study_uids"] = list(self.admitted_report_only_study_uids)
         payload["missing_report_only_study_uids"] = list(self.missing_report_only_study_uids)
+        payload["excluded_image_report_only_study_uids"] = list(
+            self.excluded_image_report_only_study_uids
+        )
         payload["resolved_studies"] = [item.to_private_dict() for item in self.resolved]
         payload["source_disagreements"] = [
             item.to_private_dict() for item in self.source_disagreements
@@ -584,6 +673,7 @@ def admit_fold_supervision(
         missing_report_only_study_uids=tuple(sorted(missing)),
         resolved=tuple(resolved),
         source_disagreements=tuple(disagreements),
+        excluded_image_report_only_study_uids=(),
     )
 
 

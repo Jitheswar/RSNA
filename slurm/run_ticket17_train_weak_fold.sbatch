@@ -16,6 +16,7 @@ integration_manifest="${RSNA_TICKET17_INTEGRATION_MANIFEST:?set RSNA_TICKET17_IN
 source_path="${RSNA_TICKET17_SOURCE:?set RSNA_TICKET17_SOURCE to the private DICOM archive or extracted root}"
 fold_manifest="${RSNA_TICKET17_FOLD_MANIFEST:?set RSNA_TICKET17_FOLD_MANIFEST to the private ticket-04 fold manifest}"
 reports="${RSNA_TICKET17_REPORTS:?set RSNA_TICKET17_REPORTS to the private ticket-15 report corpus JSON}"
+frozen_report_artifact="${RSNA_TICKET17_FROZEN_REPORT_ARTIFACT:?set RSNA_TICKET17_FROZEN_REPORT_ARTIFACT to the stored Ticket 15 private report-labels artifact}"
 fold_id="${RSNA_TICKET17_FOLD:?set RSNA_TICKET17_FOLD to one of 0, 1, or 2}"
 output_dir="${RSNA_TICKET17_OUTPUT:?set RSNA_TICKET17_OUTPUT to a private ticket-17 experiment directory}"
 source_version="${RSNA_TICKET17_SOURCE_VERSION:?set RSNA_TICKET17_SOURCE_VERSION to the admitted source version}"
@@ -41,6 +42,10 @@ if [[ ! -f "${integration_manifest}" || ! -f "${fold_manifest}" || ! -f "${repor
   echo "ticket-17 requires private integration, fold and report inputs" >&2
   exit 1
 fi
+if [[ ! -f "${frozen_report_artifact}" ]]; then
+  echo "ticket-17 requires the stored Ticket 15 private report-labels artifact" >&2
+  exit 1
+fi
 if [[ ! -f "${source_path}" && ! -d "${source_path}" ]]; then
   echo "real-DICOM source does not exist: ${source_path}" >&2
   exit 1
@@ -56,6 +61,7 @@ training_args=(
   --source "${source_path}"
   --fold-manifest "${fold_manifest}"
   --reports "${reports}"
+  --frozen-report-artifact "${frozen_report_artifact}"
   --fold "${fold_id}"
   --output "${output_dir}"
   --source-version "${source_version}"

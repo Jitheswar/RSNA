@@ -152,6 +152,30 @@ def test_admission_rejects_incomplete_upstream_lineage() -> None:
         admit_fold_supervision(manifest, 0, broken)
 
 
+def test_image_scope_excludes_unavailable_weak_rows_without_rewriting_admission() -> None:
+    source, report_only_uids = _manifest()
+    manifest = freeze_folds(source, source_version="synthetic-ticket17-v1", seed=27)
+    gold_uids = tuple(item.study_instance_uid for item in manifest.gold_memberships)
+    extraction = run_report_extraction(
+        manifest,
+        _report_corpus(report_only_uids, gold_uids),
+        verify_reproducibility=True,
+    )
+    admitted = admit_fold_supervision(manifest, 0, extraction)
+    dropped_weak_uid = admitted.admitted_report_only_study_uids[0]
+    available = set(admitted.training_study_uids) - {dropped_weak_uid}
+    available.update(admitted.held_out_study_uids)
+
+    scoped = admitted.for_image_studies(available)
+
+    assert dropped_weak_uid not in scoped.training_study_uids
+    assert dropped_weak_uid in scoped.excluded_image_report_only_study_uids
+    assert scoped.missing_report_only_study_uids == admitted.missing_report_only_study_uids
+    assert set(scoped.held_out_study_uids) == set(admitted.held_out_study_uids)
+    assert scoped.to_public_dict()["counts"]["image_excluded_report_only_studies"] == 1
+    assert scoped.source_artifact_digest == admitted.source_artifact_digest
+
+
 def test_training_consumes_admitted_weak_labels_without_changing_image_baseline(tmp_path) -> None:
     source_labels, report_labels = _manifest()
     study_rows = tuple(
