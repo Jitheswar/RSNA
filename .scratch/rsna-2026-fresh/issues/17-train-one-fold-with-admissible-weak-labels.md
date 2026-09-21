@@ -86,3 +86,11 @@ independently verified. No performance improvement claim is made. Public
 aggregate evidence is in `docs/evidence/ticket-17-weak-supervision.md`; the
 detailed private-safe execution report is beside `tsk.txt` as
 `/home/ch.jitheswar/tsk-report.md`.
+
+## Answer
+
+Ticket 17 is resolved. Exactly one real fold-0 gold-plus-admissible-report
+training pass completed successfully using the frozen Ticket 15 artifact.
+Lineage, masking, held-out isolation, checkpoint reload, and execution
+evidence were verified. Astra labels were excluded, no report-supervision
+benefit claim was made, and Ticket 18 was not started.
