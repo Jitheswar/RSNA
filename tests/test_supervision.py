@@ -245,6 +245,13 @@ def test_training_consumes_admitted_weak_labels_without_changing_image_baseline(
     assert set(admitted.training_study_uids) == set(result.training_study_uids)
     assert result.sample_exposures == result.attempted_batches * config.batch_size
     assert result.supervised_entry_exposures > 0
+    exposures_by_source = result.to_public_dict()["counts"]["exposures_by_source"]
+    assert sum(item["sample_exposures"] for item in exposures_by_source.values()) == result.sample_exposures
+    assert sum(
+        item["supervised_entry_exposures"] for item in exposures_by_source.values()
+    ) == result.supervised_entry_exposures
+    assert exposures_by_source["reference"]["sample_exposures"] > 0
+    assert exposures_by_source["weak"]["sample_exposures"] > 0
     assert result.to_public_dict()["reference_supervision_only"] is False
     private = result.to_private_dict()
     assert private["supervision"]["weak_label_version"] == WEAK_LABEL_VERSION

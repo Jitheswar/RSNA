@@ -68,6 +68,11 @@ def _write_run(path: Path, manifest: FoldManifest, fold: int, *, config: str = "
         "model_source": "local:synthetic",
         "training_schema_version": "rsna-knee-training-v1",
     }
+    supervision = {
+        "kind": "reference",
+        "held_out_inputs_excluded": True,
+        "reports_used": False,
+    }
     (path / "configuration.json").write_text(
         json.dumps(
             {
@@ -92,11 +97,7 @@ def _write_run(path: Path, manifest: FoldManifest, fold: int, *, config: str = "
                     "exclusive": False,
                 },
                 "inference_configuration": {"checkpoint_selection": "final_checkpoint"},
-                "supervision": {
-                    "kind": "reference",
-                    "held_out_inputs_excluded": True,
-                    "reports_used": False,
-                },
+                "supervision": supervision,
                 "preflight": {"passed": True},
             }
         ),
@@ -115,6 +116,25 @@ def _write_run(path: Path, manifest: FoldManifest, fold: int, *, config: str = "
                 "held_out_inputs_excluded_from_fitting": True,
                 "training_study_uids": list(manifest.training_study_uids(fold)),
                 "held_out_study_uids": list(held_out),
+                "counts": {
+                    "training_studies": len(manifest.training_study_uids(fold)),
+                    "held_out_studies": len(held_out),
+                    "successful_optimizer_steps": 100,
+                    "scheduler_steps": 100,
+                    "attempted_batches": 100,
+                    "skipped_all_masked_batches": 0,
+                    "sample_exposures": 200,
+                    "supervised_entry_exposures": 2400,
+                    "exposures_by_source": {
+                        "reference": {
+                            "sample_exposures": 200,
+                            "supervised_entry_exposures": 2400,
+                        },
+                        "weak": {"sample_exposures": 0, "supervised_entry_exposures": 0},
+                        "mixed": {"sample_exposures": 0, "supervised_entry_exposures": 0},
+                    },
+                },
+                "supervision": supervision,
                 "checkpoint": {
                     "final_present": True,
                     "final_sha256": hashlib.sha256(final_checkpoint).hexdigest(),

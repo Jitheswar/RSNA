@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
 
@@ -14,6 +15,8 @@ from .archive import atomic_json_write
 from .evaluation import OOFEvaluation, evaluate_oof_predictions
 from .folds import FOLD_IDS, FoldManifest, validate_fold_manifest_against_source
 from .inventory import SourceManifest
+from .report_extraction import FrozenDeterministicExtractor, REPORT_EXTRACTION_SCHEMA_VERSION
+from .supervision import ADMISSION_SCHEMA_VERSION, MIXTURE_POLICY_VERSION, WEAK_LABEL_VERSION
 from .targets import TARGET_COLUMNS
 
 
@@ -36,6 +39,13 @@ class OOFRunRecord:
     source_version: str | None = None
     source_fingerprint: str | None = None
     integration_manifest_checksum: str | None = None
+    expected_supervision: str = "reference"
+    config: Mapping[str, object] = field(default_factory=dict)
+    counts: Mapping[str, object] = field(default_factory=dict)
+    supervision: Mapping[str, object] = field(default_factory=dict, repr=False)
+    identity: Mapping[str, object] = field(default_factory=dict)
+    resources: Mapping[str, object] = field(default_factory=dict)
+    environment: Mapping[str, object] = field(default_factory=dict)
 
 
 def _mapping(value: object, field: str) -> Mapping[str, object]:
@@ -96,7 +106,8 @@ def _load_artifact_contract(
     run_id: str,
     config_fingerprint: str,
     prediction_count: int,
-) -> Mapping[str, object]:
+    expected_supervision: str,
+) -> tuple[Mapping[str, object], Mapping[str, object], Mapping[str, object]]:
     configuration_path = run_path.parent / "configuration.json"
     if not configuration_path.is_file():
         raise OOFArtifactError(f"completed OOF run is missing configuration.json: {run_path.parent}")
@@ -127,12 +138,21 @@ def _load_artifact_contract(
     for field in ("environment_fingerprint", "python_executable", "python_version"):
         _nonempty(environment.get(field), f"configuration.environment.{field}")
     supervision = _mapping(configuration["supervision"], "configuration.supervision")
-    if supervision.get("kind") != "reference":
-        raise OOFArtifactError(f"OOF configuration is not reference-only: {configuration_path}")
-    if supervision.get("held_out_inputs_excluded") is not True:
-        raise OOFArtifactError(f"OOF configuration does not prove held-out exclusion: {configuration_path}")
-    if supervision.get("reports_used") is not False:
-        raise OOFArtifactError(f"OOF configuration does not prove report exclusion: {configuration_path}")
+    if expected_supervision == "reference":
+        if supervision.get("kind") != "reference":
+            raise OOFArtifactError(f"OOF configuration is not reference-only: {configuration_path}")
+        if supervision.get("held_out_inputs_excluded") is not True:
+            raise OOFArtifactError(
+                f"OOF configuration does not prove held-out exclusion: {configuration_path}"
+            )
+        if supervision.get("reports_used") is not False:
+            raise OOFArtifactError(
+                f"OOF configuration does not prove report exclusion: {configuration_path}"
+            )
+    elif expected_supervision == "report":
+        _validate_report_supervision_contract(supervision, fold=fold, configuration_path=configuration_path)
+    else:
+        raise OOFArtifactError(f"unsupported OOF supervision arm {expected_supervision!r}")
     preflight = _mapping(configuration["preflight"], "configuration.preflight")
     if preflight.get("passed") is not True:
         raise OOFArtifactError(f"OOF run does not contain a passed CPU preflight: {run_path}")
@@ -171,19 +191,93 @@ def _load_artifact_contract(
     metrics = _read_object(metrics_path)
     if metrics.get("fold") != fold or metrics.get("prediction_count") != prediction_count:
         raise OOFArtifactError(f"metrics evidence disagrees with run record: {metrics_path}")
-    return identity
+    return identity, configuration, supervision
 
 
-def load_oof_run_record(path: str | Path) -> OOFRunRecord:
-    """Load one completed fold record without changing it or its directory."""
+def _validate_report_supervision_contract(
+    supervision: Mapping[str, object], *, fold: int, configuration_path: Path
+) -> None:
+    if supervision.get("schema_version") != ADMISSION_SCHEMA_VERSION:
+        raise OOFArtifactError("report-supervised run has an unsupported admission schema")
+    if supervision.get("source_schema_version") != REPORT_EXTRACTION_SCHEMA_VERSION:
+        raise OOFArtifactError("report-supervised run has an unsupported extraction schema")
+    if supervision.get("fold") != fold:
+        raise OOFArtifactError("report supervision fold disagrees with the training run")
+    if supervision.get("weak_label_version") != WEAK_LABEL_VERSION:
+        raise OOFArtifactError("report-supervised run uses an unapproved weak-label policy")
+    if supervision.get("mixture_policy") != MIXTURE_POLICY_VERSION:
+        raise OOFArtifactError("report-supervised run uses an unapproved mixture policy")
+    if not _DIGEST_RE.fullmatch(str(supervision.get("source_artifact_digest", ""))):
+        raise OOFArtifactError("report-supervised run has no valid source artifact digest")
+    boundaries = _mapping(supervision.get("boundaries"), "report supervision boundaries")
+    for field_name in (
+        "held_out_inputs_excluded",
+        "held_out_report_labels_evaluation_only",
+        "reference_labels_take_precedence",
+        "unknown_uncertain_failed_masked",
+    ):
+        if boundaries.get(field_name) is not True:
+            raise OOFArtifactError(
+                f"report supervision does not prove {field_name.replace('_', '-')}"
+            )
+    if boundaries.get("fallback_source") != "trusted_reference_labels_only":
+        raise OOFArtifactError("report supervision does not prove reference-only fallback provenance")
+
+    extractor = _mapping(supervision.get("extractor"), "report supervision extractor")
+    expected_extractor = FrozenDeterministicExtractor().to_public_dict()
+    for field_name, expected in (
+        ("version", expected_extractor["extractor_version"]),
+        ("configuration_fingerprint", expected_extractor["configuration_fingerprint"]),
+        ("ruleset_fingerprint", expected_extractor["ruleset_fingerprint"]),
+    ):
+        if extractor.get(field_name) != expected:
+            raise OOFArtifactError("report-supervised run does not use the selected deterministic extractor")
+
+    for field_name in (
+        "training_study_uids",
+        "held_out_study_uids",
+        "eligible_report_only_study_uids",
+        "admitted_report_only_study_uids",
+        "missing_report_only_study_uids",
+        "excluded_image_report_only_study_uids",
+    ):
+        _uid_tuple(supervision.get(field_name), f"report supervision {field_name}")
+    resolved = supervision.get("resolved_studies")
+    if not isinstance(resolved, list):
+        raise OOFArtifactError("report supervision is missing resolved training rows")
+    resolved_uids = tuple(
+        _nonempty(_mapping(item, "resolved report supervision row").get("study_instance_uid"),
+                  "resolved supervision study identifier")
+        for item in resolved
+    )
+    if len(set(resolved_uids)) != len(resolved_uids):
+        raise OOFArtifactError("report supervision repeats a resolved training study")
+    counts = _mapping(supervision.get("counts"), "report supervision counts")
+    if counts.get("training_studies") != len(resolved_uids):
+        raise OOFArtifactError("report supervision training count disagrees with resolved rows")
+
+
+_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def load_oof_run_record(
+    path: str | Path, *, expected_supervision: str = "reference"
+) -> OOFRunRecord:
+    """Load one completed fold record without changing its directory."""
+
+    if expected_supervision not in {"reference", "report"}:
+        raise OOFArtifactError("expected_supervision must be reference or report")
 
     candidate = Path(path)
     run_path = candidate / "run.json" if candidate.is_dir() else candidate
     payload = _read_object(run_path)
     if payload.get("status") != "completed_fixed_budget_training":
         raise OOFArtifactError(f"OOF run is not completed fixed-budget training: {run_path}")
-    if payload.get("reference_supervision_only") is not True:
+    reference_only = payload.get("reference_supervision_only") is True
+    if expected_supervision == "reference" and not reference_only:
         raise OOFArtifactError(f"OOF run is not reference-only: {run_path}")
+    if expected_supervision == "report" and reference_only:
+        raise OOFArtifactError(f"OOF run does not use report supervision: {run_path}")
     if payload.get("held_out_inputs_excluded_from_fitting") is not True:
         raise OOFArtifactError(f"OOF run does not prove held-out exclusion: {run_path}")
     if "held_out_study_uids" not in payload or "training_study_uids" not in payload:
@@ -206,14 +300,19 @@ def load_oof_run_record(path: str | Path) -> OOFRunRecord:
             raise OOFArtifactError(f"prediction for {uid} is not numeric") from exc
     run_id = _nonempty(payload.get("run_id"), "run_id")
     config_fingerprint = _nonempty(payload.get("config_fingerprint"), "config_fingerprint")
-    identity = _load_artifact_contract(
+    identity, configuration, configuration_supervision = _load_artifact_contract(
         run_path,
         payload,
         fold=fold,
         run_id=run_id,
         config_fingerprint=config_fingerprint,
         prediction_count=len(predictions),
+        expected_supervision=expected_supervision,
     )
+    run_supervision = _mapping(payload.get("supervision"), "run.supervision")
+    if run_supervision != configuration_supervision:
+        raise OOFArtifactError(f"supervision evidence disagrees with configuration: {run_path}")
+    counts = _mapping(payload.get("counts"), "run.counts")
     return OOFRunRecord(
         path=run_path.resolve(),
         fold=fold,
@@ -241,6 +340,26 @@ def load_oof_run_record(path: str | Path) -> OOFRunRecord:
             ),
             "integration_manifest_checksum",
         ),
+        expected_supervision=expected_supervision,
+        config=_mapping(payload.get("config"), "run.config"),
+        counts=counts,
+        supervision=run_supervision,
+        identity={
+            field: identity[field]
+            for field in (
+                "source_version",
+                "source_fingerprint",
+                "cache_fingerprint",
+                "fold_manifest_checksum",
+                "integration_manifest_checksum",
+                "data_fingerprint",
+                "label_source",
+                "model_source",
+                "training_schema_version",
+            )
+        },
+        resources=_mapping(configuration.get("resources"), "configuration.resources"),
+        environment=_mapping(configuration.get("environment"), "configuration.environment"),
     )
 
 
@@ -252,7 +371,7 @@ def _validate_run_against_manifest(record: OOFRunRecord, manifest: FoldManifest)
             if item.fold == record.fold
         )
     )
-    expected_training = tuple(
+    expected_training_gold = tuple(
         sorted(
             item.study_instance_uid
             for item in manifest.gold_memberships
@@ -261,8 +380,26 @@ def _validate_run_against_manifest(record: OOFRunRecord, manifest: FoldManifest)
     )
     if tuple(sorted(record.held_out_study_uids)) != expected_held_out:
         raise OOFArtifactError(f"fold {record.fold} held-out membership disagrees with the fold manifest")
-    if tuple(sorted(record.training_study_uids)) != expected_training:
-        raise OOFArtifactError(f"fold {record.fold} training membership disagrees with the fold manifest")
+    actual_training = set(record.training_study_uids)
+    if record.expected_supervision == "reference":
+        if tuple(sorted(actual_training)) != expected_training_gold:
+            raise OOFArtifactError(
+                f"fold {record.fold} training membership disagrees with the fold manifest"
+            )
+    else:
+        all_training = {
+            item.study_instance_uid for item in manifest.memberships if item.fold != record.fold
+        }
+        expected_gold = set(expected_training_gold)
+        if actual_training.intersection(expected_gold) != expected_gold:
+            raise OOFArtifactError(
+                f"fold {record.fold} report training omits reference training studies"
+            )
+        if not actual_training.issubset(all_training):
+            raise OOFArtifactError(
+                f"fold {record.fold} report training includes an unknown or held-out study"
+            )
+        _validate_report_supervision_against_manifest(record, manifest, expected_training_gold)
     if tuple(sorted(record.predictions)) != expected_held_out:
         raise OOFArtifactError(f"fold {record.fold} predictions disagree with held-out membership")
     if record.fold_manifest_checksum is not None and (
@@ -277,6 +414,93 @@ def _validate_run_against_manifest(record: OOFRunRecord, manifest: FoldManifest)
         and record.source_fingerprint != manifest.source_fingerprint
     ):
         raise OOFArtifactError(f"fold {record.fold} uses a different source fingerprint")
+
+
+def _validate_report_supervision_against_manifest(
+    record: OOFRunRecord, manifest: FoldManifest, expected_training_gold: Sequence[str]
+) -> None:
+    supervision = record.supervision
+    training_uids = set(record.training_study_uids)
+    report_training_uids = training_uids - set(expected_training_gold)
+    if set(_uid_tuple(supervision.get("training_study_uids"), "supervision.training_study_uids")) != training_uids:
+        raise OOFArtifactError("report supervision training identities disagree with the run")
+    expected_held_out = {
+        item.study_instance_uid for item in manifest.memberships if item.fold == record.fold
+    }
+    if set(_uid_tuple(supervision.get("held_out_study_uids"), "supervision.held_out_study_uids")) != expected_held_out:
+        raise OOFArtifactError("report supervision held-out identities disagree with the fold manifest")
+    expected_eligible = {
+        item.study_instance_uid
+        for item in manifest.report_only_memberships
+        if item.fold != record.fold
+    }
+    eligible = set(
+        _uid_tuple(
+            supervision.get("eligible_report_only_study_uids"),
+            "supervision.eligible_report_only_study_uids",
+        )
+    )
+    if eligible != expected_eligible:
+        raise OOFArtifactError("report supervision eligible cohort disagrees with the fold manifest")
+    admitted = set(
+        _uid_tuple(
+            supervision.get("admitted_report_only_study_uids"),
+            "supervision.admitted_report_only_study_uids",
+        )
+    )
+    missing = set(
+        _uid_tuple(
+            supervision.get("missing_report_only_study_uids"),
+            "supervision.missing_report_only_study_uids",
+        )
+    )
+    image_excluded = set(
+        _uid_tuple(
+            supervision.get("excluded_image_report_only_study_uids"),
+            "supervision.excluded_image_report_only_study_uids",
+        )
+    )
+    if admitted != report_training_uids:
+        raise OOFArtifactError("admitted report identities disagree with image training membership")
+    if not admitted.issubset(eligible) or missing.intersection(admitted) or image_excluded.intersection(admitted):
+        raise OOFArtifactError("report supervision cohort partitions overlap or escape eligibility")
+    if eligible != admitted | missing | image_excluded:
+        raise OOFArtifactError("eligible report cohort does not reconcile with admission exclusions")
+
+    resolved_rows = supervision.get("resolved_studies")
+    if not isinstance(resolved_rows, list):
+        raise OOFArtifactError("report supervision has no resolved training rows")
+    resolved_by_uid: dict[str, Mapping[str, object]] = {}
+    for value in resolved_rows:
+        row = _mapping(value, "resolved supervision row")
+        uid = _nonempty(row.get("study_instance_uid"), "resolved supervision study identifier")
+        if uid in resolved_by_uid:
+            raise OOFArtifactError("report supervision repeats a resolved training study")
+        resolved_by_uid[uid] = row
+    if set(resolved_by_uid) != training_uids:
+        raise OOFArtifactError("resolved report supervision does not cover training membership")
+
+    gold_labels = {
+        item.study_instance_uid: item.reference_labels for item in manifest.gold_memberships
+    }
+    for uid, row in resolved_by_uid.items():
+        source_kind = row.get("source_kind")
+        expected_kind = "reference" if uid in gold_labels else "weak"
+        if source_kind not in {expected_kind, "mixed" if expected_kind == "reference" else expected_kind}:
+            raise OOFArtifactError("report supervision source kind disagrees with cohort membership")
+        targets = row.get("targets")
+        mask = row.get("supervision_mask")
+        if not isinstance(targets, (list, tuple)) or not isinstance(mask, (list, tuple)):
+            raise OOFArtifactError("resolved report target vector or mask is missing")
+        if len(targets) != len(TARGET_COLUMNS) or len(mask) != len(TARGET_COLUMNS):
+            raise OOFArtifactError("resolved report target vector or mask has the wrong width")
+        if any(value not in (None, 0, 1) for value in targets) or any(value not in (0, 1) for value in mask):
+            raise OOFArtifactError("resolved report target vector or mask contains invalid values")
+        if tuple(int(value is not None) for value in targets) != tuple(int(value) for value in mask):
+            raise OOFArtifactError("resolved report targets disagree with their supervision mask")
+        if uid in gold_labels:
+            if tuple(targets) != tuple(gold_labels[uid]) or any(mask_value != 1 for mask_value in mask):
+                raise OOFArtifactError("report supervision does not preserve reference-label precedence")
 
 
 def _validate_common_run_identity(records: Sequence[OOFRunRecord]) -> None:
@@ -304,9 +528,13 @@ def aggregate_oof_run_records(
     bootstrap_confidence_level: float = 0.95,
     permutation_resamples: int | None = None,
     permutation_seed: int = 20260911,
+    expected_supervision: str = "reference",
     allow_superseded_fold_manifest: bool = False,
 ) -> OOFEvaluation:
-    """Recompute an OOF comparison view from one atomic record per fold."""
+    """Recompute an OOF view from one atomic record per fold and supervision arm."""
+
+    if expected_supervision not in {"reference", "report"}:
+        raise OOFArtifactError("expected_supervision must be reference or report")
 
     if fold_manifest.superseded and not allow_superseded_fold_manifest:
         raise OOFArtifactError(
@@ -327,7 +555,9 @@ def aggregate_oof_run_records(
         )
     if not run_paths:
         raise OOFArtifactError("at least one OOF run record is required")
-    records = tuple(load_oof_run_record(path) for path in run_paths)
+    records = tuple(
+        load_oof_run_record(path, expected_supervision=expected_supervision) for path in run_paths
+    )
     if len({record.path for record in records}) != len(records):
         raise OOFArtifactError("OOF aggregation received the same run record more than once")
     by_fold: dict[int, OOFRunRecord] = {}

@@ -59,6 +59,62 @@ PREFLIGHT_SCHEMA_VERSION = "rsna-knee-cpu-preflight-v1"
 DEFAULT_TRAINING_SEED = 20260911
 DEFAULT_BATCH_ORDER_SEED = 20260912
 DEFAULT_SOURCE_VERSION = "synthetic-development"
+SOURCE_EXPOSURE_KINDS = ("reference", "weak", "mixed")
+
+
+def _empty_source_exposures() -> dict[str, dict[str, int]]:
+    return {
+        kind: {"sample_exposures": 0, "supervised_entry_exposures": 0}
+        for kind in SOURCE_EXPOSURE_KINDS
+    }
+
+
+def _validated_source_exposures(value: object) -> dict[str, dict[str, int]]:
+    if not isinstance(value, Mapping) or set(value) != set(SOURCE_EXPOSURE_KINDS):
+        raise TrainingError("source exposure counts must contain reference, weak and mixed")
+    result = _empty_source_exposures()
+    for kind in SOURCE_EXPOSURE_KINDS:
+        group = value.get(kind)
+        if not isinstance(group, Mapping):
+            raise TrainingError(f"source exposure counts for {kind} must be an object")
+        if set(group) != {"sample_exposures", "supervised_entry_exposures"}:
+            raise TrainingError(f"source exposure counts for {kind} are incomplete")
+        for name in ("sample_exposures", "supervised_entry_exposures"):
+            count = group.get(name)
+            if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+                raise TrainingError(f"source exposure count {kind}.{name} is invalid")
+            result[kind][name] = count
+    return result
+
+
+def _add_batch_source_exposures(
+    exposures: dict[str, dict[str, int]], examples: Sequence["TrainingExample"]
+) -> None:
+    for example in examples:
+        kind = example.provenance.source_kind
+        if kind not in exposures:
+            raise TrainingDataError(f"training example has unsupported source kind {kind!r}")
+        exposures[kind]["sample_exposures"] += 1
+        exposures[kind]["supervised_entry_exposures"] += int(
+            np.asarray(example.supervision_mask, dtype=bool).sum()
+        )
+
+
+def _rebuild_source_exposures(
+    examples: Sequence["TrainingExample"], config: "TrainingConfig", attempted_batches: int
+) -> dict[str, dict[str, int]]:
+    """Recover source-specific counters for checkpoints written before Ticket 18."""
+
+    exposures = _empty_source_exposures()
+    for attempted_batch in range(attempted_batches):
+        batch = tuple(
+            examples[index]
+            for index in _batch_indices(
+                len(examples), config.batch_size, attempted_batch, config.batch_order_seed
+            )
+        )
+        _add_batch_source_exposures(exposures, batch)
+    return exposures
 
 
 class TrainingError(RuntimeError):
@@ -704,6 +760,7 @@ class TrainingResult:
     supervised_entry_exposures: int = 0
     supervision: Mapping[str, object] = field(default_factory=lambda: {"kind": "reference"})
     supervision_private: Mapping[str, object] | None = None
+    exposures_by_source: Mapping[str, Mapping[str, int]] | None = None
 
     @property
     def final_loss(self) -> float | None:
@@ -713,6 +770,21 @@ class TrainingResult:
         evaluation: object = None
         if self.evaluation is not None:
             evaluation = self.evaluation.to_public_dict()
+        counts: dict[str, object] = {
+            "training_studies": len(self.training_study_uids),
+            "held_out_studies": len(self.held_out_study_uids),
+            "successful_optimizer_steps": self.successful_optimizer_steps,
+            "scheduler_steps": self.scheduler_steps,
+            "attempted_batches": self.attempted_batches,
+            "skipped_all_masked_batches": self.skipped_batches,
+            "supervised_entries_per_step": NUM_TARGETS,
+            "sample_exposures": self.sample_exposures,
+            "supervised_entry_exposures": self.supervised_entry_exposures,
+        }
+        if self.exposures_by_source is not None:
+            counts["exposures_by_source"] = {
+                kind: dict(values) for kind, values in self.exposures_by_source.items()
+            }
         return {
             "schema_version": TRAINING_SCHEMA_VERSION,
             "status": "completed_fixed_budget_training",
@@ -721,17 +793,7 @@ class TrainingResult:
             "config_fingerprint": self.config.config_fingerprint,
             "semantic_fingerprint": self.semantic_fingerprint_value,
             "config": self.config.to_dict(),
-            "counts": {
-                "training_studies": len(self.training_study_uids),
-                "held_out_studies": len(self.held_out_study_uids),
-                "successful_optimizer_steps": self.successful_optimizer_steps,
-                "scheduler_steps": self.scheduler_steps,
-                "attempted_batches": self.attempted_batches,
-                "skipped_all_masked_batches": self.skipped_batches,
-                "supervised_entries_per_step": NUM_TARGETS,
-                "sample_exposures": self.sample_exposures,
-                "supervised_entry_exposures": self.supervised_entry_exposures,
-            },
+            "counts": counts,
             "loss": {
                 "first": self.loss_history[0] if self.loss_history else None,
                 "final": self.final_loss,
@@ -1152,6 +1214,7 @@ def save_training_checkpoint(
     skipped_batches: int,
     sample_exposures: int = 0,
     supervised_entry_exposures: int = 0,
+    exposures_by_source: Mapping[str, Mapping[str, int]] | None = None,
     loss_history: Sequence[float],
     fold: int | None = None,
     run_id: str | None = None,
@@ -1186,6 +1249,19 @@ def save_training_checkpoint(
         raise CheckpointError("checkpoint progress counters are inconsistent")
     if sample_exposures < 0 or supervised_entry_exposures < 0:
         raise CheckpointError("checkpoint exposure counters cannot be negative")
+    source_exposure_payload = None
+    if exposures_by_source is not None:
+        try:
+            source_exposure_payload = _validated_source_exposures(exposures_by_source)
+        except TrainingError as exc:
+            raise CheckpointError("checkpoint source exposure counters are invalid") from exc
+        if sum(item["sample_exposures"] for item in source_exposure_payload.values()) != sample_exposures:
+            raise CheckpointError("checkpoint source sample exposures do not reconcile")
+        if (
+            sum(item["supervised_entry_exposures"] for item in source_exposure_payload.values())
+            != supervised_entry_exposures
+        ):
+            raise CheckpointError("checkpoint source supervised-entry exposures do not reconcile")
     if fold is not None and fold not in FOLD_IDS:
         raise CheckpointError(f"checkpoint fold must be one of {FOLD_IDS}")
     if checkpoint_kind not in {"latest_resumable", "final_selected"}:
@@ -1227,6 +1303,23 @@ def save_training_checkpoint(
         scaler_state = state_dict()
         if not isinstance(scaler_state, Mapping):
             raise CheckpointError("AMP scaler state is not a mapping")
+    progress_payload: dict[str, object] = {
+        "epoch": 0 if epoch is None else epoch,
+        "global_step": successful_optimizer_steps if global_step is None else global_step,
+        "successful_optimizer_steps": successful_optimizer_steps,
+        "scheduler_steps": scheduler_steps,
+        "attempted_batches": attempted_batches,
+        "skipped_all_masked_batches": skipped_batches,
+        "sample_exposures": sample_exposures,
+        "supervised_entry_exposures": supervised_entry_exposures,
+        "loss_history": list(losses),
+        "batch_in_epoch": batch_in_epoch,
+        "next_batch_index": attempted_batches if next_batch_index is None else next_batch_index,
+        "consecutive_no_progress": consecutive_no_progress,
+        "best_metric": best_metric,
+    }
+    if source_exposure_payload is not None:
+        progress_payload["exposures_by_source"] = source_exposure_payload
     payload: dict[str, object] = {
         "schema_version": CHECKPOINT_SCHEMA_VERSION,
         "checkpoint_version": CHECKPOINT_SCHEMA_VERSION,
@@ -1246,23 +1339,7 @@ def save_training_checkpoint(
         "scheduler_state_dict": scheduler.state_dict(),
         "amp_scaler_state_dict": dict(scaler_state) if isinstance(scaler_state, Mapping) else None,
         "scaler_state_dict": dict(scaler_state) if isinstance(scaler_state, Mapping) else None,
-        "progress": {
-            "epoch": 0 if epoch is None else epoch,
-            "global_step": successful_optimizer_steps if global_step is None else global_step,
-            "successful_optimizer_steps": successful_optimizer_steps,
-            "scheduler_steps": scheduler_steps,
-            "attempted_batches": attempted_batches,
-            "skipped_all_masked_batches": skipped_batches,
-            "sample_exposures": sample_exposures,
-            "supervised_entry_exposures": supervised_entry_exposures,
-            "loss_history": list(losses),
-            "batch_in_epoch": batch_in_epoch,
-            "next_batch_index": (
-                attempted_batches if next_batch_index is None else next_batch_index
-            ),
-            "consecutive_no_progress": consecutive_no_progress,
-            "best_metric": best_metric,
-        },
+        "progress": progress_payload,
         "rng_state": _rng_state(),
         "best_metric": best_metric,
         "checkpoint_timing": dict(checkpoint_timing or {}),
@@ -1624,6 +1701,19 @@ def load_training_checkpoint(
             or exposure_value < 0
         ):
             raise CheckpointError("checkpoint exposure counters are invalid")
+    if "exposures_by_source" in progress:
+        try:
+            source_exposures = _validated_source_exposures(progress["exposures_by_source"])
+        except TrainingError as exc:
+            raise CheckpointError("checkpoint source exposure counters are invalid") from exc
+        if sum(item["sample_exposures"] for item in source_exposures.values()) != progress.get(
+            "sample_exposures", 0
+        ):
+            raise CheckpointError("checkpoint source sample exposures do not reconcile")
+        if sum(
+            item["supervised_entry_exposures"] for item in source_exposures.values()
+        ) != progress.get("supervised_entry_exposures", 0):
+            raise CheckpointError("checkpoint source supervised-entry exposures do not reconcile")
     if progress["attempted_batches"] < progress["successful_optimizer_steps"]:
         raise CheckpointError("checkpoint attempted and successful batch counts disagree")
     loss_values = progress["loss_history"]
@@ -2129,6 +2219,7 @@ def _train_fixed_budget_impl(
     skipped_batches = 0
     sample_exposures = 0
     supervised_entry_exposures = 0
+    exposures_by_source = _empty_source_exposures()
     consecutive_no_progress = 0
     loss_history: list[float] = []
     epoch = 0
@@ -2156,6 +2247,25 @@ def _train_fixed_budget_impl(
         supervised_entry_exposures = int(
             cast(Any, progress.get("supervised_entry_exposures", 0))
         )
+        saved_source_exposures = progress.get("exposures_by_source")
+        exposures_by_source = (
+            _validated_source_exposures(saved_source_exposures)
+            if saved_source_exposures is not None
+            else _rebuild_source_exposures(examples_tuple, config, attempted_batches)
+        )
+        if saved_source_exposures is None:
+            # Older checkpoints may have no exposure totals at all. Rebuild
+            # their source breakdown from the deterministic batch order, then
+            # fill only totals that the legacy format never recorded.
+            if "sample_exposures" not in progress:
+                sample_exposures = sum(
+                    values["sample_exposures"] for values in exposures_by_source.values()
+                )
+            if "supervised_entry_exposures" not in progress:
+                supervised_entry_exposures = sum(
+                    values["supervised_entry_exposures"]
+                    for values in exposures_by_source.values()
+                )
         consecutive_no_progress = int(cast(Any, progress["consecutive_no_progress"]))
         loss_history = [
             float(cast(Any, value))
@@ -2285,6 +2395,7 @@ def _train_fixed_budget_impl(
                 skipped_batches=skipped_batches,
                 sample_exposures=sample_exposures,
                 supervised_entry_exposures=supervised_entry_exposures,
+                exposures_by_source=exposures_by_source,
                 loss_history=loss_history,
                 fold=fold,
                 run_id=effective_run_id,
@@ -2364,6 +2475,7 @@ def _train_fixed_budget_impl(
             batch_mask = np.stack([example.supervision_mask for example in batch_examples])
             sample_exposures += len(batch_examples)
             supervised_entry_exposures += int(batch_mask.sum())
+            _add_batch_source_exposures(exposures_by_source, batch_examples)
             loss_value: float | None = None
             if not bool(batch_mask.any()):
                 skipped_batches += 1
@@ -2565,6 +2677,7 @@ def _train_fixed_budget_impl(
         replayed_batches=replayed_batches,
         checkpoint_events=tuple(dict(event) for event in checkpoint_events),
         semantic_fingerprint_value=semantic_identity,
+        exposures_by_source=exposures_by_source,
     )
 
 
@@ -3276,6 +3389,7 @@ def _train_one_fold_impl(
         semantic_fingerprint_value=scientific_identity,
         sample_exposures=result.sample_exposures,
         supervised_entry_exposures=result.supervised_entry_exposures,
+        exposures_by_source=result.exposures_by_source,
         supervision=supervision_public,
         supervision_private=supervision_private,
     )
