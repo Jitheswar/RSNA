@@ -13,6 +13,7 @@ from rsna_knee.training import (
     TrainingConfig,
     TrainingConfigurationError,
     TrainingExample,
+    SupervisionProvenance,
     TrainingInterrupted,
     TrainingProgressError,
     classify_retry_failure,
@@ -25,6 +26,7 @@ from rsna_knee.training import (
     _json_sha256,
     _legacy_config_fingerprint,
     _legacy_scientific_config_payload,
+    _train_fixed_budget_impl,
     train_fixed_budget,
     train_one_fold,
 )
@@ -124,6 +126,66 @@ def test_fixed_budget_makes_learning_progress_and_records_each_step(tmp_path) ->
                 successful_optimizer_steps=13,
             ),
         )
+
+
+def test_additive_weak_microbatch_preserves_gold_sequence_and_adds_exposure() -> None:
+    config = TrainingConfig(
+        image_size=(16, 16),
+        channels=(2, 4, 8),
+        max_slices=1,
+        max_series=1,
+        successful_optimizer_steps=2,
+        checkpoint_interval_steps=1,
+    )
+    gold = (_tiny_example("gold-a", 0), _tiny_example("gold-b", 1))
+    weak_provenance = SupervisionProvenance(
+        source_kind="weak",
+        source_id="ticket15-test-fixture",
+        fold=0,
+        weak_label_version="report-only-confident-binary-v1",
+        mixture_policy="reference-precedence-plus-report-only-v1",
+        source_report_ref="private://test-report",
+        source_report_sha256="a" * 64,
+    )
+    weak = tuple(
+        TrainingExample(
+            study_instance_uid=f"weak-{name}",
+            images=np.full((1, 1, 1, 16, 16), value, dtype=np.float32),
+            slice_mask=np.ones((1, 1), dtype=bool),
+            series_mask=np.ones(1, dtype=bool),
+            targets=np.asarray([1.0, 0.0] + [0.0] * 10, dtype=np.float32),
+            supervision_mask=np.asarray([True, True] + [False] * 10),
+            provenance=weak_provenance,
+        )
+        for name, value in (("a", 0.2), ("b", 0.8))
+    )
+    weak_seed = config.batch_order_seed + 18_180_018
+
+    gold_result = _train_fixed_budget_impl(gold, config)
+    additive_result = _train_fixed_budget_impl(
+        gold,
+        config,
+        additional_examples=weak,
+        additional_batch_order_seed=weak_seed,
+    )
+
+    assert gold_result.gold_exposure_sequence_sha256 == additive_result.gold_exposure_sequence_sha256
+    assert additive_result.gold_exposure_sequence_sha256 is not None
+    assert additive_result.weak_exposure_sequence_sha256 is not None
+    assert gold_result.initial_model_state_sha256 == additive_result.initial_model_state_sha256
+    assert additive_result.successful_optimizer_steps == gold_result.successful_optimizer_steps == 2
+    assert additive_result.scheduler_steps == gold_result.scheduler_steps == 2
+    assert additive_result.exposures_by_source is not None
+    assert additive_result.exposures_by_source["reference"] == {
+        "sample_exposures": 4,
+        "supervised_entry_exposures": 48,
+    }
+    assert additive_result.exposures_by_source["weak"] == {
+        "sample_exposures": 4,
+        "supervised_entry_exposures": 8,
+    }
+    assert additive_result.sample_exposures == 8
+    assert additive_result.supervised_entry_exposures == 56
 
 
 def test_one_fold_uses_reference_gold_only_and_evaluates_final_checkpoint(tmp_path) -> None:

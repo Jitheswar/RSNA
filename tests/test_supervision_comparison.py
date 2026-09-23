@@ -435,6 +435,73 @@ def test_comparison_reports_paired_oof_delta_uncertainty_and_exposure(tmp_path: 
     assert "| 0 | Gold + clean reports | 24 (12 + 12) | 100 / 1200 | 100 / 300 | 0 / 0 |" in markdown
 
 
+def test_additive_comparison_requires_exact_gold_exposure_and_initialization(tmp_path: Path) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(tmp_path, manifest)
+
+    for fold, gold_path, report_path in zip(range(3), gold_paths, report_paths):
+        gold_run_path = gold_path / "run.json"
+        report_run_path = report_path / "run.json"
+        gold_run = json.loads(gold_run_path.read_text(encoding="utf-8"))
+        report_run = json.loads(report_run_path.read_text(encoding="utf-8"))
+        gold_reference = gold_run["counts"]["exposures_by_source"]["reference"]
+        report_exposures = report_run["counts"]["exposures_by_source"]
+        report_exposures["reference"] = dict(gold_reference)
+        report_exposures["weak"]["sample_exposures"] = 200
+        report_run["counts"]["sample_exposures"] = 400
+        report_run["counts"]["supervised_entry_exposures"] = (
+            report_exposures["reference"]["supervised_entry_exposures"]
+            + report_exposures["weak"]["supervised_entry_exposures"]
+        )
+        initial_hash = hashlib.sha256(f"initial-{fold}".encode()).hexdigest()
+        gold_sequence = hashlib.sha256(f"gold-sequence-{fold}".encode()).hexdigest()
+        weak_sequence = hashlib.sha256(f"weak-sequence-{fold}".encode()).hexdigest()
+        for run, weak_hash in ((gold_run, None), (report_run, weak_sequence)):
+            run["counts"]["training_design"] = "ticket18-additive-report-supervision-v2"
+            run["counts"]["gold_exposure_sequence_sha256"] = gold_sequence
+            run["counts"]["weak_exposure_sequence_sha256"] = weak_hash
+            run["counts"]["initial_model_state_sha256"] = initial_hash
+        report_run["counts"]["weak_sampling_policy"] = "ticket18-report-only-cyclic-shuffle-v1"
+        report_run["counts"]["weak_sampling_seed"] = 38_440_930
+        gold_run_path.write_text(json.dumps(gold_run), encoding="utf-8")
+        report_run_path.write_text(json.dumps(report_run), encoding="utf-8")
+        report_public_path = report_path.parent / f"{report_path.name}.public.json"
+        report_public = json.loads(report_public_path.read_text(encoding="utf-8"))
+        report_public["ticket"] = "18"
+        report_public_path.write_text(json.dumps(report_public), encoding="utf-8")
+
+    result = compare_supervision_oof(
+        gold_paths,
+        report_paths,
+        manifest,
+        bootstrap_resamples=16,
+        bootstrap_seed=19,
+        require_additive_gold_exposure=True,
+    )
+
+    assert result.additive_design is True
+    assert result.folds[0].gold_only_exposure.gold_exposure_sequence_sha256 == (
+        result.folds[0].report_supervised_exposure.gold_exposure_sequence_sha256
+    )
+    assert "adds one deterministic two-study weak microbatch" in render_supervision_comparison_markdown(
+        result
+    )
+
+    report_run_path = report_paths[0] / "run.json"
+    report_run = json.loads(report_run_path.read_text(encoding="utf-8"))
+    report_run["counts"]["gold_exposure_sequence_sha256"] = "f" * 64
+    report_run_path.write_text(json.dumps(report_run), encoding="utf-8")
+    with pytest.raises(ValueError, match="ordered gold exposure sequence differs"):
+        compare_supervision_oof(
+            gold_paths,
+            report_paths,
+            manifest,
+            bootstrap_resamples=16,
+            bootstrap_seed=19,
+            require_additive_gold_exposure=True,
+        )
+
+
 def test_comparison_counts_folds_with_zero_macro_delta(tmp_path: Path) -> None:
     manifest = _manifest()
     gold_paths, report_paths = _write_arms(

@@ -25,6 +25,12 @@ repository artifacts.
   claim was made:
   [public evidence](../../docs/evidence/ticket-17-weak-supervision.md)
   · [external report beside tsk.txt](../../../tsk-report.md).
+- 2026-09-23 — Ticket 18 is closed after the corrected additive-supervision
+  comparison completed with an inconclusive result; paired gold exposure was
+  identical in all folds:
+  [ticket 18](issues/18-measure-the-controlled-benefit-of-report-supervision.md)
+  · [detailed external report](../../../tsk-report.md)
+  · [comparison artifacts](../../../ticket-18-additive-v2/comparison/ticket-18-additive-v2.md).
 
 ## Fog
 

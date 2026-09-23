@@ -60,6 +60,9 @@ DEFAULT_TRAINING_SEED = 20260911
 DEFAULT_BATCH_ORDER_SEED = 20260912
 DEFAULT_SOURCE_VERSION = "synthetic-development"
 SOURCE_EXPOSURE_KINDS = ("reference", "weak", "mixed")
+TICKET18_ADDITIVE_DESIGN = "ticket18-additive-report-supervision-v2"
+TICKET18_WEAK_SAMPLING_POLICY = "ticket18-report-only-cyclic-shuffle-v1"
+TICKET18_WEAK_BATCH_SEED_OFFSET = 18_180_018
 
 
 def _empty_source_exposures() -> dict[str, dict[str, int]]:
@@ -101,9 +104,14 @@ def _add_batch_source_exposures(
 
 
 def _rebuild_source_exposures(
-    examples: Sequence["TrainingExample"], config: "TrainingConfig", attempted_batches: int
+    examples: Sequence["TrainingExample"],
+    config: "TrainingConfig",
+    attempted_batches: int,
+    *,
+    additional_examples: Sequence["TrainingExample"] = (),
+    additional_batch_order_seed: int | None = None,
 ) -> dict[str, dict[str, int]]:
-    """Recover source-specific counters for checkpoints written before Ticket 18."""
+    """Recover source-specific counters from deterministic exposure sequences."""
 
     exposures = _empty_source_exposures()
     for attempted_batch in range(attempted_batches):
@@ -113,8 +121,54 @@ def _rebuild_source_exposures(
                 len(examples), config.batch_size, attempted_batch, config.batch_order_seed
             )
         )
+        if additional_examples:
+            if additional_batch_order_seed is None:
+                raise TrainingConfigurationError(
+                    "additional training examples require a deterministic sampling seed"
+                )
+            batch += tuple(
+                additional_examples[index]
+                for index in _batch_indices(
+                    len(additional_examples),
+                    config.batch_size,
+                    attempted_batch,
+                    additional_batch_order_seed,
+                )
+            )
         _add_batch_source_exposures(exposures, batch)
     return exposures
+
+
+def _exposure_sequence_sha256(
+    examples: Sequence["TrainingExample"],
+    config: "TrainingConfig",
+    attempted_batches: int,
+    seed: int,
+) -> str:
+    """Hash ordered study exposures without publishing study identifiers."""
+
+    sequence = [
+        examples[index].study_instance_uid
+        for attempted_batch in range(attempted_batches)
+        for index in _batch_indices(
+            len(examples), config.batch_size, attempted_batch, seed
+        )
+    ]
+    encoded = json.dumps(sequence, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _model_state_sha256(model: torch.nn.Module) -> str:
+    """Hash initialized model tensors in a stable key and byte order."""
+
+    digest = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        value = tensor.detach().cpu().contiguous()
+        digest.update(name.encode("utf-8"))
+        digest.update(str(value.dtype).encode("ascii"))
+        digest.update(json.dumps(list(value.shape), separators=(",", ":")).encode("ascii"))
+        digest.update(value.numpy().tobytes())
+    return digest.hexdigest()
 
 
 class TrainingError(RuntimeError):
@@ -761,6 +815,12 @@ class TrainingResult:
     supervision: Mapping[str, object] = field(default_factory=lambda: {"kind": "reference"})
     supervision_private: Mapping[str, object] | None = None
     exposures_by_source: Mapping[str, Mapping[str, int]] | None = None
+    gold_exposure_sequence_sha256: str | None = None
+    weak_exposure_sequence_sha256: str | None = None
+    initial_model_state_sha256: str | None = None
+    training_design: str | None = None
+    weak_sampling_policy: str | None = None
+    weak_sampling_seed: int | None = None
 
     @property
     def final_loss(self) -> float | None:
@@ -785,6 +845,12 @@ class TrainingResult:
             counts["exposures_by_source"] = {
                 kind: dict(values) for kind, values in self.exposures_by_source.items()
             }
+        counts["gold_exposure_sequence_sha256"] = self.gold_exposure_sequence_sha256
+        counts["weak_exposure_sequence_sha256"] = self.weak_exposure_sequence_sha256
+        counts["initial_model_state_sha256"] = self.initial_model_state_sha256
+        counts["training_design"] = self.training_design
+        counts["weak_sampling_policy"] = self.weak_sampling_policy
+        counts["weak_sampling_seed"] = self.weak_sampling_seed
         return {
             "schema_version": TRAINING_SCHEMA_VERSION,
             "status": "completed_fixed_budget_training",
@@ -2027,6 +2093,8 @@ def _train_fixed_budget_impl(
     examples: Sequence[TrainingExample],
     config: TrainingConfig = TrainingConfig(),
     *,
+    additional_examples: Sequence[TrainingExample] = (),
+    additional_batch_order_seed: int | None = None,
     model: HierarchicalStudyModel | None = None,
     artifact_dir: str | Path | None = None,
     fold: int | None = None,
@@ -2058,6 +2126,22 @@ def _train_fixed_budget_impl(
         _validate_gpu_execution_authorization_shape(gpu_authorization)
     examples_tuple = tuple(examples)
     _validate_examples(examples_tuple, config)
+    additional_examples_tuple = tuple(additional_examples)
+    if additional_examples_tuple:
+        _validate_examples(additional_examples_tuple, config)
+        overlap = {item.study_instance_uid for item in examples_tuple}.intersection(
+            item.study_instance_uid for item in additional_examples_tuple
+        )
+        if overlap:
+            raise TrainingDataError("base and additional training examples must be disjoint")
+        if additional_batch_order_seed is None or additional_batch_order_seed < 0:
+            raise TrainingConfigurationError(
+                "additional training examples require a non-negative deterministic sampling seed"
+            )
+    elif additional_batch_order_seed is not None:
+        raise TrainingConfigurationError(
+            "an additional sampling seed requires additional training examples"
+        )
     if interrupt_after_steps is not None and interrupt_after_steps < 0:
         raise TrainingConfigurationError("interrupt_after_steps cannot be negative")
     if amp_scaler is not None and scaler is not None:
@@ -2118,6 +2202,7 @@ def _train_fixed_budget_impl(
         model = HierarchicalStudyModel(config.model_config())
     elif model.config != config.model_config():
         raise TrainingConfigurationError("provided model configuration does not match TrainingConfig")
+    initial_model_state_sha256 = _model_state_sha256(model)
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
@@ -2251,7 +2336,13 @@ def _train_fixed_budget_impl(
         exposures_by_source = (
             _validated_source_exposures(saved_source_exposures)
             if saved_source_exposures is not None
-            else _rebuild_source_exposures(examples_tuple, config, attempted_batches)
+            else _rebuild_source_exposures(
+                examples_tuple,
+                config,
+                attempted_batches,
+                additional_examples=additional_examples_tuple,
+                additional_batch_order_seed=additional_batch_order_seed,
+            )
         )
         if saved_source_exposures is None:
             # Older checkpoints may have no exposure totals at all. Rebuild
@@ -2471,6 +2562,17 @@ def _train_fixed_budget_impl(
                     config.batch_order_seed,
                 )
             )
+            if additional_examples_tuple:
+                assert additional_batch_order_seed is not None
+                batch_examples += tuple(
+                    additional_examples_tuple[index]
+                    for index in _batch_indices(
+                        len(additional_examples_tuple),
+                        config.batch_size,
+                        attempted_batches,
+                        additional_batch_order_seed,
+                    )
+                )
             attempted_batches += 1
             batch_mask = np.stack([example.supervision_mask for example in batch_examples])
             sample_exposures += len(batch_examples)
@@ -2678,6 +2780,20 @@ def _train_fixed_budget_impl(
         checkpoint_events=tuple(dict(event) for event in checkpoint_events),
         semantic_fingerprint_value=semantic_identity,
         exposures_by_source=exposures_by_source,
+        gold_exposure_sequence_sha256=_exposure_sequence_sha256(
+            examples_tuple, config, attempted_batches, config.batch_order_seed
+        ),
+        weak_exposure_sequence_sha256=(
+            _exposure_sequence_sha256(
+                additional_examples_tuple,
+                config,
+                attempted_batches,
+                cast(int, additional_batch_order_seed),
+            )
+            if additional_examples_tuple
+            else None
+        ),
+        initial_model_state_sha256=initial_model_state_sha256,
     )
 
 
@@ -3103,6 +3219,7 @@ def _train_one_fold_impl(
     integration_manifest_checksum: str | None = None,
     series_cache: SeriesCache | None = None,
     supervision: AdmittedFoldSupervision | None = None,
+    ticket18_additive_design: bool = False,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
     preflight: CpuPreflightResult | None = None,
@@ -3186,15 +3303,71 @@ def _train_one_fold_impl(
             raise TrainingConfigurationError(
                 "recomputed training identity does not match the approved scientific identity"
             )
-    training_examples = build_fold_training_examples(
-        studies,
-        fold_manifest,
-        fold,
-        preprocess_config=config.preprocess_config(),
-        packing_config=config.packing_config(),
-        series_cache=series_cache,
-        admitted_supervision=supervision,
-    )
+    additional_examples: tuple[TrainingExample, ...] = ()
+    additional_batch_order_seed: int | None = None
+    if ticket18_additive_design:
+        if supervision is None:
+            training_examples = build_fold_training_examples(
+                studies,
+                fold_manifest,
+                fold,
+                preprocess_config=config.preprocess_config(),
+                packing_config=config.packing_config(),
+                series_cache=series_cache,
+            )
+            if any(example.provenance.source_kind != "reference" for example in training_examples):
+                raise TrainingDataError("additive Ticket 18 control must contain reference examples only")
+        else:
+            training_examples = build_fold_training_examples(
+                studies,
+                fold_manifest,
+                fold,
+                preprocess_config=config.preprocess_config(),
+                packing_config=config.packing_config(),
+                series_cache=series_cache,
+            )
+            admitted_examples = build_fold_training_examples(
+                studies,
+                fold_manifest,
+                fold,
+                preprocess_config=config.preprocess_config(),
+                packing_config=config.packing_config(),
+                series_cache=series_cache,
+                admitted_supervision=supervision,
+            )
+            additional_examples = tuple(
+                sorted(
+                    (
+                        example
+                        for example in admitted_examples
+                        if example.provenance.source_kind == "weak"
+                    ),
+                    key=lambda example: example.study_instance_uid,
+                )
+            )
+            if not additional_examples:
+                raise TrainingDataError(
+                    "additive Ticket 18 treatment requires image-backed report-only examples"
+                )
+            if any(example.provenance.source_kind != "reference" for example in training_examples):
+                raise TrainingDataError("additive Ticket 18 gold path must contain reference examples only")
+            if {item.study_instance_uid for item in training_examples}.intersection(
+                item.study_instance_uid for item in additional_examples
+            ):
+                raise TrainingDataError("additive Ticket 18 gold and report-only pools overlap")
+            additional_batch_order_seed = (
+                config.batch_order_seed + TICKET18_WEAK_BATCH_SEED_OFFSET
+            )
+    else:
+        training_examples = build_fold_training_examples(
+            studies,
+            fold_manifest,
+            fold,
+            preprocess_config=config.preprocess_config(),
+            packing_config=config.packing_config(),
+            series_cache=series_cache,
+            admitted_supervision=supervision,
+        )
     held_out_examples = build_fold_held_out_examples(
         studies,
         fold_manifest,
@@ -3205,7 +3378,11 @@ def _train_one_fold_impl(
     )
     held_out_uids = tuple(example.study_instance_uid for example in held_out_examples)
     training_uids = tuple(example.study_instance_uid for example in training_examples)
-    if set(training_uids).intersection(held_out_uids):
+    additional_uids = tuple(example.study_instance_uid for example in additional_examples)
+    all_training_uids = tuple(sorted((*training_uids, *additional_uids)))
+    if len(set(all_training_uids)) != len(all_training_uids):
+        raise TrainingDataError("base and additional training partitions contain duplicate studies")
+    if set(all_training_uids).intersection(held_out_uids):
         raise TrainingDataError("training and held-out study partitions overlap")
     supervision_public: dict[str, object]
     supervision_private: Mapping[str, object] | None
@@ -3249,6 +3426,23 @@ def _train_one_fold_impl(
         fold=fold,
         supervision_identity=supervision_identity,
     )
+    if ticket18_additive_design:
+        identity["training_design"] = TICKET18_ADDITIVE_DESIGN
+        identity["additional_training_data_fingerprint"] = (
+            fingerprint_training_examples(additional_examples)
+            if additional_examples
+            else None
+        )
+        identity["weak_sampling"] = (
+            {
+                "policy": TICKET18_WEAK_SAMPLING_POLICY,
+                "microbatch_size": config.batch_size,
+                "seed": additional_batch_order_seed,
+                "source": "Ticket 15 report-only pool sorted by study identity",
+            }
+            if additional_examples
+            else None
+        )
     identity["held_out_data_fingerprint"] = fingerprint_training_examples(held_out_examples)
     identity["held_out_inputs_excluded_from_fitting"] = True
     identity["learned_normalization_fit_studies"] = []
@@ -3337,6 +3531,8 @@ def _train_one_fold_impl(
     result = _train_fixed_budget_impl(
         training_examples,
         config,
+        additional_examples=additional_examples,
+        additional_batch_order_seed=additional_batch_order_seed,
         artifact_dir=destination,
         fold=fold,
         run_id=run_id,
@@ -3377,7 +3573,7 @@ def _train_one_fold_impl(
         fold=fold,
         evaluation=evaluation,
         predictions=predictions,
-        training_study_uids=training_uids,
+        training_study_uids=all_training_uids,
         held_out_study_uids=held_out_uids,
         data_fingerprint=str(identity["data_fingerprint"]),
         best_metric=result.best_metric,
@@ -3390,6 +3586,14 @@ def _train_one_fold_impl(
         sample_exposures=result.sample_exposures,
         supervised_entry_exposures=result.supervised_entry_exposures,
         exposures_by_source=result.exposures_by_source,
+        gold_exposure_sequence_sha256=result.gold_exposure_sequence_sha256,
+        weak_exposure_sequence_sha256=result.weak_exposure_sequence_sha256,
+        initial_model_state_sha256=result.initial_model_state_sha256,
+        training_design=(TICKET18_ADDITIVE_DESIGN if ticket18_additive_design else None),
+        weak_sampling_policy=(
+            TICKET18_WEAK_SAMPLING_POLICY if additional_examples else None
+        ),
+        weak_sampling_seed=additional_batch_order_seed,
         supervision=supervision_public,
         supervision_private=supervision_private,
     )
@@ -3411,6 +3615,7 @@ def train_one_fold(
     integration_manifest_checksum: str | None = None,
     series_cache: SeriesCache | None = None,
     supervision: AdmittedFoldSupervision | None = None,
+    ticket18_additive_design: bool = False,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
     preflight: CpuPreflightResult | None = None,
@@ -3445,6 +3650,7 @@ def train_one_fold(
         integration_manifest_checksum=integration_manifest_checksum,
         series_cache=series_cache,
         supervision=supervision,
+        ticket18_additive_design=ticket18_additive_design,
         preprocess_config=preprocess_config,
         packing_config=packing_config,
         preflight=preflight,
@@ -3559,6 +3765,11 @@ def _parser() -> Any:
         help="replay a superseded version-1 fold manifest for historical evidence only",
     )
     parser.add_argument("--require-slurm", action="store_true")
+    parser.add_argument(
+        "--ticket18-additive-design",
+        action="store_true",
+        help="record this gold-only run as the control for Ticket 18 additive supervision v2",
+    )
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
 
@@ -3644,6 +3855,7 @@ def main(argv: list[str] | None = None) -> int:
             source_fingerprint=args.source_fingerprint or integration_manifest.archive_fingerprint,
             integration_manifest_checksum=integration_manifest.manifest_checksum,
             series_cache=cache,
+            ticket18_additive_design=args.ticket18_additive_design,
             preprocess_config=integration_manifest.preprocess_config,
             packing_config=integration_manifest.packing_config,
             preflight=preflight,

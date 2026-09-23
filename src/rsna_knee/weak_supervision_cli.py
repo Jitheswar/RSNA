@@ -55,6 +55,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume-from", type=Path, default=None)
     parser.add_argument("--execution-attempt-id", default=None)
     parser.add_argument("--require-slurm", action="store_true")
+    parser.add_argument(
+        "--ticket18-additive-design",
+        action="store_true",
+        help="add a deterministic report-only microbatch to each unchanged gold batch",
+    )
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
 
@@ -253,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
             integration_manifest_checksum=integration_manifest.manifest_checksum,
             series_cache=cache,
             supervision=admitted_for_images,
+            ticket18_additive_design=args.ticket18_additive_design,
             preprocess_config=integration_manifest.preprocess_config,
             packing_config=integration_manifest.packing_config,
             preflight=preflight,
@@ -266,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     **result.to_public_dict(),
                     "environment": _public_run_environment(),
-                    "ticket": "17",
+                    "ticket": "18" if args.ticket18_additive_design else "17",
                     "source_version": args.source_version,
                     "fold_manifest_checksum": fold_manifest.manifest_checksum,
                     "report_extraction_semantic_digest": report_extraction.semantic_digest,

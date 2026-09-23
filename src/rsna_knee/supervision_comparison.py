@@ -47,6 +47,8 @@ _PUBLIC_ADMISSION_FIELDS = (
     "counts",
     "boundaries",
 )
+_TICKET18_ADDITIVE_DESIGN = "ticket18-additive-report-supervision-v2"
+_TICKET18_WEAK_SAMPLING_POLICY = "ticket18-report-only-cyclic-shuffle-v1"
 
 
 def _mapping(value: object, field: str) -> Mapping[str, object]:
@@ -135,6 +137,7 @@ class TargetAucComparison:
 
 @dataclass(frozen=True)
 class ArmExposureEvidence:
+    run_id: str
     training_studies: int
     reference_training_studies: int
     report_training_studies: int
@@ -156,9 +159,13 @@ class ArmExposureEvidence:
     observed_user_cpu_seconds: float
     observed_system_cpu_seconds: float
     observed_peak_rss_kb: int
+    gold_exposure_sequence_sha256: str | None = None
+    weak_exposure_sequence_sha256: str | None = None
+    initial_model_state_sha256: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "run_id": self.run_id,
             "training_studies": self.training_studies,
             "reference_training_studies": self.reference_training_studies,
             "report_training_studies": self.report_training_studies,
@@ -186,6 +193,9 @@ class ArmExposureEvidence:
                 "system_cpu_seconds": self.observed_system_cpu_seconds,
                 "peak_rss_kb": self.observed_peak_rss_kb,
             },
+            "gold_exposure_sequence_sha256": self.gold_exposure_sequence_sha256,
+            "weak_exposure_sequence_sha256": self.weak_exposure_sequence_sha256,
+            "initial_model_state_sha256": self.initial_model_state_sha256,
         }
 
 
@@ -218,6 +228,7 @@ class SupervisionComparison:
     pooled_targets: tuple[TargetAucComparison, ...]
     folds: tuple[FoldSupervisionComparison, ...]
     config_fingerprint: str
+    code_revision: str
     source_version: str
     source_fingerprint: str
     integration_manifest_checksum: str
@@ -231,6 +242,7 @@ class SupervisionComparison:
     unchanged_folds: int
     undefined_folds: int
     interpretation: str
+    additive_design: bool = False
 
     def __post_init__(self) -> None:
         if tuple(item.target for item in self.pooled_targets) != TARGET_COLUMNS:
@@ -261,8 +273,21 @@ class SupervisionComparison:
 
     def to_public_dict(self) -> dict[str, object]:
         return {
-            "schema_version": "rsna-knee-supervision-comparison-v1",
-            "experiment": "gold-only versus gold-plus-clean-report supervision",
+            "schema_version": (
+                "rsna-knee-supervision-comparison-additive-v2"
+                if self.additive_design
+                else "rsna-knee-supervision-comparison-v1"
+            ),
+            "experiment": (
+                "gold-only versus additive gold-plus-clean-report supervision"
+                if self.additive_design
+                else "gold-only versus gold-plus-clean-report supervision"
+            ),
+            "design": (
+                "additive weak supervision with identical paired gold exposure"
+                if self.additive_design
+                else "original mixture-policy comparison"
+            ),
             "prediction_count": self.prediction_count,
             "metric": "pooled twelve-target macro ROC-AUC",
             "delta_definition": "report-supervised minus gold-only",
@@ -310,6 +335,7 @@ class SupervisionComparison:
             },
             "shared_experiment_identity": {
                 "training_configuration_fingerprint": self.config_fingerprint,
+                "code_revision": self.code_revision,
                 "source_version": self.source_version,
                 "source_fingerprint": self.source_fingerprint,
                 "integration_manifest_checksum": self.integration_manifest_checksum,
@@ -327,12 +353,17 @@ class SupervisionComparison:
         return self.to_public_dict()
 
 
-def _load_report_evidence(record: OOFRunRecord) -> tuple[str, str]:
+def _load_report_evidence(
+    record: OOFRunRecord, *, additive_design: bool = False
+) -> tuple[str, str]:
     run_directory = record.path.parent
     evidence_path = run_directory.parent / f"{run_directory.name}.public.json"
     evidence = _read_json_object(evidence_path, "report-supervision run evidence")
-    if evidence.get("ticket") != "17":
-        raise SupervisionComparisonError("report run evidence is not from the Ticket 17 training adapter")
+    expected_ticket = "18" if additive_design else "17"
+    if evidence.get("ticket") != expected_ticket:
+        raise SupervisionComparisonError(
+            f"report run evidence is not from the Ticket {expected_ticket} training adapter"
+        )
     if evidence.get("fold") != record.fold or evidence.get("fold_manifest_checksum") != record.fold_manifest_checksum:
         raise SupervisionComparisonError("report run evidence fold identity disagrees with its run record")
     if evidence.get("preflight_passed") is not True:
@@ -357,7 +388,12 @@ def _load_report_evidence(record: OOFRunRecord) -> tuple[str, str]:
     return artifact_sha256, semantic_digest
 
 
-def _arm_exposure(record: OOFRunRecord, *, report_arm: bool) -> ArmExposureEvidence:
+def _arm_exposure(
+    record: OOFRunRecord,
+    *,
+    report_arm: bool,
+    additive_report_arm: bool = False,
+) -> ArmExposureEvidence:
     counts = record.counts
     training_studies = _integer(counts.get("training_studies"), "counts.training_studies", minimum=1)
     held_out_studies = _integer(counts.get("held_out_studies"), "counts.held_out_studies", minimum=1)
@@ -381,8 +417,11 @@ def _arm_exposure(record: OOFRunRecord, *, report_arm: bool) -> ArmExposureEvide
     supervised_exposures = _integer(
         counts.get("supervised_entry_exposures"), "counts.supervised_entry_exposures", minimum=1
     )
-    if sample_exposures != attempted * batch_size:
-        raise SupervisionComparisonError("sample exposure count does not match attempted batches")
+    expected_sample_exposures = attempted * batch_size * (
+        2 if report_arm and additive_report_arm else 1
+    )
+    if sample_exposures != expected_sample_exposures:
+        raise SupervisionComparisonError("sample exposure count does not match the declared batches")
     raw_by_source = _mapping(counts.get("exposures_by_source"), "counts.exposures_by_source")
     if set(raw_by_source) != set(_EXPOSURE_KINDS):
         raise SupervisionComparisonError("exposure counts must separate reference, weak and mixed sources")
@@ -478,7 +517,22 @@ def _arm_exposure(record: OOFRunRecord, *, report_arm: bool) -> ArmExposureEvide
     if measured_cpu_seconds > cpus * elapsed_seconds + cpu_time_tolerance:
         raise SupervisionComparisonError("observed CPU time exceeds the requested CPU allocation")
 
+    gold_sequence = counts.get("gold_exposure_sequence_sha256")
+    weak_sequence = counts.get("weak_exposure_sequence_sha256")
+    initial_model_hash = counts.get("initial_model_state_sha256")
+    for value, name in (
+        (gold_sequence, "gold exposure sequence SHA-256"),
+        (initial_model_hash, "initial model state SHA-256"),
+    ):
+        if value is not None and (not isinstance(value, str) or not _DIGEST_RE.fullmatch(value)):
+            raise SupervisionComparisonError(f"{name} is invalid")
+    if weak_sequence is not None and (
+        not isinstance(weak_sequence, str) or not _DIGEST_RE.fullmatch(weak_sequence)
+    ):
+        raise SupervisionComparisonError("weak exposure sequence SHA-256 is invalid")
+
     return ArmExposureEvidence(
+        run_id=record.run_id,
         training_studies=training_studies,
         reference_training_studies=reference_count,
         report_training_studies=report_count,
@@ -500,6 +554,9 @@ def _arm_exposure(record: OOFRunRecord, *, report_arm: bool) -> ArmExposureEvide
         observed_user_cpu_seconds=user_cpu_seconds,
         observed_system_cpu_seconds=system_cpu_seconds,
         observed_peak_rss_kb=peak_rss_kb,
+        gold_exposure_sequence_sha256=cast(str | None, gold_sequence),
+        weak_exposure_sequence_sha256=cast(str | None, weak_sequence),
+        initial_model_state_sha256=cast(str | None, initial_model_hash),
     )
 
 
@@ -601,6 +658,7 @@ def compare_supervision_oof(
     bootstrap_resamples: int = 2000,
     bootstrap_seed: int = 20260918,
     bootstrap_confidence_level: float = 0.95,
+    require_additive_gold_exposure: bool = False,
 ) -> SupervisionComparison:
     """Validate and compare matched three-fold reference/report OOF artifacts."""
 
@@ -670,9 +728,75 @@ def compare_supervision_oof(
         fold: _arm_exposure(gold_by_fold[fold], report_arm=False) for fold in FOLD_IDS
     }
     report_exposures = {
-        fold: _arm_exposure(report_by_fold[fold], report_arm=True) for fold in FOLD_IDS
+        fold: _arm_exposure(
+            report_by_fold[fold],
+            report_arm=True,
+            additive_report_arm=require_additive_gold_exposure,
+        )
+        for fold in FOLD_IDS
     }
-    report_evidence = tuple(_load_report_evidence(report_by_fold[fold]) for fold in FOLD_IDS)
+    if require_additive_gold_exposure:
+        for fold in FOLD_IDS:
+            gold_record = gold_by_fold[fold]
+            report_record = report_by_fold[fold]
+            gold = gold_exposures[fold]
+            report = report_exposures[fold]
+            if gold_record.counts.get("training_design") != _TICKET18_ADDITIVE_DESIGN:
+                raise SupervisionComparisonError("gold control is not marked as additive Ticket 18 v2")
+            if report_record.counts.get("training_design") != _TICKET18_ADDITIVE_DESIGN:
+                raise SupervisionComparisonError("report treatment is not marked as additive Ticket 18 v2")
+            if report_record.counts.get("weak_sampling_policy") != _TICKET18_WEAK_SAMPLING_POLICY:
+                raise SupervisionComparisonError("report treatment uses an undeclared weak sampling policy")
+            if (
+                gold.exposures_by_source["reference"]
+                != report.exposures_by_source["reference"]
+            ):
+                raise SupervisionComparisonError(
+                    f"fold {fold} gold sample or supervised-entry exposures differ between arms"
+                )
+            if (
+                gold.gold_exposure_sequence_sha256 is None
+                or report.gold_exposure_sequence_sha256 != gold.gold_exposure_sequence_sha256
+            ):
+                raise SupervisionComparisonError(
+                    f"fold {fold} ordered gold exposure sequence differs between arms"
+                )
+            if not report.weak_exposure_sequence_sha256:
+                raise SupervisionComparisonError(
+                    f"fold {fold} report treatment has no weak sampling sequence fingerprint"
+                )
+            if (
+                gold.initial_model_state_sha256 is None
+                or report.initial_model_state_sha256 != gold.initial_model_state_sha256
+            ):
+                raise SupervisionComparisonError(
+                    f"fold {fold} model initialization differs between arms"
+                )
+            gold_batch = _integer(
+                _mapping(gold_record.config.get("optimization"), "gold optimization config").get("batch_size"),
+                "gold batch size",
+                minimum=1,
+            )
+            if report.exposures_by_source["reference"]["sample_exposures"] != (
+                gold.successful_optimizer_steps * gold_batch
+            ):
+                raise SupervisionComparisonError(
+                    f"fold {fold} gold reference exposure does not match the fixed-step batch sequence"
+                )
+            if report.exposures_by_source["weak"]["sample_exposures"] != (
+                report.successful_optimizer_steps * gold_batch
+            ):
+                raise SupervisionComparisonError(
+                    f"fold {fold} weak exposure does not match the declared microbatch size"
+                )
+            if report.successful_optimizer_steps != gold.successful_optimizer_steps:
+                raise SupervisionComparisonError(
+                    f"fold {fold} optimizer-step budgets differ between arms"
+                )
+    report_evidence = tuple(
+        _load_report_evidence(report_by_fold[fold], additive_design=require_additive_gold_exposure)
+        for fold in FOLD_IDS
+    )
     artifact_hashes = {item[0] for item in report_evidence}
     semantic_digests = {item[1] for item in report_evidence}
     if len(artifact_hashes) != 1 or len(semantic_digests) != 1:
@@ -766,6 +890,7 @@ def compare_supervision_oof(
         pooled_targets=target_comparisons,
         folds=tuple(folds),
         config_fingerprint=next(iter(fingerprints)),
+        code_revision=cast(str, next(iter(revisions))),
         source_version=cast(str, next(iter({record.source_version for record in all_records}))),
         source_fingerprint=cast(str, next(iter({record.source_fingerprint for record in all_records}))),
         integration_manifest_checksum=cast(
@@ -781,6 +906,7 @@ def compare_supervision_oof(
         unchanged_folds=unchanged_folds,
         undefined_folds=undefined_folds,
         interpretation=interpretation,
+        additive_design=require_additive_gold_exposure,
     )
 
 
@@ -795,13 +921,18 @@ def _format_confidence_level(value: float) -> str:
 def render_supervision_comparison_markdown(comparison: SupervisionComparison) -> str:
     interval = comparison.macro_auc_delta_interval
     lines = [
-        "# Ticket 18 — Controlled report-supervision OOF comparison",
+        (
+            "# Ticket 18 — Additive report-supervision OOF comparison v2"
+            if comparison.additive_design
+            else "# Ticket 18 — Controlled report-supervision OOF comparison"
+        ),
         "",
         "The gold-only and gold-plus-clean-report arms use the same image model, folds, initialization, preprocessing, optimizer, loss, successful-step budget, and final-checkpoint evaluation. The report arm uses the frozen Ticket 15 deterministic extractor and reference-precedence mixture policy.",
         "",
         f"- Gold reference predictions: {comparison.prediction_count}",
         f"- Fold manifest: `{comparison.fold_manifest_checksum}`",
         f"- Shared training configuration: `{comparison.config_fingerprint}`",
+        f"- Code revision: `{comparison.code_revision}`",
         f"- Frozen report artifact SHA-256: `{comparison.report_artifact_sha256}`",
         f"- Report semantic digest: `{comparison.report_semantic_digest}`",
         f"- Weak-label policy: `{comparison.weak_label_version}`",
@@ -916,6 +1047,29 @@ def render_supervision_comparison_markdown(comparison: SupervisionComparison) ->
     lines.extend(
         [
             "",
+            "## Paired run identities and fingerprints",
+            "",
+            "The gold exposure digest hashes the ordered sequence of sample identities without disclosing those identities. The initial-state digest covers every initialized model tensor. The weak digest hashes the added report-only sequence.",
+            "",
+            "| Fold | Arm | Run ID | Gold exposure sequence SHA-256 | Weak exposure sequence SHA-256 | Initial model state SHA-256 | Final checkpoint SHA-256 |",
+            "| ---: | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for fold_comparison in comparison.folds:
+        for arm_name, evidence in (
+            ("Gold-only", fold_comparison.gold_only_exposure),
+            ("Gold + clean reports", fold_comparison.report_supervised_exposure),
+        ):
+            lines.append(
+                f"| {fold_comparison.fold} | {arm_name} | `{evidence.run_id}` | "
+                f"`{evidence.gold_exposure_sequence_sha256 or 'undefined'}` | "
+                f"`{evidence.weak_exposure_sequence_sha256 or '—'}` | "
+                f"`{evidence.initial_model_state_sha256 or 'undefined'}` | "
+                f"`{evidence.final_checkpoint_sha256}` |"
+            )
+    lines.extend(
+        [
+            "",
             f"Fold deltas: {comparison.positive_folds} positive, {comparison.negative_folds} negative, "
             f"{comparison.unchanged_folds} unchanged, {comparison.undefined_folds} undefined.",
             "",
@@ -924,6 +1078,17 @@ def render_supervision_comparison_markdown(comparison: SupervisionComparison) ->
             comparison.interpretation + ".",
             "",
             "This is repeated development CV for model selection, not an untouched internal test. Study bootstrap uncertainty is reported because an attested patient/group key is unavailable. Undefined AUCs remain undefined, and undefined bootstrap resamples are counted rather than imputed.",
+        ]
+    )
+    if comparison.additive_design:
+        lines.extend(
+            [
+                "",
+                "The report-supervised arm retains the exact ordered gold exposure sequence and adds one deterministic two-study weak microbatch to each gold batch. Gold and weak entries are averaged together by the existing masked BCE, with one optimizer and scheduler step per batch.",
+            ]
+        )
+    lines.extend(
+        [
             "",
             "No focal, class-weighted, or soft-label loss was used. The gold-only training path remains available regardless of this result.",
             "",
@@ -996,6 +1161,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--bootstrap-resamples", type=int, default=2000)
     parser.add_argument("--bootstrap-seed", type=int, default=20260918)
     parser.add_argument("--bootstrap-confidence-level", type=float, default=0.95)
+    parser.add_argument("--require-additive-gold-exposure", action="store_true")
     return parser
 
 
@@ -1010,6 +1176,7 @@ def main(argv: list[str] | None = None) -> int:
             bootstrap_resamples=args.bootstrap_resamples,
             bootstrap_seed=args.bootstrap_seed,
             bootstrap_confidence_level=args.bootstrap_confidence_level,
+            require_additive_gold_exposure=args.require_additive_gold_exposure,
         )
         write_supervision_comparison(
             comparison,

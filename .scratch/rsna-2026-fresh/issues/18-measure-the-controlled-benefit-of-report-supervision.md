@@ -66,3 +66,41 @@ report artifact. Limitations remain: there is no trusted patient-group key,
 these are development-CV results rather than an untouched internal test, and
 they support no clinical-generalization claim. Any future extractor or
 teacher/student artifact needs its own admission and lineage checks.
+
+### 2026-09-23 — Corrected additive-supervision v2
+
+Completed the frozen v2 correction after the original comparison showed unequal
+reference exposure. In all three folds, gold-only and gold-plus-report runs
+used the same 200 reference sample exposures, 2,400 reference entry exposures,
+ordered gold sequence, initialization, held-out set and 100-step budget. The
+report arm added 200 weak sample exposures per fold (351, 358 and 352 valid
+weak entries respectively), using the frozen Ticket 15 artifact; Astra was
+excluded.
+
+Across 58 OOF studies, pooled macro AUC was 0.4643127624 for gold-only and
+0.4634015985 for additive supervision (delta -0.0009111638; paired 95% study
+bootstrap [-0.0275934772, 0.0266566648], seed 20260918, 2,000 defined
+resamples). Two fold deltas were positive and one negative. The corrected result
+is inconclusive; no benefit or harm is claimed. The original Ticket 18 run
+artifacts were preserved, and Ticket 19 was not started.
+
+All six runs completed with 100 successful optimizer steps. Full pytest passed
+(301), mypy passed, checkpoint reload and exact paired-exposure checks passed,
+and OOF completeness/uniqueness and comparison aggregation passed. The compute
+node lacked Git for `git diff --check`; that check passed from the repository
+workspace. Detailed metrics, run IDs, checkpoint and OOF identity hashes,
+compute, provenance, and verification evidence are in
+[`/home/ch.jitheswar/tsk-report.md`](/home/ch.jitheswar/tsk-report.md) and the
+corrected public-safe artifacts under `/home/ch.jitheswar/ticket-18-additive-v2/`.
+
+## Answer
+
+Ticket 18 is resolved with the corrected additive-supervision v2 experiment.
+All three paired folds preserved the exact gold exposure sequence and added
+deterministic Ticket 15 weak supervision. Across 58 OOF studies, the pooled
+macro-AUC delta was -0.0009111638 with paired 95% study-bootstrap interval
+[-0.0275934772, 0.0266566648], so the result is inconclusive. All six runs,
+checkpoint and OOF checks, full pytest, and mypy completed successfully; the
+repository diff check passed in the workspace. The detailed report is
+`/home/ch.jitheswar/tsk-report.md`. Original Ticket 18 evidence is preserved;
+Ticket 19 was not started.
