@@ -4,18 +4,18 @@
 
 **Blocked by:** 20: Evaluate the strongest image/supervision combination
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-**Authorization:** Planning artifact only. The owner has approved ticket publication, not implementation. Do not start work until separately instructed; ready-for-agent describes specification readiness, not execution permission.
+**Authorization:** Planning-only note superseded by the owner's direct instruction to implement Ticket 21 on 2026-09-23. GPU training, model/data upload, competition submission and other separately approval-gated actions remain unauthorized.
 
 **Governing constraints:** Follow the approved parent specification. Significant compute uses Slurm, never KLEF-MASTER. Once implementation is authorized, autonomous CPU work is limited to cluster1-cpu, one node, at most 16 CPUs, 64 GB requested memory, six hours, two concurrent jobs and no exclusive allocation; actual memory use must also be bounded. Every GPU training job, heavier CPU request, protected deletion, paid resource, model/data upload and competition submission retains its specified approval boundary. Preserve private data, the 2 TB soft budget and immutable working candidates. No gate below is marked verified by ticket publication.
 
 ## Acceptance criteria
 
-- [ ] Define one budgeted proposal with a fixed comparator, teacher training cohort and pseudo-label admission policy before execution.
-- [ ] Record fold/repeat, teacher code/configuration/checkpoint hash, eligible/excluded study identities, generation settings and output hashes through student lineage.
-- [ ] Exclude every held-out study/report from upstream fitting and generated training supervision; explicitly test rejection of contaminated or unresolved provenance.
-- [ ] Report OOF uncertainty and full training/inference cost, accepting a negative result; this optional experiment does not gate final delivery.
+- [x] Defined and wrote the fold-0 comparator, teacher cohort, budget, eligible/excluded cohorts and frozen MRI-only confidence policy before teacher fitting.
+- [ ] Partial: teacher, design and pseudo-score artifacts record fold/repeat, code/config/checkpoint hashes, candidate identities, settings and output hashes. No student was trained because zero pseudo-label studies passed admission, so student lineage is not applicable and remains undemonstrated.
+- [x] Held-out studies/reports were excluded from teacher fitting and candidate generation. Admission rejects held-out and contaminated/unresolved lineage; tests cover contamination, checkpoint identity and uncertain-score masking.
+- [x] Reported one-fold teacher OOF uncertainty and the full observed Slurm training/inference cost. No student OOF score or paired delta is estimable because no student data were admitted.
 
 ## Verification gates
 
@@ -23,10 +23,16 @@ These retain the parent specification's acceptance criteria and blocking consequ
 
 ### V15 — Derived-supervision provenance and isolation
 
-- [ ] For each extractor/rule/teacher/pseudo-label/student artifact, resolve versioned code/configuration, source and checkpoint hashes, fold/repeat, eligible/excluded study-set identities and all upstream adaptation inputs. Verify zero prohibited held-out input influence for the consuming fold and no unresolved lineage. Enforce reference precedence and zero-mask unknown/uncertain/failed states. Frozen evaluation-only outputs must be distinguishable from admitted training labels.
+- [ ] Partial for this ticket: teacher and pseudo-label artifacts resolve versioned code/configuration, source/checkpoint hashes, fold/repeat, eligible/excluded identities and upstream adaptation inputs. Held-out influence is excluded; uncertain labels are masked; the tests reject contaminated/unresolved lineage. No student artifact exists because admission returned zero studies, and the broader V15 gate remains open.
 
 **Blocking consequence:** Reject artifacts with ambiguous or contaminated lineage from that fold's training and model-selection evidence. Invalidate and rerun materially affected comparisons after repair; an apparent AUC gain cannot override the gate. Clean reference-only work remains possible.
 
 ## Completion evidence
 
-- [ ] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+- [x] Recorded the real fold-0 no-label result, teacher-only OOF uncertainty, measured job cost, verified scope and remaining limits without study identifiers or report text. No student comparison, complete-repeat OOF, model promotion or approval-dependent action is claimed.
+
+## Comments
+
+- 2026-09-23 — Owner explicitly instructed Ticket 21 implementation. Ticket 20 was resolved as a no-run adoption-gate outcome, so the established gold-only mechanics baseline remained the fixed comparator.
+- 2026-09-23 — Slurm job 7109 completed the predeclared fold-0 experiment. Of 65 eligible report-only training studies, zero passed the 0.10/0.90 confidence rule; all abstained. The gold-only teacher's 20 held-out predictions had macro AUC 0.4923 (95% study-bootstrap interval 0.4281–0.5662). No student or paired effect was produced. The full result, hashes, cost and limitations are in the [external report](../../../../ticket-21-report.md).
+- 2026-09-23 — The first Slurm attempt exposed an unset `SLURM_TIMELIMIT`; the strict preflight remained in place and the adapter now resolves the active limit from `scontrol`. The corrected run passed resource preflight and completed within the six-hour, non-exclusive CPU allocation.
