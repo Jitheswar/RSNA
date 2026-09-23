@@ -726,7 +726,7 @@ class SupervisionProvenance:
 
 @dataclass(frozen=True)
 class TrainingExample:
-    """One fixed-shape packed study and its reference target entries."""
+    """One fixed-shape packed study with hard labels or admitted soft targets."""
 
     study_instance_uid: str
     images: np.ndarray
@@ -736,6 +736,7 @@ class TrainingExample:
     supervision_mask: np.ndarray
     provenance: SupervisionProvenance = SupervisionProvenance()
     rejected_series: tuple[SeriesFailure, ...] = ()
+    target_kind: str = "hard_label"
 
     def __post_init__(self) -> None:
         if not self.study_instance_uid.strip():
@@ -753,6 +754,10 @@ class TrainingExample:
             raise TrainingDataError("training image and mask shapes do not agree")
         if targets.shape != (NUM_TARGETS,) or supervision_mask.shape != (NUM_TARGETS,):
             raise TrainingDataError(f"training targets must have shape ({NUM_TARGETS},)")
+        if self.target_kind not in {"hard_label", "teacher_probability"}:
+            raise TrainingDataError("training target_kind must be hard_label or teacher_probability")
+        if self.target_kind == "teacher_probability" and self.provenance.source_kind != "pseudo":
+            raise TrainingDataError("teacher probability targets require teacher-derived provenance")
         if images.dtype.kind not in "fiu" or not np.isfinite(images).all():
             raise TrainingDataError("training images must be finite numeric arrays")
         if not np.asarray(slice_mask, dtype=bool).any() or not np.asarray(series_mask, dtype=bool).any():
@@ -761,7 +766,11 @@ class TrainingExample:
         if not np.isfinite(targets[supervised]).all():
             raise TrainingDataError("supervised target entries must be finite")
         if np.any((targets[supervised] < 0.0) | (targets[supervised] > 1.0)):
-            raise TrainingDataError("supervised target entries must be binary values")
+            raise TrainingDataError("supervised target entries must be in [0, 1]")
+        if self.target_kind == "hard_label" and np.any(
+            (targets[supervised] != 0.0) & (targets[supervised] != 1.0)
+        ):
+            raise TrainingDataError("hard label target entries must be binary values")
         if self.provenance.source_kind not in {"reference", "weak", "mixed", "pseudo"}:
             raise TrainingDataError("training example has an unsupported supervision source")
 
@@ -991,6 +1000,7 @@ def fingerprint_training_examples(examples: Sequence[TrainingExample]) -> str:
                 "slice_mask": _array_sha256(np.asarray(example.slice_mask, dtype=np.uint8)),
                 "series_mask": _array_sha256(np.asarray(example.series_mask, dtype=np.uint8)),
                 "targets": _array_sha256(np.asarray(example.targets, dtype=np.float32)),
+                "target_kind": example.target_kind,
                 "supervision_mask": _array_sha256(
                     np.asarray(example.supervision_mask, dtype=np.uint8)
                 ),
@@ -2158,6 +2168,8 @@ def train_fixed_budget(
     examples: Sequence[TrainingExample],
     config: TrainingConfig = TrainingConfig(),
     *,
+    additional_examples: Sequence[TrainingExample] = (),
+    additional_batch_order_seed: int | None = None,
     model: HierarchicalStudyModel | None = None,
     artifact_dir: str | Path | None = None,
     fold: int | None = None,
@@ -2186,6 +2198,8 @@ def train_fixed_budget(
     return _train_fixed_budget_impl(
         examples,
         config,
+        additional_examples=additional_examples,
+        additional_batch_order_seed=additional_batch_order_seed,
         model=model,
         artifact_dir=artifact_dir,
         fold=fold,
