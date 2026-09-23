@@ -16,6 +16,7 @@ from rsna_knee.training import (
     SupervisionProvenance,
     TrainingInterrupted,
     TrainingProgressError,
+    TrainingResult,
     classify_retry_failure,
     fork_training_run,
     load_training_checkpoint,
@@ -32,6 +33,7 @@ from rsna_knee.training import (
 )
 from rsna_knee.folds import freeze_folds
 from rsna_knee.inventory import SourceManifest, SourceStudy
+from rsna_knee.model import HierarchicalStudyModel
 from rsna_knee.synthetic import make_synthetic_study
 from rsna_knee.targets import TARGET_COLUMNS
 
@@ -50,6 +52,22 @@ def test_masked_bce_averages_only_supervised_entries() -> None:
     assert loss is not None
     expected = (torch.nn.functional.softplus(torch.tensor(0.0)) + torch.nn.functional.softplus(torch.tensor(-2.0))) / 2
     assert torch.allclose(loss, expected)
+
+
+def test_run_record_reports_heldout_model_inference_time() -> None:
+    config = TrainingConfig(image_size=(16, 16), channels=(2, 4, 8))
+    result = TrainingResult(
+        model=HierarchicalStudyModel(config.model_config()),
+        config=config,
+        successful_optimizer_steps=0,
+        scheduler_steps=0,
+        attempted_batches=0,
+        skipped_batches=0,
+        loss_history=(),
+        heldout_model_inference_seconds=1.25,
+    )
+
+    assert result.to_public_dict()["counts"]["heldout_model_inference_seconds"] == 1.25
 
 
 def test_fully_masked_batches_make_no_optimizer_progress() -> None:

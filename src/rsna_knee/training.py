@@ -796,6 +796,7 @@ class TrainingResult:
     loss_history: tuple[float, ...]
     final_checkpoint_path: Path | None = None
     latest_checkpoint_path: Path | None = None
+    heldout_model_inference_seconds: float | None = None
     run_id: str | None = None
     fold: int | None = None
     evaluation: FoldEvaluation | None = None
@@ -851,6 +852,7 @@ class TrainingResult:
         counts["training_design"] = self.training_design
         counts["weak_sampling_policy"] = self.weak_sampling_policy
         counts["weak_sampling_seed"] = self.weak_sampling_seed
+        counts["heldout_model_inference_seconds"] = self.heldout_model_inference_seconds
         return {
             "schema_version": TRAINING_SCHEMA_VERSION,
             "status": "completed_fixed_budget_training",
@@ -3555,13 +3557,16 @@ def _train_one_fold_impl(
     )
     from .evaluation import evaluate_fold_predictions, predict_training_examples
 
+    inference_started = time.perf_counter()
     predictions = predict_training_examples(result.model, held_out_examples, device=config.device)
+    heldout_model_inference_seconds = time.perf_counter() - inference_started
     evaluation = evaluate_fold_predictions(
         cast(Mapping[str, Sequence[float]], predictions), fold_manifest, fold
     )
     completed = TrainingResult(
         model=result.model,
         config=result.config,
+        heldout_model_inference_seconds=heldout_model_inference_seconds,
         successful_optimizer_steps=result.successful_optimizer_steps,
         scheduler_steps=result.scheduler_steps,
         attempted_batches=result.attempted_batches,
@@ -3747,6 +3752,12 @@ def _parser() -> Any:
     parser.add_argument("--fold-manifest", type=Path, required=True)
     parser.add_argument("--fold", type=int, required=True, choices=FOLD_IDS)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--image-variant",
+        choices=("mechanics-baseline", "ticket19-wider-slice-encoder-v1"),
+        default="mechanics-baseline",
+        help="select a named image architecture whose values enter the scientific fingerprint",
+    )
     parser.add_argument("--cache-root", type=Path, default=None)
     parser.add_argument("--source-version", required=True)
     parser.add_argument("--source-fingerprint", default=None)
@@ -3804,6 +3815,12 @@ def main(argv: list[str] | None = None) -> int:
                 "train against the version-2 manifest"
             )
         integration_manifest = load_integration_manifest(args.integration_manifest)
+        from .image_variant import image_model_training_config
+
+        training_config = image_model_training_config(
+            args.image_variant,
+            preprocessing_config=integration_manifest.preprocess_config,
+        )
         source = args.source
         if not source.exists():
             raise TrainingDataError(f"real-DICOM source does not exist: {source}")
@@ -3851,6 +3868,7 @@ def main(argv: list[str] | None = None) -> int:
             fold_manifest,
             args.fold,
             args.output,
+            config=training_config,
             source_version=args.source_version,
             source_fingerprint=args.source_fingerprint or integration_manifest.archive_fingerprint,
             integration_manifest_checksum=integration_manifest.manifest_checksum,
