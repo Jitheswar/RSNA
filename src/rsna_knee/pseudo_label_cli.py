@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, MutableMapping
 
 from .archive import atomic_json_write
 from .folds import FOLD_IDS, load_fold_manifest
@@ -40,10 +41,43 @@ def _require_ticket21_slurm_context(code_revision: str) -> None:
         raise PreflightError("Ticket 21 code revision environment does not match its frozen argument")
 
 
+def _populate_ticket21_slurm_timelimit(
+    environment: MutableMapping[str, str], job_details: str
+) -> None:
+    """Fill Slurm's sometimes-unset wall-time variable from its job record."""
+
+    if environment.get("SLURM_TIMELIMIT", "").strip():
+        return
+    for field in job_details.split():
+        name, separator, value = field.partition("=")
+        if name == "TimeLimit" and separator and value.strip():
+            environment["SLURM_TIMELIMIT"] = value.strip()
+            return
+    raise PreflightError("Ticket 21 could not resolve the Slurm job TimeLimit")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         _require_ticket21_slurm_context(args.code_revision)
+        if not os.environ.get("SLURM_TIMELIMIT", "").strip():
+            try:
+                job_record = subprocess.run(
+                    ["scontrol", "show", "job", os.environ["SLURM_JOB_ID"]],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise PreflightError(
+                    "Ticket 21 could not query the active Slurm job TimeLimit"
+                ) from exc
+            if job_record.returncode != 0:
+                raise PreflightError(
+                    "Ticket 21 could not query the active Slurm job TimeLimit"
+                )
+            _populate_ticket21_slurm_timelimit(os.environ, job_record.stdout)
         repository_root = Path(__file__).resolve().parents[2]
         output_root = args.output_root.resolve()
         if output_root.is_relative_to(repository_root):
