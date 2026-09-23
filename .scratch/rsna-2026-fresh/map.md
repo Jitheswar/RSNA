@@ -58,8 +58,11 @@ repository artifacts.
   · [public evidence](../../docs/evidence/ticket-23-delivery-strategy.md)
   · [external report](../../../ticket-23-report.md).
 - 2026-09-23 — The owner selected Ticket 23's recommended Ticket 11 candidate
-  for Ticket 24. The prior v13 representative execution remains the evidence;
-  no full hidden-test output or leaderboard submission is claimed:
+  for Ticket 24, then requested one full hidden-test submission without any
+  model or pipeline changes. The frozen v13 notebook is bound to the 158-study
+  representative input, so no submission was attempted; changing its hidden
+  input binding requires human direction. No full hidden-test output or
+  leaderboard submission is claimed:
   [ticket 24](issues/24-select-and-deliver-the-final-candidate.md)
   · [selection evidence](../../docs/evidence/ticket-24-candidate-selection.md)
   · [external report](../../../ticket-24-report.md).

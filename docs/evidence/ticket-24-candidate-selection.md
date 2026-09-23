@@ -92,6 +92,30 @@ but does not claim full hidden-test delivery or platform acceptance. The
 candidate manifest, checkpoints, delivery notebook, adapter, and prior output
 remain unchanged.
 
+## Hidden-test submission request — 2026-09-23
+
+The owner requested exactly one full hidden-test Kaggle submission and
+explicitly prohibited model or pipeline changes. Preflight found that the only
+frozen delivery notebook is the Ticket 12 v13 notebook. It hard-codes request
+`ticket-12-ticket-11-local-candidate-20260912-v13`; that request declares
+`workload_kind=representative`, selects mount
+`rsna-knee-ticket12-representative-v12`, and pins the representative manifest
+and CSV hashes. The notebook passes that mount slug to input discovery, which
+validates those hashes before inference. Reusing this version for a hidden
+submission would use the attached 158-study representative input or fail its
+input checks instead of running the full hidden set.
+
+No Kaggle kernel push or competition submission was made. The account's
+read-only submission listing returned no prior submissions. Kaggle's [code
+competition debugging guide](https://www.kaggle.com/code-competition-debugging)
+states that each submission reruns the notebook against a hidden version of
+the competition data and that failed submissions count toward the team's
+daily limit. The single requested attempt was preserved. A successful full
+hidden run requires a new hidden-test request/notebook binding; no model,
+pipeline, or frozen artifact was changed to create one. Consequently no full
+hidden-test acceptance, leaderboard score/runtime, or hidden fallback evidence
+exists. The only fallback evidence remains the prior representative 0/158.
+
 ## Source records
 
 - Ticket 23 decision: `.scratch/rsna-2026-fresh/issues/23-compare-fold-ensembles-with-all-data-refitting.md`

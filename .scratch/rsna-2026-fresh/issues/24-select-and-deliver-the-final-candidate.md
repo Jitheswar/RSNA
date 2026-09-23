@@ -4,9 +4,9 @@
 
 **Blocked by:** 12: Verify the baseline on Kaggle; 23: Compare fold ensembles with all-data refitting
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-**Authorization:** Planning-only originally. On 2026-09-23 the owner instructed us to use Ticket 23's best recommendation. This selects the exact existing Ticket 11 gold-only candidate documented below. The new instruction does not change the scope or workload of the prior Ticket 12 Kaggle execution.
+**Authorization:** The owner selected Ticket 23's recommendation and later authorized one full hidden-test Kaggle submission while prohibiting model or pipeline changes. The frozen Ticket 12 v13 notebook is bound to a representative workload and cannot run the full hidden test as-is. A new hidden-test request/notebook binding is required and conflicts with the no-pipeline-change constraint, so no submission attempt was made. Human direction is needed before changing that frozen delivery binding.
 
 **Governing constraints:** Follow the approved parent specification. Significant compute uses Slurm, never KLEF-MASTER. Once implementation is authorized, autonomous CPU work is limited to cluster1-cpu, one node, at most 16 CPUs, 64 GB requested memory, six hours, two concurrent jobs and no exclusive allocation; actual memory use must also be bounded. Every GPU training job, heavier CPU request, protected deletion, paid resource, model/data upload and competition submission retains its specified approval boundary. Preserve private data, the 2 TB soft budget and immutable working candidates. No gate below is marked verified by ticket publication.
 
@@ -58,3 +58,4 @@ This selects the delivery candidate; it does not claim final hidden-test output,
 ## Comments
 
 - 2026-09-23 — Owner instructed: “use best recc dont ask me”. Applied as selection of the exact Ticket 11 three-fold gold-only candidate recommended in Ticket 23. The representative Kaggle execution and its existing approval scope were preserved; no new hidden-test execution or competition submission was performed.
+- 2026-09-23 — Owner requested one full hidden-test Kaggle submission and prohibited model or pipeline changes. Read-only preflight confirmed the frozen Ticket 12 v13 notebook is bound to `workload_kind=representative` and mount `rsna-knee-ticket12-representative-v12`, including pinned representative-input hashes; its notebook hard-codes the v13 request identity. Reusing it would select the 158-study representative dataset (or fail its input checks), rather than run the full hidden input. No kernel push or competition submission was made, preserving the requested single attempt. Kaggle documents that code-competition submissions rerun notebooks on hidden data and failed submissions count toward the team's daily limit ([debug guide](https://www.kaggle.com/code-competition-debugging)). A full hidden run under the current constraint needs a new hidden-test request/notebook binding, which changes the frozen delivery pipeline; no such change was made.
