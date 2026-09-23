@@ -57,6 +57,12 @@ repository artifacts.
   frozen candidate: [ticket 23](issues/23-compare-fold-ensembles-with-all-data-refitting.md)
   · [public evidence](../../docs/evidence/ticket-23-delivery-strategy.md)
   · [external report](../../../ticket-23-report.md).
+- 2026-09-23 — The owner selected Ticket 23's recommended Ticket 11 candidate
+  for Ticket 24. The prior v13 representative execution remains the evidence;
+  no full hidden-test output or leaderboard submission is claimed:
+  [ticket 24](issues/24-select-and-deliver-the-final-candidate.md)
+  · [selection evidence](../../docs/evidence/ticket-24-candidate-selection.md)
+  · [external report](../../../ticket-24-report.md).
 
 ## Fog
 
