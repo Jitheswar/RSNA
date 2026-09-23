@@ -669,3 +669,7 @@ __all__ = [
     "main",
     "render_image_model_comparison",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
