@@ -43,6 +43,13 @@ repository artifacts.
   interval 0.4281–0.5662); no student effect is estimable. Student lineage remains
   partial, and the active gold-only baseline was not replaced:
   [ticket 21](issues/21-evaluate-one-fold-isolated-pseudo-label-experiment.md).
+- 2026-09-23 — Ticket 22's three-fold CPU distillation comparison completed with
+  an inconclusive +0.0092 pooled macro-AUC delta over the matched compact
+  gold-only student (paired 95% study-bootstrap interval −0.0272 to +0.0503).
+  No model was promoted; full-pipeline/hidden-scale runtime, VRAM and complete
+  package size remain open under V16:
+  [ticket 22](issues/22-evaluate-one-distilled-mri-only-student.md)
+  · [external report](../../../ticket-22-report.md).
 
 ## Fog
 
