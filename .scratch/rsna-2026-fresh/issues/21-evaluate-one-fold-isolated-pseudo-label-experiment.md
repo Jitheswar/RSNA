@@ -6,6 +6,8 @@
 
 **Status:** resolved
 
+**Type:** task
+
 **Authorization:** Planning-only note superseded by the owner's direct instruction to implement Ticket 21 on 2026-09-23. GPU training, model/data upload, competition submission and other separately approval-gated actions remain unauthorized.
 
 **Governing constraints:** Follow the approved parent specification. Significant compute uses Slurm, never KLEF-MASTER. Once implementation is authorized, autonomous CPU work is limited to cluster1-cpu, one node, at most 16 CPUs, 64 GB requested memory, six hours, two concurrent jobs and no exclusive allocation; actual memory use must also be bounded. Every GPU training job, heavier CPU request, protected deletion, paid resource, model/data upload and competition submission retains its specified approval boundary. Preserve private data, the 2 TB soft budget and immutable working candidates. No gate below is marked verified by ticket publication.
@@ -30,6 +32,10 @@ These retain the parent specification's acceptance criteria and blocking consequ
 ## Completion evidence
 
 - [x] Recorded the real fold-0 no-label result, teacher-only OOF uncertainty, measured job cost, verified scope and remaining limits without study identifiers or report text. No student comparison, complete-repeat OOF, model promotion or approval-dependent action is claimed.
+
+## Answer
+
+The predeclared fold-0 MRI-only experiment completed within the bounded CPU allocation. All 65 eligible report-only training studies abstained under the frozen 0.10/0.90 policy, so no student or paired effect was produced. The gold-only teacher's macro AUC was 0.4923 on 20 held-out gold studies, with a 95% study-bootstrap interval of 0.4281–0.5662. The active gold-only mechanics baseline remains unchanged. Student lineage and the broader V15 gate remain partial because no pseudo-labels were admitted. See the [external report](../../../../ticket-21-report.md) for full lineage, uncertainty, compute cost and limitations.
 
 ## Comments
 
