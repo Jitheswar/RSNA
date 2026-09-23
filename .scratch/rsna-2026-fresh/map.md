@@ -42,8 +42,7 @@ repository artifacts.
   The gold-only teacher's one-fold macro AUC was 0.4923 (95% study-bootstrap
   interval 0.4281–0.5662); no student effect is estimable. Student lineage remains
   partial, and the active gold-only baseline was not replaced:
-  [ticket 21](issues/21-evaluate-one-fold-isolated-pseudo-label-experiment.md)
-  · [external report](../../../ticket-21-report.md).
+  [ticket 21](issues/21-evaluate-one-fold-isolated-pseudo-label-experiment.md).
 
 ## Fog
 
