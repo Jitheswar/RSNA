@@ -54,9 +54,9 @@ requests, observed CPU time, and peak RSS are in the external reports.
 Ticket 16 Astra outputs were excluded because no training-admission rule had
 been predeclared; only the frozen deterministic Ticket 15 labels were used.
 The report output paths are
-[`ticket-18-report.md`](/home/ch.jitheswar/ticket-18-real-20260923/ticket-18-report.md)
+[`ticket-18-report.md`](/home/ch.jitheswar/ticket-18-report.md)
 and
-[`ticket-18-report.json`](/home/ch.jitheswar/ticket-18-real-20260923/ticket-18-report.json),
+[`ticket-18-report.json`](/home/ch.jitheswar/ticket-18-report.json),
 both outside the RSNA folder and free of study/source-row identifiers. Two
 setup attempts against occupied preflight paths stopped before training; the
 report records them as excluded from the completed-run comparison.
