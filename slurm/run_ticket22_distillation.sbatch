@@ -124,8 +124,8 @@ cli_args=(
   --fold-manifest "${fold_manifest}"
   --teacher-run-root "${teacher_run_root}"
   --output-root "${output_root}"
-  --preflight-evidence "${output_root}/preflight.json"
-  --compute-evidence "${output_root}/cli-cost.json"
+  --preflight-evidence "${output_root}.preflight.json"
+  --compute-evidence "${output_root}.cli-cost.json"
   --code-revision "${code_revision}"
 )
 if [[ -n "${source_fingerprint}" ]]; then
