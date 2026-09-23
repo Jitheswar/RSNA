@@ -229,6 +229,18 @@ def _write_run(
             "reports_used": False,
         }
     )
+    configuration_supervision = (
+        {
+            "kind": "reference",
+            "fold_manifest_checksum": manifest.manifest_checksum,
+            "training_studies": list(training_uids),
+            "held_out_studies": list(held_out),
+            "held_out_inputs_excluded": True,
+            "reports_used": False,
+        }
+        if arm == "gold"
+        else supervision
+    )
     exposure_counts = _source_exposures(arm)
     counts = {
         "training_studies": len(training_uids),
@@ -279,7 +291,7 @@ def _write_run(
                     "slurm_attempt_id": str(7100 + fold * 2 + (arm == "report")),
                 },
                 "inference_configuration": {"checkpoint_selection": "final_checkpoint"},
-                "supervision": supervision,
+                "supervision": configuration_supervision,
                 "preflight": {"passed": True},
             }
         ),
@@ -355,7 +367,9 @@ def _write_run(
         )
 
 
-def _write_arms(tmp_path: Path, manifest: FoldManifest) -> tuple[list[Path], list[Path]]:
+def _write_arms(
+    tmp_path: Path, manifest: FoldManifest, *, first_target_inverted: bool = True
+) -> tuple[list[Path], list[Path]]:
     gold_paths: list[Path] = []
     report_paths: list[Path] = []
     for fold in (0, 1, 2):
@@ -369,7 +383,7 @@ def _write_arms(tmp_path: Path, manifest: FoldManifest) -> tuple[list[Path], lis
             manifest,
             fold,
             arm="report",
-            first_target_inverted=True,
+            first_target_inverted=first_target_inverted,
         )
         gold_paths.append(gold_path)
         report_paths.append(report_path)
@@ -415,6 +429,104 @@ def test_comparison_reports_paired_oof_delta_uncertainty_and_exposure(tmp_path: 
     assert "100 / 100 / 0" in markdown
     assert "12.5 s / 10.0 s / 1.5 s" in markdown
     assert "4096 KB" in markdown
+    assert "Reference sample / entry exposures" in markdown
+    assert "Weak sample / entry exposures" in markdown
+    assert "| 0 | Gold-only | 12 (12 + 0) | 200 / 2400 | 0 / 0 | 0 / 0 |" in markdown
+    assert "| 0 | Gold + clean reports | 24 (12 + 12) | 100 / 1200 | 100 / 300 | 0 / 0 |" in markdown
+
+
+def test_comparison_counts_folds_with_zero_macro_delta(tmp_path: Path) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(
+        tmp_path, manifest, first_target_inverted=False
+    )
+
+    result = compare_supervision_oof(
+        gold_paths, report_paths, manifest, bootstrap_resamples=16
+    )
+
+    assert result.positive_folds == 0
+    assert result.negative_folds == 0
+    assert result.unchanged_folds == 3
+    assert result.undefined_folds == 0
+    assert result.to_public_dict()["paired_delta"]["unchanged_folds"] == 3
+    assert "Fold deltas: 0 positive, 0 negative, 3 unchanged, 0 undefined." in (
+        render_supervision_comparison_markdown(result)
+    )
+
+
+@pytest.mark.parametrize(
+    ("confidence_level", "label"),
+    [
+        (0.90, "Paired 90% interval"),
+        (0.9999999999999999, "Paired 99.999999999999986% interval"),
+    ],
+)
+def test_comparison_markdown_uses_configured_confidence_level(
+    tmp_path: Path, confidence_level: float, label: str
+) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(tmp_path, manifest)
+
+    result = compare_supervision_oof(
+        gold_paths,
+        report_paths,
+        manifest,
+        bootstrap_resamples=16,
+        bootstrap_confidence_level=confidence_level,
+    )
+
+    markdown = render_supervision_comparison_markdown(result)
+    assert label in markdown
+    assert "Paired 100% interval" not in markdown
+
+
+def test_comparison_reports_mean_fold_macro_auc_and_variation(tmp_path: Path) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(tmp_path, manifest)
+    result = compare_supervision_oof(gold_paths, report_paths, manifest, bootstrap_resamples=16)
+
+    report = result.to_public_dict()
+    assert report["gold_only"]["fold_macro_auc"] == {
+        "mean": result.gold_only.mean_fold_macro_auc,
+        "standard_deviation": result.gold_only.fold_macro_auc_std,
+        "minimum": result.gold_only.fold_macro_auc_min,
+        "maximum": result.gold_only.fold_macro_auc_max,
+    }
+    assert report["report_supervised"]["fold_macro_auc"]["standard_deviation"] == (
+        result.report_supervised.fold_macro_auc_std
+    )
+    markdown = render_supervision_comparison_markdown(result)
+    assert "Mean fold macro AUC" in markdown
+    assert "Fold macro AUC standard deviation" in markdown
+    assert "Minimum fold macro AUC" in markdown
+    assert "Maximum fold macro AUC" in markdown
+    assert (
+        f"| Gold-only | {result.gold_only.pooled_macro_auc:.4f} | "
+        f"{result.gold_only.mean_fold_macro_auc:.4f} | "
+        f"{result.gold_only.fold_macro_auc_std:.4f} | "
+        f"{result.gold_only.fold_macro_auc_min:.4f} | "
+        f"{result.gold_only.fold_macro_auc_max:.4f} |"
+    ) in markdown
+
+
+def test_comparison_rejects_reference_configuration_count_disagreement(tmp_path: Path) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(tmp_path, manifest)
+    configuration_path = gold_paths[0] / "configuration.json"
+    configuration = json.loads(configuration_path.read_text(encoding="utf-8"))
+    training_count = len(configuration["supervision"]["training_studies"])
+    configuration["supervision"]["counts"] = {
+        "training_studies": training_count,
+        "reference_studies": training_count,
+        "weak_studies": 1,
+        "supervised_entries": training_count * len(TARGET_COLUMNS),
+        "source_disagreements": 0,
+    }
+    configuration_path.write_text(json.dumps(configuration), encoding="utf-8")
+
+    with pytest.raises(SupervisionComparisonError, match="reference supervision counts"):
+        compare_supervision_oof(gold_paths, report_paths, manifest, bootstrap_resamples=16)
 
 
 def test_comparison_rejects_training_config_mismatch_across_arms(tmp_path: Path) -> None:
@@ -445,6 +557,40 @@ def test_comparison_rejects_weak_lineage_that_includes_held_out_studies(tmp_path
         compare_supervision_oof(gold_paths, report_paths, manifest, bootstrap_resamples=16)
 
 
+def test_comparison_rejects_reference_partition_disagreement(tmp_path: Path) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(tmp_path, manifest)
+    configuration_path = gold_paths[0] / "configuration.json"
+    configuration = json.loads(configuration_path.read_text(encoding="utf-8"))
+    configuration["supervision"]["training_studies"].pop()
+    configuration_path.write_text(json.dumps(configuration), encoding="utf-8")
+
+    with pytest.raises(SupervisionComparisonError, match="partitions disagree"):
+        compare_supervision_oof(gold_paths, report_paths, manifest, bootstrap_resamples=16)
+
+
+@pytest.mark.parametrize("arm", ["gold", "report"])
+def test_comparison_rejects_supervision_manifest_checksum_disagreement(
+    tmp_path: Path, arm: str
+) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(tmp_path, manifest)
+    run_path = (gold_paths if arm == "gold" else report_paths)[0] / "run.json"
+    configuration_path = run_path.parent / "configuration.json"
+    incorrect_checksum = "0" * 64
+
+    run_payload = json.loads(run_path.read_text(encoding="utf-8"))
+    run_payload["supervision"]["fold_manifest_checksum"] = incorrect_checksum
+    run_path.write_text(json.dumps(run_payload), encoding="utf-8")
+
+    configuration = json.loads(configuration_path.read_text(encoding="utf-8"))
+    configuration["supervision"]["fold_manifest_checksum"] = incorrect_checksum
+    configuration_path.write_text(json.dumps(configuration), encoding="utf-8")
+
+    with pytest.raises(SupervisionComparisonError, match="supervision uses a different fold manifest"):
+        compare_supervision_oof(gold_paths, report_paths, manifest, bootstrap_resamples=16)
+
+
 def test_comparison_rejects_weak_exposure_counts_that_do_not_reconcile(tmp_path: Path) -> None:
     manifest = _manifest()
     gold_paths, report_paths = _write_arms(tmp_path, manifest)
@@ -454,6 +600,19 @@ def test_comparison_rejects_weak_exposure_counts_that_do_not_reconcile(tmp_path:
     run_path.write_text(json.dumps(run), encoding="utf-8")
 
     with pytest.raises(SupervisionComparisonError, match="exposure"):
+        compare_supervision_oof(gold_paths, report_paths, manifest, bootstrap_resamples=16)
+
+
+def test_comparison_rejects_report_arm_without_report_label_exposure(tmp_path: Path) -> None:
+    manifest = _manifest()
+    gold_paths, report_paths = _write_arms(tmp_path, manifest)
+    run_path = report_paths[0] / "run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run["counts"]["exposures_by_source"]["weak"]["supervised_entry_exposures"] = 0
+    run["counts"]["supervised_entry_exposures"] -= 300
+    run_path.write_text(json.dumps(run), encoding="utf-8")
+
+    with pytest.raises(SupervisionComparisonError, match="no report-derived supervised-entry exposure"):
         compare_supervision_oof(gold_paths, report_paths, manifest, bootstrap_resamples=16)
 
 

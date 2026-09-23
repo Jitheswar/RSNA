@@ -228,6 +228,7 @@ class SupervisionComparison:
     mixture_policy: str
     positive_folds: int
     negative_folds: int
+    unchanged_folds: int
     undefined_folds: int
     interpretation: str
 
@@ -236,7 +237,13 @@ class SupervisionComparison:
             raise SupervisionComparisonError("target comparison order must match the competition contract")
         if tuple(item.fold for item in self.folds) != FOLD_IDS:
             raise SupervisionComparisonError("supervision comparison must include all folds")
-        if self.positive_folds + self.negative_folds + self.undefined_folds != len(FOLD_IDS):
+        if (
+            self.positive_folds
+            + self.negative_folds
+            + self.unchanged_folds
+            + self.undefined_folds
+            != len(FOLD_IDS)
+        ):
             raise SupervisionComparisonError("fold consistency counts do not reconcile")
         for value, name in (
             (self.report_artifact_sha256, "report artifact SHA-256"),
@@ -262,12 +269,24 @@ class SupervisionComparison:
             "gold_only": {
                 "pooled_macro_auc": self.gold_only.pooled_macro_auc,
                 "defined_target_macro_auc": self.gold_only.defined_target_macro_auc,
+                "fold_macro_auc": {
+                    "mean": self.gold_only.mean_fold_macro_auc,
+                    "standard_deviation": self.gold_only.fold_macro_auc_std,
+                    "minimum": self.gold_only.fold_macro_auc_min,
+                    "maximum": self.gold_only.fold_macro_auc_max,
+                },
                 "targets": [item.to_dict() for item in self.gold_only.pooled_targets],
                 "folds": [item.to_public_dict() for item in self.gold_only.folds],
             },
             "report_supervised": {
                 "pooled_macro_auc": self.report_supervised.pooled_macro_auc,
                 "defined_target_macro_auc": self.report_supervised.defined_target_macro_auc,
+                "fold_macro_auc": {
+                    "mean": self.report_supervised.mean_fold_macro_auc,
+                    "standard_deviation": self.report_supervised.fold_macro_auc_std,
+                    "minimum": self.report_supervised.fold_macro_auc_min,
+                    "maximum": self.report_supervised.fold_macro_auc_max,
+                },
                 "targets": [item.to_dict() for item in self.report_supervised.pooled_targets],
                 "folds": [item.to_public_dict() for item in self.report_supervised.folds],
             },
@@ -276,6 +295,7 @@ class SupervisionComparison:
                 "uncertainty": self.macro_auc_delta_interval.to_dict(),
                 "positive_folds": self.positive_folds,
                 "negative_folds": self.negative_folds,
+                "unchanged_folds": self.unchanged_folds,
                 "undefined_folds": self.undefined_folds,
                 "interpretation": self.interpretation,
             },
@@ -389,6 +409,15 @@ def _arm_exposure(record: OOFRunRecord, *, report_arm: bool) -> ArmExposureEvide
         report_count = sum(_mapping(item, "resolved supervision row").get("source_kind") == "weak" for item in resolved)
         if reference_count + report_count != training_studies:
             raise SupervisionComparisonError("report training rows do not separate gold and report-only studies")
+        if report_count == 0:
+            raise SupervisionComparisonError("report supervision has no report-only training studies")
+        report_supervised_entries = sum(
+            exposures[kind]["supervised_entry_exposures"] for kind in ("weak", "mixed")
+        )
+        if report_supervised_entries == 0:
+            raise SupervisionComparisonError(
+                "report supervision has no report-derived supervised-entry exposure"
+            )
     else:
         reference_count = training_studies
         report_count = 0
@@ -689,6 +718,7 @@ def compare_supervision_oof(
     folds: list[FoldSupervisionComparison] = []
     positive_folds = 0
     negative_folds = 0
+    unchanged_folds = 0
     undefined_folds = 0
     for fold in FOLD_IDS:
         gold_metric = gold_oof.folds[fold]
@@ -704,6 +734,8 @@ def compare_supervision_oof(
             positive_folds += 1
         elif delta < 0:
             negative_folds += 1
+        else:
+            unchanged_folds += 1
         folds.append(
             FoldSupervisionComparison(
                 fold=fold,
@@ -746,6 +778,7 @@ def compare_supervision_oof(
         mixture_policy=str(first_weak.get("mixture_policy")),
         positive_folds=positive_folds,
         negative_folds=negative_folds,
+        unchanged_folds=unchanged_folds,
         undefined_folds=undefined_folds,
         interpretation=interpretation,
     )
@@ -753,6 +786,10 @@ def compare_supervision_oof(
 
 def _format(value: float | None) -> str:
     return "undefined" if value is None else f"{value:.4f}"
+
+
+def _format_confidence_level(value: float) -> str:
+    return f"{value * 100:.17g}%"
 
 
 def render_supervision_comparison_markdown(comparison: SupervisionComparison) -> str:
@@ -773,17 +810,25 @@ def render_supervision_comparison_markdown(comparison: SupervisionComparison) ->
         "",
         "## Pooled result",
         "",
-        "| Arm | Pooled 12-target macro ROC-AUC |",
-        "| --- | ---: |",
-        f"| Gold-only | {_format(comparison.gold_only.pooled_macro_auc)} |",
-        f"| Gold + clean reports | {_format(comparison.report_supervised.pooled_macro_auc)} |",
-        f"| Delta (report − gold) | {_format(comparison.pooled_macro_auc_delta)} |",
+        "| Arm | Pooled 12-target macro ROC-AUC | Mean fold macro AUC | Fold macro AUC standard deviation | Minimum fold macro AUC | Maximum fold macro AUC |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        f"| Gold-only | {_format(comparison.gold_only.pooled_macro_auc)} | "
+        f"{_format(comparison.gold_only.mean_fold_macro_auc)} | "
+        f"{_format(comparison.gold_only.fold_macro_auc_std)} | "
+        f"{_format(comparison.gold_only.fold_macro_auc_min)} | "
+        f"{_format(comparison.gold_only.fold_macro_auc_max)} |",
+        f"| Gold + clean reports | {_format(comparison.report_supervised.pooled_macro_auc)} | "
+        f"{_format(comparison.report_supervised.mean_fold_macro_auc)} | "
+        f"{_format(comparison.report_supervised.fold_macro_auc_std)} | "
+        f"{_format(comparison.report_supervised.fold_macro_auc_min)} | "
+        f"{_format(comparison.report_supervised.fold_macro_auc_max)} |",
+        f"| Delta (report − gold) | {_format(comparison.pooled_macro_auc_delta)} | | | | |",
         "",
-        f"Paired study bootstrap {interval.confidence_level:.0%} interval for the macro delta: `{_format(interval.lower)}` to `{_format(interval.upper)}`; {interval.defined_resamples:,} defined and {interval.undefined_resamples:,} undefined resamples out of {interval.resamples:,} (seed {interval.seed}).",
+        f"Paired study bootstrap {_format_confidence_level(interval.confidence_level)} interval for the macro delta: `{_format(interval.lower)}` to `{_format(interval.upper)}`; {interval.defined_resamples:,} defined and {interval.undefined_resamples:,} undefined resamples out of {interval.resamples:,} (seed {interval.seed}).",
         "",
         "## Per-target OOF results",
         "",
-        "| Target | Gold AUC | Report AUC | Delta | Positive | Negative | Paired 95% interval |",
+        f"| Target | Gold AUC | Report AUC | Delta | Positive | Negative | Paired {_format_confidence_level(interval.confidence_level)} interval |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in comparison.pooled_targets:
@@ -815,6 +860,36 @@ def render_supervision_comparison_markdown(comparison: SupervisionComparison) ->
     lines.extend(
         [
             "",
+            "### Source-stratified training exposure",
+            "",
+            "Sample and supervised-entry exposures are listed as `samples / entries` for each source type.",
+            "",
+            "| Fold | Arm | Training studies (reference + weak) | Reference sample / entry exposures | Weak sample / entry exposures | Mixed sample / entry exposures |",
+            "| ---: | --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for fold_comparison in comparison.folds:
+        for arm_name, evidence in (
+            ("Gold-only", fold_comparison.gold_only_exposure),
+            ("Gold + clean reports", fold_comparison.report_supervised_exposure),
+        ):
+            reference_exposure = evidence.exposures_by_source["reference"]
+            weak_exposure = evidence.exposures_by_source["weak"]
+            mixed_exposure = evidence.exposures_by_source["mixed"]
+            lines.append(
+                f"| {fold_comparison.fold} | {arm_name} | "
+                f"{evidence.training_studies} "
+                f"({evidence.reference_training_studies} + {evidence.report_training_studies}) | "
+                f"{reference_exposure['sample_exposures']} / "
+                f"{reference_exposure['supervised_entry_exposures']} | "
+                f"{weak_exposure['sample_exposures']} / "
+                f"{weak_exposure['supervised_entry_exposures']} | "
+                f"{mixed_exposure['sample_exposures']} / "
+                f"{mixed_exposure['supervised_entry_exposures']} |"
+            )
+    lines.extend(
+        [
+            "",
             "## Slurm compute requested",
             "",
             "Allocation values are Slurm requests. Timing and peak memory are measured around the full training CLI process.",
@@ -841,7 +916,8 @@ def render_supervision_comparison_markdown(comparison: SupervisionComparison) ->
     lines.extend(
         [
             "",
-            f"Fold deltas: {comparison.positive_folds} positive, {comparison.negative_folds} negative, {comparison.undefined_folds} undefined.",
+            f"Fold deltas: {comparison.positive_folds} positive, {comparison.negative_folds} negative, "
+            f"{comparison.unchanged_folds} unchanged, {comparison.undefined_folds} undefined.",
             "",
             "## Interpretation",
             "",

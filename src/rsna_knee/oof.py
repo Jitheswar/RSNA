@@ -257,6 +257,62 @@ def _validate_report_supervision_contract(
         raise OOFArtifactError("report supervision training count disagrees with resolved rows")
 
 
+def _validate_reference_run_supervision(
+    run_supervision: Mapping[str, object],
+    configuration_supervision: Mapping[str, object],
+    payload: Mapping[str, object],
+) -> None:
+    """Reconcile the compact run summary with the full configuration contract."""
+
+    for field in ("kind", "fold_manifest_checksum", "held_out_inputs_excluded"):
+        if run_supervision.get(field) != configuration_supervision.get(field):
+            raise OOFArtifactError("reference supervision evidence disagrees with configuration")
+    if run_supervision.get("kind") != "reference":
+        raise OOFArtifactError("OOF run is not reference-only")
+    if "policy" in run_supervision and run_supervision.get("policy") != "reference-only-v1":
+        raise OOFArtifactError("reference supervision policy is unsupported")
+    if run_supervision.get("held_out_inputs_excluded") is not True:
+        raise OOFArtifactError("reference supervision does not prove held-out exclusion")
+    if run_supervision.get("reports_used", False) is not False:
+        raise OOFArtifactError("reference supervision unexpectedly used reports")
+
+    run_training = _uid_tuple(payload.get("training_study_uids"), "training_study_uids")
+    run_held_out = _uid_tuple(payload.get("held_out_study_uids"), "held_out_study_uids")
+    for field, run_partition in (
+        ("training_studies", run_training),
+        ("held_out_studies", run_held_out),
+    ):
+        if field in configuration_supervision:
+            configuration_partition = _uid_tuple(
+                configuration_supervision[field], f"configuration.supervision.{field}"
+            )
+            if configuration_partition != run_partition:
+                raise OOFArtifactError("reference supervision partitions disagree with configuration")
+
+    expected_counts = {
+        "training_studies": len(run_training),
+        "reference_studies": len(run_training),
+        "weak_studies": 0,
+        "supervised_entries": len(run_training) * len(TARGET_COLUMNS),
+        "source_disagreements": 0,
+    }
+    for source, evidence in (
+        ("run", run_supervision),
+        ("configuration", configuration_supervision),
+    ):
+        if "counts" not in evidence:
+            continue
+        counts = _mapping(evidence["counts"], f"{source}.supervision.counts")
+        for field, expected in expected_counts.items():
+            if (
+                _required_int(counts.get(field), f"{source}.supervision.counts.{field}")
+                != expected
+            ):
+                raise OOFArtifactError(
+                    "reference supervision counts disagree with its study partition"
+                )
+
+
 _DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 
 
@@ -310,7 +366,13 @@ def load_oof_run_record(
         expected_supervision=expected_supervision,
     )
     run_supervision = _mapping(payload.get("supervision"), "run.supervision")
-    if run_supervision != configuration_supervision:
+    if expected_supervision == "reference":
+        _validate_reference_run_supervision(
+            run_supervision,
+            configuration_supervision,
+            payload,
+        )
+    elif run_supervision != configuration_supervision:
         raise OOFArtifactError(f"supervision evidence disagrees with configuration: {run_path}")
     counts = _mapping(payload.get("counts"), "run.counts")
     return OOFRunRecord(
@@ -406,6 +468,10 @@ def _validate_run_against_manifest(record: OOFRunRecord, manifest: FoldManifest)
         record.fold_manifest_checksum != manifest.manifest_checksum
     ):
         raise OOFArtifactError(f"fold {record.fold} uses a different fold manifest")
+    if record.supervision.get("fold_manifest_checksum") != manifest.manifest_checksum:
+        raise OOFArtifactError(
+            f"fold {record.fold} supervision uses a different fold manifest"
+        )
     if record.source_version is not None and record.source_version != manifest.source_version:
         raise OOFArtifactError(f"fold {record.fold} uses a different source version")
     if (

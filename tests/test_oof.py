@@ -70,6 +70,7 @@ def _write_run(path: Path, manifest: FoldManifest, fold: int, *, config: str = "
     }
     supervision = {
         "kind": "reference",
+        "fold_manifest_checksum": manifest.manifest_checksum,
         "held_out_inputs_excluded": True,
         "reports_used": False,
     }
