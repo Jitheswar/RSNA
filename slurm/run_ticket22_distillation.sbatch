@@ -38,6 +38,24 @@ if [[ "${SLURM_JOB_PARTITION:-}" != "cluster1-cpu" ]]; then
   echo "Ticket 22 requires cluster1-cpu" >&2
   exit 1
 fi
+timelimit="${SLURM_TIMELIMIT:-}"
+if [[ -z "${timelimit}" ]]; then
+  if ! job_info="$(scontrol show job "${SLURM_JOB_ID}" 2>/dev/null)"; then
+    echo "could not verify the active Slurm job time limit" >&2
+    exit 1
+  fi
+  for field in ${job_info}; do
+    if [[ "${field}" == TimeLimit=* ]]; then
+      timelimit="${field#TimeLimit=}"
+      break
+    fi
+  done
+fi
+if [[ -z "${timelimit}" ]]; then
+  echo "Slurm time limit could not be verified" >&2
+  exit 1
+fi
+export SLURM_TIMELIMIT="${timelimit}"
 if [[ ! -x "${project_dir}/.venv/bin/python" || ! -x /usr/bin/time ]]; then
   echo "Ticket 22 requires the isolated Python 3.11 environment and /usr/bin/time" >&2
   exit 1

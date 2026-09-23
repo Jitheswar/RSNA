@@ -115,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
                 "exclusive": False,
             },
         )
+        if not preflight.passed:
+            raise PreflightError("Ticket 22 CPU preflight did not pass; private studies were not loaded")
         load_started = time.perf_counter()
         studies = {
             loaded.study.study_instance_uid: loaded.study
