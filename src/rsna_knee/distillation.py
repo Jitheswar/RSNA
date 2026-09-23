@@ -56,6 +56,32 @@ class DistillationExperimentError(ValueError):
     """Raised when the declared Ticket 22 experiment is incomplete or contaminated."""
 
 
+class _Ticket22FoldEnsemble(torch.nn.Module):
+    """Match candidate inference by preprocessing once and averaging fold probabilities."""
+
+    def __init__(self, models: Sequence[HierarchicalStudyModel]) -> None:
+        super().__init__()
+        if not models:
+            raise DistillationExperimentError("Ticket 22 inference requires all fold models")
+        first_config = models[0].config
+        if any(model.config != first_config for model in models[1:]):
+            raise DistillationExperimentError("Ticket 22 inference fold model configurations differ")
+        self.models = torch.nn.ModuleList(models)
+        self.config = first_config
+
+    def predict_proba(
+        self,
+        images: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        fold_scores = tuple(
+            model.predict_proba(images, slice_mask, series_mask)
+            for model in self.models
+        )
+        return torch.stack(fold_scores, dim=0).mean(dim=0).clamp(0.0, 1.0)
+
+
 @dataclass(frozen=True)
 class Ticket22FoldPlan:
     """Private identity partition for one fold's teacher and student adaptation."""
@@ -463,7 +489,7 @@ def _measure_ensemble_runtime(
     series_cache: SeriesCache | None,
     input_loading_seconds: float,
 ) -> dict[str, object]:
-    """Measure three-fold inference from checkpoint loading through model calls."""
+    """Measure candidate-style ensemble inference from loading through model calls."""
 
     evidence: dict[str, object] = {}
     ordered_studies = tuple(studies)
@@ -472,7 +498,7 @@ def _measure_ensemble_runtime(
             raise DistillationExperimentError(f"{arm} inference bundle must contain all three folds")
         config = arm_configs[arm]
         started = time.perf_counter()
-        count = 0
+        models: list[HierarchicalStudyModel] = []
         for fold, checkpoint in enumerate(checkpoints):
             model = HierarchicalStudyModel(config.model_config())
             load_training_checkpoint(
@@ -482,26 +508,27 @@ def _measure_ensemble_runtime(
                 expected_fold=fold,
                 expected_checkpoint_kind="final_selected",
             )
-            engine = InferenceEngine(
-                model,
-                integration_manifest.preprocess_config,
-                packing_config=integration_manifest.packing_config,
-                series_cache=series_cache,
-            )
-            for study in ordered_studies:
-                engine.predict_study(study)
-                count += 1
+            models.append(model)
+        engine = InferenceEngine(
+            _Ticket22FoldEnsemble(models),  # type: ignore[arg-type]
+            integration_manifest.preprocess_config,
+            packing_config=integration_manifest.packing_config,
+            series_cache=series_cache,
+        )
+        for study in ordered_studies:
+            engine.predict_study(study)
         elapsed_seconds = time.perf_counter() - started
         evidence[arm] = {
-            "three_fold_model_pass_seconds": elapsed_seconds,
+            "three_fold_ensemble_seconds": elapsed_seconds,
             "runtime_including_shared_input_load_seconds": input_loading_seconds + elapsed_seconds,
-            "model_study_predictions": count,
+            "ensemble_study_predictions": len(ordered_studies),
+            "fold_model_predictions": len(ordered_studies) * len(checkpoints),
             "input_study_count": len(ordered_studies),
             "timed_stages": [
-                "checkpoint loading",
-                "series preprocessing",
-                "study packing",
-                "model forward",
+                "all three checkpoint loads",
+                "series preprocessing once per study",
+                "study packing once per study",
+                "three-fold probability averaging",
                 "score validation",
             ],
             "scope": "all studies selected by the private integration manifest; training-source proxy, not competition test scale",

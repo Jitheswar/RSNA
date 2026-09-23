@@ -9,12 +9,22 @@ from rsna_knee.distillation import (
     compare_ticket22_oof_predictions,
     create_fold_soft_target_examples,
 )
+from rsna_knee.distillation_cli import (
+    TICKET22_PROCESS_ADDRESS_SPACE_LIMIT_BYTES,
+    _validate_ticket22_address_space_limits,
+)
 from rsna_knee.folds import FoldManifest, freeze_folds
 from rsna_knee.image_model_comparison import ImageModelComparisonError
 from rsna_knee.inventory import SourceManifest, SourceStudy
 from rsna_knee.targets import NUM_TARGETS
-from rsna_knee.training import SupervisionProvenance, TrainingExample
-from rsna_knee.training import TrainingConfig, load_training_checkpoint, train_fixed_budget
+from rsna_knee.training import (
+    PreflightError,
+    SupervisionProvenance,
+    TrainingConfig,
+    TrainingExample,
+    load_training_checkpoint,
+    train_fixed_budget,
+)
 
 
 def _manifest() -> FoldManifest:
@@ -52,6 +62,19 @@ def _candidate(uid: str, fold: int) -> TrainingExample:
             excluded_study_uids=(),
         ),
     )
+
+
+def test_ticket22_requires_an_explicit_process_memory_bound() -> None:
+    bounded = _validate_ticket22_address_space_limits(
+        TICKET22_PROCESS_ADDRESS_SPACE_LIMIT_BYTES,
+        TICKET22_PROCESS_ADDRESS_SPACE_LIMIT_BYTES,
+    )
+
+    assert bounded["hard_limit_bytes"] == 48 * 1024**3
+    with pytest.raises(PreflightError, match="hard process address-space limit"):
+        _validate_ticket22_address_space_limits(-1, -1)
+    with pytest.raises(PreflightError, match="hard process address-space limit"):
+        _validate_ticket22_address_space_limits(64 * 1024**3, 64 * 1024**3)
 
 
 def test_fold_plan_excludes_every_held_out_input_and_unavailable_candidate() -> None:

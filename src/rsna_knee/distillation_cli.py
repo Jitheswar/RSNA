@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import resource
 import sys
 import time
 from pathlib import Path
@@ -18,6 +19,9 @@ from .folds import FOLD_IDS, load_fold_manifest
 from .real_inference import iter_real_studies, load_integration_manifest
 from .series_cache import SeriesCache
 from .training import PreflightError, run_cpu_preflight
+
+
+TICKET22_PROCESS_ADDRESS_SPACE_LIMIT_BYTES = 48 * 1024**3
 
 
 def _parser() -> Any:
@@ -42,10 +46,33 @@ def _require_ticket22_slurm_context(code_revision: str) -> None:
         raise PreflightError("Ticket 22 code revision environment does not match its frozen argument")
 
 
+def _validate_ticket22_address_space_limits(soft_limit: int, hard_limit: int) -> dict[str, int]:
+    if (
+        soft_limit == resource.RLIM_INFINITY
+        or hard_limit == resource.RLIM_INFINITY
+        or soft_limit < 0
+        or hard_limit < 0
+        or soft_limit > TICKET22_PROCESS_ADDRESS_SPACE_LIMIT_BYTES
+        or hard_limit > TICKET22_PROCESS_ADDRESS_SPACE_LIMIT_BYTES
+    ):
+        raise PreflightError("Ticket 22 requires a hard process address-space limit of at most 48 GiB")
+    return {
+        "soft_limit_bytes": soft_limit,
+        "hard_limit_bytes": hard_limit,
+        "maximum_allowed_bytes": TICKET22_PROCESS_ADDRESS_SPACE_LIMIT_BYTES,
+    }
+
+
+def _require_ticket22_address_space_bound() -> dict[str, int]:
+    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+    return _validate_ticket22_address_space_limits(soft_limit, hard_limit)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         _require_ticket22_slurm_context(args.code_revision)
+        address_space_limit = _require_ticket22_address_space_bound()
         repository_root = Path(__file__).resolve().parents[2]
         output_root = args.output_root.resolve()
         teacher_root = args.teacher_run_root.resolve()
@@ -125,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
                 "schema_version": "rsna-knee-observed-compute-v1",
                 "input_loading_seconds": input_loading_seconds,
                 "source_studies_loaded": len(studies),
+                "process_address_space_limit": address_space_limit,
                 "preflight_passed": preflight.passed,
                 "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                 "slurm_partition": os.environ.get("SLURM_JOB_PARTITION"),

@@ -71,14 +71,17 @@ fi
 mkdir -p "${project_dir}/artifacts"
 exec 9>"${project_dir}/artifacts/.ticket22-distillation-concurrency.lock"
 flock -x 9
-if ! active_jobs="$(squeue --array --noheader --user "${USER:-$(id -un)}" --name "rsna-t22distill" \
-  --states=RUNNING,CONFIGURING,COMPLETING --format="%A")"; then
-  echo "could not inspect active Ticket 22 Slurm jobs" >&2
+if ! active_jobs="$(squeue --array --noheader --user "${USER:-$(id -un)}" \
+  --partition=cluster1-cpu --states=RUNNING,CONFIGURING,COMPLETING --format="%i")"; then
+  echo "could not inspect active cluster1-cpu Slurm jobs for this user" >&2
   exit 1
 fi
 active_count="$(printf '%s\n' "${active_jobs}" | awk 'NF { count += 1 } END { print count + 0 }')"
+if ! printf '%s\n' "${active_jobs}" | awk -v job="${SLURM_JOB_ID}" '$0 == job { found = 1 } END { exit !found }'; then
+  active_count=$((active_count + 1))
+fi
 if (( active_count > 2 )); then
-  echo "Ticket 22 concurrency limit exceeded: ${active_count} active jobs" >&2
+  echo "cluster1-cpu concurrency limit exceeded for this user: ${active_count} active jobs" >&2
   exit 1
 fi
 flock -u 9
@@ -88,6 +91,14 @@ export RSNA_CODE_REVISION="${code_revision}"
 export OMP_NUM_THREADS=16
 export MKL_NUM_THREADS=16
 export OPENBLAS_NUM_THREADS=1
+
+# Limit this Python process below the Slurm request. RLIMIT_AS caps every
+# process mapping; 48 GiB leaves headroom for wrappers and the node OS.
+address_space_limit_kib=$((48 * 1024 * 1024))
+if ! ulimit -v "${address_space_limit_kib}"; then
+  echo "could not apply the 48 GiB Ticket 22 process memory bound" >&2
+  exit 1
+fi
 
 cli_args=(
   --integration-manifest "${integration_manifest}"
