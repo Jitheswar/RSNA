@@ -36,6 +36,7 @@ from .archive import atomic_json_write
 from .domain import StudyRecord
 from .folds import FOLD_IDS, FoldManifest
 from .model import HierarchicalStudyModel, ModelConfig
+from .pseudo_labels import AdmittedFoldPseudoLabels
 from .preprocessing import (
     PackedStudy,
     PackingConfig,
@@ -59,10 +60,14 @@ PREFLIGHT_SCHEMA_VERSION = "rsna-knee-cpu-preflight-v1"
 DEFAULT_TRAINING_SEED = 20260911
 DEFAULT_BATCH_ORDER_SEED = 20260912
 DEFAULT_SOURCE_VERSION = "synthetic-development"
-SOURCE_EXPOSURE_KINDS = ("reference", "weak", "mixed")
+SOURCE_EXPOSURE_KINDS = ("reference", "weak", "mixed", "pseudo")
+LEGACY_SOURCE_EXPOSURE_KINDS = ("reference", "weak", "mixed")
 TICKET18_ADDITIVE_DESIGN = "ticket18-additive-report-supervision-v2"
 TICKET18_WEAK_SAMPLING_POLICY = "ticket18-report-only-cyclic-shuffle-v1"
 TICKET18_WEAK_BATCH_SEED_OFFSET = 18_180_018
+TICKET21_PSEUDO_LABEL_DESIGN = "ticket21-additive-fold-isolated-pseudo-labels-v1"
+TICKET21_PSEUDO_SAMPLING_POLICY = "ticket21-report-only-pseudo-cyclic-shuffle-v1"
+TICKET21_PSEUDO_BATCH_SEED_OFFSET = 21_021_021
 
 
 def _empty_source_exposures() -> dict[str, dict[str, int]]:
@@ -73,10 +78,13 @@ def _empty_source_exposures() -> dict[str, dict[str, int]]:
 
 
 def _validated_source_exposures(value: object) -> dict[str, dict[str, int]]:
-    if not isinstance(value, Mapping) or set(value) != set(SOURCE_EXPOSURE_KINDS):
-        raise TrainingError("source exposure counts must contain reference, weak and mixed")
+    if not isinstance(value, Mapping) or frozenset(value) not in {
+        frozenset(LEGACY_SOURCE_EXPOSURE_KINDS),
+        frozenset(SOURCE_EXPOSURE_KINDS),
+    }:
+        raise TrainingError("source exposure counts have an unsupported source-kind schema")
     result = _empty_source_exposures()
-    for kind in SOURCE_EXPOSURE_KINDS:
+    for kind in value:
         group = value.get(kind)
         if not isinstance(group, Mapping):
             raise TrainingError(f"source exposure counts for {kind} must be an object")
@@ -646,9 +654,11 @@ class SupervisionProvenance:
     source_report_ref: str | None = None
     source_report_sha256: str | None = None
     source_disagreement_count: int = 0
+    pseudo_label_version: str | None = None
+    teacher_checkpoint_sha256: str | None = None
 
     def __post_init__(self) -> None:
-        if self.source_kind not in {"reference", "weak", "mixed"}:
+        if self.source_kind not in {"reference", "weak", "mixed", "pseudo"}:
             raise TrainingDataError("supervision provenance has an unsupported source kind")
         if not self.source_id.strip():
             raise TrainingDataError("supervision provenance requires a source identity")
@@ -673,11 +683,28 @@ class SupervisionProvenance:
                 character not in "0123456789abcdef" for character in self.source_report_sha256
             ):
                 raise TrainingDataError("weak supervision report identity must be a SHA-256 digest")
+            if self.pseudo_label_version is not None or self.teacher_checkpoint_sha256 is not None:
+                raise TrainingDataError("report supervision must not carry teacher provenance")
+        elif self.source_kind == "pseudo":
+            if self.weak_label_version is not None or self.source_report_ref is not None or self.source_report_sha256 is not None:
+                raise TrainingDataError("pseudo supervision must not carry report provenance")
+            if not self.pseudo_label_version:
+                raise TrainingDataError("pseudo supervision provenance requires a label version")
+            if not self.teacher_checkpoint_sha256 or len(self.teacher_checkpoint_sha256) != 64 or any(
+                character not in "0123456789abcdef" for character in self.teacher_checkpoint_sha256
+            ):
+                raise TrainingDataError("pseudo supervision requires a teacher checkpoint SHA-256")
         elif any(
             value is not None
-            for value in (self.weak_label_version, self.source_report_ref, self.source_report_sha256)
+            for value in (
+                self.weak_label_version,
+                self.source_report_ref,
+                self.source_report_sha256,
+                self.pseudo_label_version,
+                self.teacher_checkpoint_sha256,
+            )
         ):
-            raise TrainingDataError("reference supervision must not carry weak-label provenance")
+            raise TrainingDataError("reference supervision must not carry derived-label provenance")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -692,6 +719,8 @@ class SupervisionProvenance:
             "source_report_ref": self.source_report_ref,
             "source_report_sha256": self.source_report_sha256,
             "source_disagreement_count": self.source_disagreement_count,
+            "pseudo_label_version": self.pseudo_label_version,
+            "teacher_checkpoint_sha256": self.teacher_checkpoint_sha256,
         }
 
 
@@ -733,7 +762,7 @@ class TrainingExample:
             raise TrainingDataError("supervised target entries must be finite")
         if np.any((targets[supervised] < 0.0) | (targets[supervised] > 1.0)):
             raise TrainingDataError("supervised target entries must be binary values")
-        if self.provenance.source_kind not in {"reference", "weak", "mixed"}:
+        if self.provenance.source_kind not in {"reference", "weak", "mixed", "pseudo"}:
             raise TrainingDataError("training example has an unsupported supervision source")
 
     @classmethod
@@ -818,10 +847,13 @@ class TrainingResult:
     exposures_by_source: Mapping[str, Mapping[str, int]] | None = None
     gold_exposure_sequence_sha256: str | None = None
     weak_exposure_sequence_sha256: str | None = None
+    pseudo_exposure_sequence_sha256: str | None = None
     initial_model_state_sha256: str | None = None
     training_design: str | None = None
     weak_sampling_policy: str | None = None
     weak_sampling_seed: int | None = None
+    additional_sampling_policy: str | None = None
+    additional_sampling_seed: int | None = None
 
     @property
     def final_loss(self) -> float | None:
@@ -844,14 +876,19 @@ class TrainingResult:
         }
         if self.exposures_by_source is not None:
             counts["exposures_by_source"] = {
-                kind: dict(values) for kind, values in self.exposures_by_source.items()
+                kind: dict(values)
+                for kind, values in self.exposures_by_source.items()
+                if kind != "pseudo" or any(values.values())
             }
         counts["gold_exposure_sequence_sha256"] = self.gold_exposure_sequence_sha256
         counts["weak_exposure_sequence_sha256"] = self.weak_exposure_sequence_sha256
+        counts["pseudo_exposure_sequence_sha256"] = self.pseudo_exposure_sequence_sha256
         counts["initial_model_state_sha256"] = self.initial_model_state_sha256
         counts["training_design"] = self.training_design
         counts["weak_sampling_policy"] = self.weak_sampling_policy
         counts["weak_sampling_seed"] = self.weak_sampling_seed
+        counts["additional_sampling_policy"] = self.additional_sampling_policy
+        counts["additional_sampling_seed"] = self.additional_sampling_seed
         counts["heldout_model_inference_seconds"] = self.heldout_model_inference_seconds
         return {
             "schema_version": TRAINING_SCHEMA_VERSION,
@@ -987,19 +1024,26 @@ def build_fold_examples(
     packing_config: PackingConfig | None = None,
     series_cache: SeriesCache | None = None,
     allow_partial_inputs: bool = False,
-    admitted_supervision: AdmittedFoldSupervision | None = None,
+    admitted_supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
+    pseudo_candidate_study_uids: Sequence[str] | None = None,
 ) -> tuple[TrainingExample, ...]:
     """Prepare one declared partition with already-resolved supervision.
 
     Preprocessing is fixed and series-local; no statistics are fitted from the
-    selected studies.  Report labels can enter only through the separate
-    ``AdmittedFoldSupervision`` seam, never through the image input records.
+    selected studies. Derived labels can enter only through a separate
+    fold-scoped admission result, never through the image input records.
     """
 
     if fold not in FOLD_IDS:
         raise TrainingDataError(f"fold must be one of {FOLD_IDS}")
-    if partition not in {"training", "held_out"}:
-        raise TrainingDataError("partition must be 'training' or 'held_out'")
+    if partition not in {"training", "held_out", "pseudo_candidates"}:
+        raise TrainingDataError(
+            "partition must be 'training', 'held_out' or 'pseudo_candidates'"
+        )
+    if partition != "training" and admitted_supervision is not None:
+        raise TrainingDataError("admitted supervision is valid only for training examples")
+    if partition != "pseudo_candidates" and pseudo_candidate_study_uids is not None:
+        raise TrainingDataError("pseudo candidate identities are valid only for that partition")
     if admitted_supervision is not None:
         if admitted_supervision.fold != fold:
             raise TrainingDataError("admitted supervision fold does not match the requested fold")
@@ -1010,7 +1054,30 @@ def build_fold_examples(
         ):
             raise TrainingDataError("admitted supervision held-out identities do not match the fold")
     source = _study_mapping(studies)
-    if partition == "training" and admitted_supervision is not None:
+    if partition == "pseudo_candidates":
+        if pseudo_candidate_study_uids is None:
+            raise TrainingDataError("pseudo candidate study identities must be declared")
+        candidates = tuple(pseudo_candidate_study_uids)
+        if any(not isinstance(uid, str) or not uid.strip() for uid in candidates):
+            raise TrainingDataError("pseudo candidate study identities must be non-empty")
+        if len(set(candidates)) != len(candidates):
+            raise TrainingDataError("pseudo candidate study identities must be unique")
+        expected_candidates = {
+            item.study_instance_uid
+            for item in fold_manifest.report_only_memberships
+            if item.fold != fold
+        }
+        if not set(candidates).issubset(expected_candidates):
+            raise TrainingDataError(
+                "pseudo candidates must be report-only studies in the training partition"
+            )
+        membership_by_uid = {
+            item.study_instance_uid: item
+            for item in fold_manifest.report_only_memberships
+            if item.study_instance_uid in set(candidates)
+        }
+        memberships = tuple(membership_by_uid[uid] for uid in sorted(candidates))
+    elif partition == "training" and admitted_supervision is not None:
         selected_uids = admitted_supervision.training_study_uids
         membership_by_uid = {
             item.study_instance_uid: item
@@ -1019,19 +1086,24 @@ def build_fold_examples(
         }
         memberships = tuple(membership_by_uid[uid] for uid in selected_uids)
     else:
+        source_memberships = (
+            fold_manifest.gold_memberships
+            if partition in {"training", "held_out"}
+            else ()
+        )
         memberships = tuple(
             item
-            for item in fold_manifest.gold_memberships
+            for item in source_memberships
             if (item.fold != fold if partition == "training" else item.fold == fold)
         )
         membership_by_uid = {item.study_instance_uid: item for item in memberships}
     if not memberships:
-        raise TrainingDataError(f"fold {fold} has no gold studies in the {partition} partition")
+        raise TrainingDataError(f"fold {fold} has no studies in the {partition} partition")
     selected_uids = tuple(item.study_instance_uid for item in memberships)
     missing = sorted(set(selected_uids) - set(source))
     if missing:
         raise TrainingDataError(f"{partition} study inputs are incomplete; missing {missing[:3]}")
-    if partition == "training":
+    if partition in {"training", "pseudo_candidates"}:
         fold_manifest.assert_adaptation_input_is_training_only(fold, selected_uids)
     held_out_uids = tuple(sorted(fold_manifest.held_out_study_uids(fold)))
     default_provenance = SupervisionProvenance(
@@ -1063,7 +1135,11 @@ def build_fold_examples(
                 f"fold {fold} {partition} study {study_uid} has no usable image series"
             )
         packed = pack_study(study, prepared.series, preprocess_config, packing_config=packing)
-        targets: Sequence[int | None] = membership_by_uid[study_uid].reference_labels
+        targets: Sequence[int | None] = (
+            (None,) * NUM_TARGETS
+            if partition == "pseudo_candidates"
+            else membership_by_uid[study_uid].reference_labels
+        )
         provenance = default_provenance
         if partition == "training" and admitted_supervision is not None:
             resolved = admitted_supervision.by_study.get(study_uid)
@@ -1103,6 +1179,16 @@ def build_fold_examples(
                 source_disagreement_count=int(
                     cast(Any, provenance_payload["source_disagreement_count"])
                 ),
+                pseudo_label_version=(
+                    str(provenance_payload["pseudo_label_version"])
+                    if provenance_payload.get("pseudo_label_version") is not None
+                    else None
+                ),
+                teacher_checkpoint_sha256=(
+                    str(provenance_payload["teacher_checkpoint_sha256"])
+                    if provenance_payload.get("teacher_checkpoint_sha256") is not None
+                    else None
+                ),
             )
         examples.append(
             TrainingExample.from_packed(
@@ -1124,7 +1210,7 @@ def build_fold_training_examples(
     packing_config: PackingConfig | None = None,
     series_cache: SeriesCache | None = None,
     allow_partial_inputs: bool = False,
-    admitted_supervision: AdmittedFoldSupervision | None = None,
+    admitted_supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
 ) -> tuple[TrainingExample, ...]:
     """Named convenience wrapper for the fitting partition."""
 
@@ -1138,6 +1224,32 @@ def build_fold_training_examples(
         series_cache=series_cache,
         allow_partial_inputs=allow_partial_inputs,
         admitted_supervision=admitted_supervision,
+    )
+
+
+def build_fold_pseudo_candidate_examples(
+    studies: Mapping[str, StudyRecord] | Sequence[StudyRecord],
+    fold_manifest: FoldManifest,
+    fold: int,
+    candidate_study_uids: Sequence[str],
+    *,
+    preprocess_config: PreprocessConfig = PreprocessConfig(),
+    packing_config: PackingConfig | None = None,
+    series_cache: SeriesCache | None = None,
+    allow_partial_inputs: bool = False,
+) -> tuple[TrainingExample, ...]:
+    """Prepare declared report-only training images for MRI teacher inference."""
+
+    return build_fold_examples(
+        studies,
+        fold_manifest,
+        fold,
+        partition="pseudo_candidates",
+        preprocess_config=preprocess_config,
+        packing_config=packing_config,
+        series_cache=series_cache,
+        allow_partial_inputs=allow_partial_inputs,
+        pseudo_candidate_study_uids=candidate_study_uids,
     )
 
 
@@ -1184,7 +1296,7 @@ def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConf
             raise TrainingDataError(
                 f"study {example.study_instance_uid} has shape {example.images.shape}; expected {expected_shape}"
             )
-        if example.provenance.source_kind not in {"reference", "weak", "mixed"}:
+        if example.provenance.source_kind not in {"reference", "weak", "mixed", "pseudo"}:
             raise TrainingDataError("training example has an unsupported supervision source")
         if not example.provenance.held_out_excluded:
             raise TrainingDataError("training provenance does not exclude held-out inputs")
@@ -3220,8 +3332,9 @@ def _train_one_fold_impl(
     cache_fingerprint: str | None = None,
     integration_manifest_checksum: str | None = None,
     series_cache: SeriesCache | None = None,
-    supervision: AdmittedFoldSupervision | None = None,
+    supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
     ticket18_additive_design: bool = False,
+    ticket21_pseudolabel_design: bool = False,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
     preflight: CpuPreflightResult | None = None,
@@ -3307,6 +3420,16 @@ def _train_one_fold_impl(
             )
     additional_examples: tuple[TrainingExample, ...] = ()
     additional_batch_order_seed: int | None = None
+    if ticket18_additive_design and ticket21_pseudolabel_design:
+        raise TrainingConfigurationError("Ticket 18 and Ticket 21 training designs are exclusive")
+    if ticket21_pseudolabel_design and not isinstance(supervision, AdmittedFoldPseudoLabels):
+        raise TrainingConfigurationError(
+            "Ticket 21 student training requires admitted fold pseudo-labels"
+        )
+    if isinstance(supervision, AdmittedFoldPseudoLabels) and not ticket21_pseudolabel_design:
+        raise TrainingConfigurationError(
+            "pseudo-labels can enter training only through the Ticket 21 additive design"
+        )
     if ticket18_additive_design:
         if supervision is None:
             training_examples = build_fold_training_examples(
@@ -3360,6 +3483,45 @@ def _train_one_fold_impl(
             additional_batch_order_seed = (
                 config.batch_order_seed + TICKET18_WEAK_BATCH_SEED_OFFSET
             )
+    elif ticket21_pseudolabel_design:
+        assert isinstance(supervision, AdmittedFoldPseudoLabels)
+        training_examples = build_fold_training_examples(
+            studies,
+            fold_manifest,
+            fold,
+            preprocess_config=config.preprocess_config(),
+            packing_config=config.packing_config(),
+            series_cache=series_cache,
+        )
+        admitted_examples = build_fold_training_examples(
+            studies,
+            fold_manifest,
+            fold,
+            preprocess_config=config.preprocess_config(),
+            packing_config=config.packing_config(),
+            series_cache=series_cache,
+            admitted_supervision=supervision,
+        )
+        additional_examples = tuple(
+            sorted(
+                (item for item in admitted_examples if item.provenance.source_kind == "pseudo"),
+                key=lambda item: item.study_instance_uid,
+            )
+        )
+        if not additional_examples:
+            raise TrainingDataError(
+                "Ticket 21 student requires at least one admitted pseudo-label study"
+            )
+        if any(item.provenance.source_kind != "reference" for item in training_examples):
+            raise TrainingDataError("Ticket 21 comparator pool must contain reference examples only")
+        admitted_pseudo_uids = tuple(item.study_instance_uid for item in additional_examples)
+        if set(admitted_pseudo_uids) != set(supervision.admitted_pseudo_study_uids):
+            raise TrainingDataError(
+                "Ticket 21 pseudo-label examples do not match the admitted study identities"
+            )
+        if {item.study_instance_uid for item in training_examples}.intersection(admitted_pseudo_uids):
+            raise TrainingDataError("Ticket 21 reference and pseudo-label pools overlap")
+        additional_batch_order_seed = config.batch_order_seed + TICKET21_PSEUDO_BATCH_SEED_OFFSET
     else:
         training_examples = build_fold_training_examples(
             studies,
@@ -3407,7 +3569,8 @@ def _train_one_fold_impl(
         supervision_identity: Mapping[str, object] = supervision_public
         supervision_private = None
     else:
-        supervision_public = {"kind": "weak", **supervision.to_public_dict()}
+        supervision_kind = "pseudo" if isinstance(supervision, AdmittedFoldPseudoLabels) else "weak"
+        supervision_public = {"kind": supervision_kind, **supervision.to_public_dict()}
         supervision_identity = supervision.to_private_dict()
         supervision_private = supervision.to_private_dict()
     identity = _checkpoint_identity(
@@ -3445,6 +3608,18 @@ def _train_one_fold_impl(
             if additional_examples
             else None
         )
+    if ticket21_pseudolabel_design:
+        identity["training_design"] = TICKET21_PSEUDO_LABEL_DESIGN
+        identity["additional_training_data_fingerprint"] = fingerprint_training_examples(
+            additional_examples
+        )
+        identity["pseudo_sampling"] = {
+            "policy": TICKET21_PSEUDO_SAMPLING_POLICY,
+            "microbatch_size": config.batch_size,
+            "seed": additional_batch_order_seed,
+            "source": "admitted MRI-only pseudo-label studies sorted by study identity",
+            "reference_pool_remains_unchanged": True,
+        }
     identity["held_out_data_fingerprint"] = fingerprint_training_examples(held_out_examples)
     identity["held_out_inputs_excluded_from_fitting"] = True
     identity["learned_normalization_fit_studies"] = []
@@ -3592,13 +3767,30 @@ def _train_one_fold_impl(
         supervised_entry_exposures=result.supervised_entry_exposures,
         exposures_by_source=result.exposures_by_source,
         gold_exposure_sequence_sha256=result.gold_exposure_sequence_sha256,
-        weak_exposure_sequence_sha256=result.weak_exposure_sequence_sha256,
-        initial_model_state_sha256=result.initial_model_state_sha256,
-        training_design=(TICKET18_ADDITIVE_DESIGN if ticket18_additive_design else None),
-        weak_sampling_policy=(
-            TICKET18_WEAK_SAMPLING_POLICY if additional_examples else None
+        weak_exposure_sequence_sha256=(
+            result.weak_exposure_sequence_sha256 if ticket18_additive_design else None
         ),
-        weak_sampling_seed=additional_batch_order_seed,
+        initial_model_state_sha256=result.initial_model_state_sha256,
+        training_design=(
+            TICKET18_ADDITIVE_DESIGN
+            if ticket18_additive_design
+            else TICKET21_PSEUDO_LABEL_DESIGN
+            if ticket21_pseudolabel_design
+            else None
+        ),
+        weak_sampling_policy=(
+            TICKET18_WEAK_SAMPLING_POLICY if ticket18_additive_design else None
+        ),
+        weak_sampling_seed=(additional_batch_order_seed if ticket18_additive_design else None),
+        additional_sampling_policy=(
+            TICKET21_PSEUDO_SAMPLING_POLICY if ticket21_pseudolabel_design else None
+        ),
+        additional_sampling_seed=(
+            additional_batch_order_seed if ticket21_pseudolabel_design else None
+        ),
+        pseudo_exposure_sequence_sha256=(
+            result.weak_exposure_sequence_sha256 if ticket21_pseudolabel_design else None
+        ),
         supervision=supervision_public,
         supervision_private=supervision_private,
     )
@@ -3619,8 +3811,9 @@ def train_one_fold(
     cache_fingerprint: str | None = None,
     integration_manifest_checksum: str | None = None,
     series_cache: SeriesCache | None = None,
-    supervision: AdmittedFoldSupervision | None = None,
+    supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
     ticket18_additive_design: bool = False,
+    ticket21_pseudolabel_design: bool = False,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
     preflight: CpuPreflightResult | None = None,
@@ -3656,6 +3849,7 @@ def train_one_fold(
         series_cache=series_cache,
         supervision=supervision,
         ticket18_additive_design=ticket18_additive_design,
+        ticket21_pseudolabel_design=ticket21_pseudolabel_design,
         preprocess_config=preprocess_config,
         packing_config=packing_config,
         preflight=preflight,
@@ -3927,6 +4121,7 @@ __all__ = [
     "atomic_torch_save",
     "build_fold_examples",
     "build_fold_held_out_examples",
+    "build_fold_pseudo_candidate_examples",
     "build_fold_training_examples",
     "checkpoint_sha256",
     "classify_retry_failure",

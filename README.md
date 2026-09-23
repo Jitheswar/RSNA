@@ -775,3 +775,37 @@ CPU mechanics budget and produced held-out evaluation artifacts. Synthetic
 tests cover lineage rejection, fold isolation, reference precedence and
 masking; the run does not claim that weak supervision improves performance.
 Ticket 18 owns that controlled comparison.
+
+## Ticket 21 one-fold MRI pseudo-label trial
+
+`rsna_knee.pseudo_labels.admit_fold_pseudo_labels` admits hard labels only
+when the teacher used the consuming fold's gold-training cohort and the
+generated candidates partition that fold's report-only training studies.
+Held-out studies, reports, and gold studies cannot enter the pseudo-label
+pool. Scores at or below 0.10 become negative labels, scores at or above 0.90
+become positive labels, and intermediate scores remain masked. Those
+thresholds are a fixed selection rule, not a calibration claim.
+
+The student uses the active 8/16/32 mechanics baseline and the teacher's fixed
+optimizer-step budget. It keeps the gold exposure sequence unchanged and
+adds pseudo-label examples in a separately counted pool. The one-fold
+comparison reports paired study-bootstrap uncertainty and leaves promotion
+to a later owner decision. It does not produce complete three-fold OOF or
+whole-notebook runtime evidence.
+
+`slurm/run_ticket21_pseudo_label.sbatch` runs fold 0 on one non-exclusive
+`cluster1-cpu` node with 16 CPUs, 64 GB and a six-hour limit. Inputs and
+outputs stay private; the output root must be outside this repository:
+
+```bash
+export RSNA_TICKET21_INTEGRATION_MANIFEST=/private/path/ticket-05-real-training-input/private/integration-manifest.json
+export RSNA_TICKET21_SOURCE=/private/path/rsna-knee-abnormality-detection.zip
+export RSNA_TICKET21_FOLD_MANIFEST=/private/path/ticket-04-real-v2/private/fold-manifest.json
+export RSNA_TICKET21_OUTPUT_ROOT=/private/path/ticket-21-pseudo-labels
+export RSNA_CODE_REVISION=<committed-full-git-sha>
+sbatch slurm/run_ticket21_pseudo_label.sbatch
+```
+
+The private output records the predeclared design, teacher checkpoint and
+code/configuration hashes, eligible/excluded study identities, generated
+scores, student lineage, fold comparison, and CLI/Slurm cost evidence.
