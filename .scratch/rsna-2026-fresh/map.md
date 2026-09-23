@@ -50,6 +50,13 @@ repository artifacts.
   package size remain open under V16:
   [ticket 22](issues/22-evaluate-one-distilled-mri-only-student.md)
   · [external report](../../../ticket-22-report.md).
+- 2026-09-23 — Ticket 23 is resolved as a no-refit delivery recommendation.
+  The existing three-fold gold-only candidate remains the verified path for
+  Ticket 24 to consider; the exact all-data refit's quality and runtime remain
+  unknown, and all-reference fallback priors are recorded without changing the
+  frozen candidate: [ticket 23](issues/23-compare-fold-ensembles-with-all-data-refitting.md)
+  · [public evidence](../../docs/evidence/ticket-23-delivery-strategy.md)
+  · [external report](../../../ticket-23-report.md).
 
 ## Fog
 
