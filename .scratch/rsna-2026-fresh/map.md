@@ -36,8 +36,7 @@ repository artifacts.
   +0.0442). Full inference runtime, VRAM and complete package size remain open;
   VRAM requires separate GPU approval:
   [ticket 19](issues/19-evaluate-one-stronger-image-model-variant.md)
-  · [external report](../../../ticket-19-report.md)
-  · [comparison artifacts](../../../ticket-19-wider-encoder-v1/comparison/ticket-19-image-model.md).
+  · [external report](../../../ticket-19-report.md).
 
 ## Fog
 
