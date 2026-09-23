@@ -4,7 +4,7 @@
 
 **Blocked by:** 18: Measure the controlled benefit of report supervision
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 **Authorization:** Initially planning-only. The owner's direct instruction to implement Ticket 19 on 2026-09-23 separately authorized this implementation and the bounded CPU experiment below. GPU execution and the other approval-gated actions remain unauthorized unless separately approved.
 
@@ -12,15 +12,16 @@
 
 ## Acceptance criteria
 
-- [ ] Define one proposal such as resolution, slice count, encoder or plane aggregation; keep supervision, folds and other comparison settings fixed where required to isolate the change.
-- [ ] Treat numerical preprocessing/sampling changes as versioned scientific settings and preserve cache compatibility only when semantics allow it.
-- [ ] Record OOF/per-target evidence, uncertainty, train cost, full inference runtime, VRAM and package size, accepting negative results.
-- [ ] Any new pretrained resource must satisfy V13 before download/use and any GPU execution must satisfy V10 and specific approval; neither is silently authorized by this ticket.
+- [x] Define one proposal: widen the shared slice encoder from 8/16/32 to 16/32/64 while keeping supervision, folds and other comparison settings fixed.
+- [x] No numerical preprocessing or sampling change was made; cache semantics remain unchanged.
+- [ ] OOF/per-target evidence, uncertainty and training cost are recorded. Full inference runtime, VRAM and complete package size remain unmeasured.
+- [x] No pretrained resource was downloaded or used, and no GPU job was executed. V13/V10 execution gates remain unclaimed.
 
 ## Completion evidence
 
-- [ ] Record the demonstration or research evidence, verified scope, unresolved gates and limitations without exposing restricted data. Do not mark a future execution or approval-dependent check as passed based solely on prepared code or documentation.
+- [x] Record the CPU demonstration, verified scope, unresolved gates and limitations in the external report without exposing restricted data. Future full-inference, VRAM and package checks are not marked passed.
 
 ## Comments
 
 - 2026-09-23 — Owner explicitly instructed implementation. A CPU-only three-fold run was submitted to `cluster1-cpu` as Slurm array `7101`, with two concurrent tasks maximum. No pretrained resource or GPU is used.
+- 2026-09-23 — All three folds completed and the paired comparison aggregated successfully in job `7105`. The pooled macro-AUC delta was +0.0066 with a paired 95% study-bootstrap interval of −0.0295 to +0.0442; the result is inconclusive. Implementation and CPU evaluation are complete. Status is `needs-info` for any follow-up that would close the full-inference, VRAM and package-size evidence gaps; VRAM requires separate GPU approval. See [external report](../../../../ticket-19-report.md).

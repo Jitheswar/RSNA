@@ -31,6 +31,13 @@ repository artifacts.
   [ticket 18](issues/18-measure-the-controlled-benefit-of-report-supervision.md)
   · [detailed external report](../../../tsk-report.md)
   · [comparison artifacts](../../../ticket-18-additive-v2/comparison/ticket-18-additive-v2.md).
+- 2026-09-23 — Ticket 19 implementation and CPU OOF comparison are complete with
+  an inconclusive +0.0066 pooled macro-AUC delta (paired 95% interval −0.0295 to
+  +0.0442). Full inference runtime, VRAM and complete package size remain open;
+  VRAM requires separate GPU approval:
+  [ticket 19](issues/19-evaluate-one-stronger-image-model-variant.md)
+  · [external report](../../../ticket-19-report.md)
+  · [comparison artifacts](../../../ticket-19-wider-encoder-v1/comparison/ticket-19-image-model.md).
 
 ## Fog
 
