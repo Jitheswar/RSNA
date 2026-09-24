@@ -75,7 +75,7 @@ KAGGLE_RUNTIME_STAGES = (
     "inference_ensembling",
     "csv_creation",
 )
-KAGGLE_PROFILE_SCHEMA_VERSION = "rsna-knee-kaggle-profile-v1"
+KAGGLE_PROFILE_SCHEMA_VERSION = "rsna-knee-kaggle-profile-v2"
 KAGGLE_PREDICTION_CHECKPOINT_SCHEMA_VERSION = "rsna-knee-kaggle-prediction-checkpoint-v1"
 OWNER_APPROVAL_SCOPE = "ticket-12-exact-bundle-upload-and-execution"
 TICKET_24_APPROVAL_SCOPE = "ticket-24-hidden-test-delivery"
@@ -372,6 +372,7 @@ def _fixed_plus_scaling_projection(
         "dicom_read_decode",
         "preprocessing",
         "inference_ensembling",
+        "study_iteration_overhead",
         "csv_creation",
     )
     fixed_observed = sum(max(0.0, float(stages.get(name, 0.0))) for name in fixed_stage_names)
@@ -1449,6 +1450,15 @@ def _input_mount_directories(root: Path, name: str, *, max_depth: int = 4) -> tu
     return tuple(found)
 
 
+def _input_namespace_root(root: Path, namespace: str) -> Path:
+    """Use Kaggle's dedicated mount namespace when it is present."""
+
+    candidate = root / namespace
+    if candidate.is_dir() and not candidate.is_symlink():
+        return candidate
+    return root
+
+
 def _immutable_file_map(root: Path, description: str) -> dict[Path, str]:
     """Return checksums for a regular, symlink-free input tree."""
 
@@ -1504,12 +1514,13 @@ def discover_kaggle_inputs(
     """Resolve and validate Kaggle's namespaced input mounts.
 
     Kaggle may mount a dataset at ``/kaggle/input/datasets/<owner>/<slug>``
-    and a competition at ``/kaggle/input/competitions/<slug>``.  The notebook
-    must therefore discover inputs by their checksummed contents, then verify
-    every path before importing the delivery adapter or running inference.
-    A notebook that safely stages a verified archive-backed delivery bundle
-    may provide its extracted root while competition and approval inputs
-    continue to resolve from ``input_root``.
+    and a competition at ``/kaggle/input/competitions/<slug>``. Search these
+    namespaces separately so metadata lookup never walks the competition's
+    image payload while looking for delivery or approval files. Inputs are
+    still discovered by their checksummed contents and every selected path is
+    verified before inference. A notebook that safely stages a verified
+    archive-backed delivery bundle may provide its extracted root while
+    competition and approval inputs continue to resolve from ``input_root``.
     """
 
     root = Path(input_root)
@@ -1519,10 +1530,12 @@ def discover_kaggle_inputs(
         "expected candidate manifest checksum",
     )
     competition_name = _safe_identifier(competition_slug, "competition slug")
+    dataset_mount_root = _input_namespace_root(root, "datasets")
+    competition_mount_root = _input_namespace_root(root, "competitions")
 
     request_matches: list[tuple[Path, Mapping[str, object]]] = []
     if delivery_root_override is None:
-        for path in _input_mount_files(root, "request.json"):
+        for path in _input_mount_files(dataset_mount_root, "request.json"):
             try:
                 payload = _request_payload(path.parent)
             except KaggleDeliveryError:
@@ -1622,7 +1635,7 @@ def discover_kaggle_inputs(
 
     approval_matches: list[Path] = []
     approval_scope = _request_approval_scope(request.payload)
-    for path in _input_mount_files(root, "owner-approval.json"):
+    for path in _input_mount_files(dataset_mount_root, "owner-approval.json"):
         try:
             _approval_payload(path, request_checksum, expected_scope=approval_scope)
         except KaggleDeliveryError:
@@ -1636,7 +1649,7 @@ def discover_kaggle_inputs(
     approval_sha256 = _sha256_file(approval_path)
 
     competition_matches: list[Path] = []
-    for path in _input_mount_directories(root, competition_name):
+    for path in _input_mount_directories(competition_mount_root, competition_name):
         required_files = (path / "test.csv", path / "test_series.csv")
         test_series_root = path / "test_series"
         if (
@@ -3336,6 +3349,13 @@ def run_kaggle_baseline(
             dicom_profile.rss_after_study_prediction_bytes.append(rss_after_prediction)
         del prediction, timing, input_failures, study, study_private
     decode_seconds = time.perf_counter() - decode_started
+    study_iteration_overhead_seconds = max(
+        0.0,
+        decode_seconds
+        - dicom_profile.dicom_read_decode_seconds
+        - preprocessing_seconds
+        - inference_seconds,
+    )
     if checkpoint.completed_count != len(expected_uids):
         raise KaggleDeliveryError("study stream ended before every expected UID was checkpointed")
     # Reopen and validate the durable prefix before publishing the CSV.
@@ -3396,9 +3416,10 @@ def run_kaggle_baseline(
         "startup_setup": float(notebook_stage_timings["startup_setup"]),
         "imports": float(notebook_stage_timings["imports"]),
         "model_metadata_loading": metadata_seconds + model_seconds,
-        "dicom_read_decode": decode_seconds,
+        "dicom_read_decode": dicom_profile.dicom_read_decode_seconds,
         "preprocessing": preprocessing_seconds,
         "inference_ensembling": inference_seconds,
+        "study_iteration_overhead": study_iteration_overhead_seconds,
         "csv_creation": csv_seconds,
     }
     fallback_numerator = sum(
@@ -3462,6 +3483,7 @@ def run_kaggle_baseline(
         + stage_timings["dicom_read_decode"]
         + stage_timings["preprocessing"]
         + stage_timings["inference_ensembling"]
+        + stage_timings["study_iteration_overhead"]
         + stage_timings["csv_creation"]
     )
     detailed_timing = {
@@ -3484,6 +3506,8 @@ def run_kaggle_baseline(
         "runtime_pin_gate_seconds": runtime_pin_gate_seconds,
         "dicom_archive_index_discovery_seconds": dicom_profile.archive_index_discovery_seconds,
         "dicom_read_decode_seconds": dicom_profile.dicom_read_decode_seconds,
+        "study_iteration_loop_seconds": decode_seconds,
+        "study_iteration_overhead_seconds": study_iteration_overhead_seconds,
         "dicom_read_parse_seconds": dicom_profile.dicom_read_parse_seconds,
         "pixel_decode_seconds": dicom_profile.pixel_decode_seconds,
         "preprocessing_resize_seconds": preprocessing_resize_seconds,

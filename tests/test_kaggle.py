@@ -450,6 +450,7 @@ def test_kaggle_study_stream_decodes_one_study_and_releases_before_next(
 
 def test_discover_kaggle_inputs_resolves_namespaced_mounts_and_mirrors_candidate_code(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     candidate, _evidence, evidence_path, _submission_path = _make_candidate(tmp_path)
     notebook = tmp_path / "delivery.ipynb"
@@ -477,6 +478,22 @@ def test_discover_kaggle_inputs_resolves_namespaced_mounts_and_mirrors_candidate
     competition_root = input_root / "competitions" / "rsna-knee-abnormality-detection"
     _write_kaggle_input(competition_root)
 
+    file_search_roots: list[Path] = []
+    directory_search_roots: list[Path] = []
+    original_file_search = kaggle_module._input_mount_files
+    original_directory_search = kaggle_module._input_mount_directories
+
+    def record_file_search(root: Path, filename: str, *, max_depth: int = 5) -> tuple[Path, ...]:
+        file_search_roots.append(root)
+        return original_file_search(root, filename, max_depth=max_depth)
+
+    def record_directory_search(root: Path, name: str, *, max_depth: int = 4) -> tuple[Path, ...]:
+        directory_search_roots.append(root)
+        return original_directory_search(root, name, max_depth=max_depth)
+
+    monkeypatch.setattr(kaggle_module, "_input_mount_files", record_file_search)
+    monkeypatch.setattr(kaggle_module, "_input_mount_directories", record_directory_search)
+
     layout = discover_kaggle_inputs(
         input_root,
         expected_request_checksum=request.request_checksum,
@@ -491,6 +508,8 @@ def test_discover_kaggle_inputs_resolves_namespaced_mounts_and_mirrors_candidate
     assert layout.competition_root == competition_root
     assert layout.request_checksum == request.request_checksum
     assert layout.validation is not None
+    assert file_search_roots == [input_root / "datasets", input_root / "datasets"]
+    assert directory_search_roots == [input_root / "competitions"]
 
     mirrored_module = delivery_root / "code" / "rsna_knee" / "model.py"
     mirrored_module.chmod(0o644)
@@ -672,14 +691,15 @@ def test_fixed_plus_scaling_projection_keeps_setup_fixed() -> None:
             "dicom_read_decode": 30.0,
             "preprocessing": 10.0,
             "inference_ensembling": 15.0,
+            "study_iteration_overhead": 10.0,
             "csv_creation": 5.0,
         },
     )
 
     assert projection["method"] == "fixed_plus_measured_scaling"
     assert projection["fixed_seconds_observed"] == 40.0
-    assert projection["scaling_seconds_observed"] == 60.0
-    assert projection["projected_seconds_at_target"] == 820.0
+    assert projection["scaling_seconds_observed"] == 70.0
+    assert projection["projected_seconds_at_target"] == 950.0
 
 
 def test_kaggle_runtime_pin_gate_checks_metadata_and_imported_versions() -> None:
@@ -778,11 +798,15 @@ def test_kaggle_baseline_adapter_writes_exact_local_smoke_output_and_private_dia
     assert result.evidence["output"]["accepted_by_kaggle"] is False
     assert result.evidence["fallback"]["denominator"] == len(expected_uids)
     detailed = result.evidence["timing"]["detailed"]
+    assert detailed["schema_version"] == "rsna-knee-kaggle-profile-v2"
     assert detailed["total_runtime_seconds"] == result.evidence["timing"]["whole_notebook_seconds"]
     assert detailed["input_discovery_seconds"] == 0.0
     assert detailed["offline_wheel_install_seconds"] == 0.0
     assert detailed["dicom_archive_index_discovery_seconds"] >= 0.0
     assert detailed["pixel_decode_seconds"] >= 0.0
+    stages = result.evidence["timing"]["stages"]
+    assert stages["dicom_read_decode"] == pytest.approx(detailed["dicom_read_decode_seconds"])
+    assert stages["study_iteration_overhead"] >= 0.0
     assert detailed["dicom_file_open_count"] == 3
     assert detailed["dicom_file_reopen_count"] == 0
     private = json.loads((tmp_path / "run" / "private.json").read_text(encoding="utf-8"))

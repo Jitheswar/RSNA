@@ -71,6 +71,13 @@ repository artifacts.
   [ticket 24](issues/24-select-and-deliver-the-final-candidate.md)
   · [selection evidence](../../docs/evidence/ticket-24-candidate-selection.md)
   · [machine-readable status](../../artifacts/private/ticket-24-v6-remote-upload-status.json).
+- 2026-09-25 — Ticket 25 measured namespaced input-mount discovery against the
+  selected Ticket 11 candidate. The 158-study CPU result was byte-identical to
+  Ticket 24; no new candidate was selected or uploaded. The synthetic lookup
+  probe fell from 32.924 to 0.682 seconds, while the projected 1,300-study
+  runtime remains unverified on Kaggle:
+  [ticket 25](issues/25-evaluate-one-late-efficiency-optimization.md)
+  · [external report](../../../ticket-25-efficiency-report.md).
 
 ## Fog
 
