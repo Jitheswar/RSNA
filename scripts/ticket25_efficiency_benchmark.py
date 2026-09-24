@@ -33,6 +33,8 @@ EXPECTED_SERIES = 965
 EXPECTED_SLICES = 31_486
 SYNTHETIC_UNRELATED_FILES = 31_486
 MAX_PEAK_RSS_BYTES = 8 * 1024**3
+MAX_CPUS_PER_TASK = 16
+MAX_MEMORY_PER_NODE_MIB = 64 * 1024
 
 
 def _sha256(path: Path) -> str:
@@ -41,6 +43,24 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _require_bounded_slurm_allocation() -> None:
+    """Keep the representative inference inside Ticket 25's CPU envelope."""
+
+    if not os.environ.get("SLURM_JOB_ID"):
+        raise ValueError("representative inference must run inside an approved Slurm allocation")
+    if os.environ.get("SLURM_JOB_PARTITION") != "cluster1-cpu":
+        raise ValueError("representative inference requires the cluster1-cpu partition")
+    try:
+        cpus_per_task = int(os.environ["SLURM_CPUS_PER_TASK"])
+        memory_per_node_mib = int(os.environ["SLURM_MEM_PER_NODE"])
+    except (KeyError, ValueError) as exc:
+        raise ValueError("cannot verify the Slurm CPU and memory allocation bounds") from exc
+    if not 1 <= cpus_per_task <= MAX_CPUS_PER_TASK:
+        raise ValueError(f"Slurm allocation exceeds the {MAX_CPUS_PER_TASK}-CPU Ticket 25 limit")
+    if not 1 <= memory_per_node_mib <= MAX_MEMORY_PER_NODE_MIB:
+        raise ValueError("Slurm allocation exceeds the 64 GiB Ticket 25 memory limit")
 
 
 def _link_tree(source: Path, destination: Path) -> None:
@@ -178,6 +198,7 @@ def _fixed_projection(baseline: dict[str, Any], direct_discovery_seconds: float)
 
 
 def run(output_root: Path) -> dict[str, Any]:
+    _require_bounded_slurm_allocation()
     if output_root.exists() or output_root.is_symlink():
         raise FileExistsError(f"refusing to overwrite benchmark artifacts: {output_root}")
     required = (BASELINE_BUNDLE, APPROVAL, INPUT, BASELINE_OUTPUT, BASELINE_EXECUTION)

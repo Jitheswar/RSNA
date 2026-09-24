@@ -233,7 +233,12 @@ def _approval(path: Path, request_checksum: str, *, engineering_margin_approved:
     return path
 
 
-def _execution_payload(request: object, *, fallback_status: str = "measured") -> dict[str, object]:
+def _execution_payload(
+    request: object,
+    *,
+    fallback_status: str = "measured",
+    profile_schema: str = "rsna-knee-kaggle-profile-v2",
+) -> dict[str, object]:
     payload = request.payload  # type: ignore[attr-defined]
     candidate = payload["candidate"]
     fallback: dict[str, object]
@@ -300,8 +305,14 @@ def _execution_payload(request: object, *, fallback_status: str = "measured") ->
                 "dicom_read_decode": 50.0,
                 "preprocessing": 20.0,
                 "inference_ensembling": 20.0,
-                "csv_creation": 6.0,
+                **(
+                    {"study_iteration_overhead": 3.0}
+                    if profile_schema == "rsna-knee-kaggle-profile-v2"
+                    else {}
+                ),
+                "csv_creation": 3.0 if profile_schema == "rsna-knee-kaggle-profile-v2" else 6.0,
             },
+            "detailed": {"schema_version": profile_schema},
             "stage_timing_source": "notebook_wall_clock",
             "projection": {
                 "target_studies": 1300,
@@ -1203,7 +1214,18 @@ def test_unknown_hidden_fallback_rate_is_preserved_and_blocks_promotion(tmp_path
         )
 
 
-def test_measured_zero_fallback_can_promote_without_mutating_the_local_candidate(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("profile_schema", "expected_overhead"),
+    (
+        ("rsna-knee-kaggle-profile-v1", None),
+        ("rsna-knee-kaggle-profile-v2", 3.0),
+    ),
+)
+def test_measured_zero_fallback_can_promote_without_mutating_the_local_candidate(
+    tmp_path: Path,
+    profile_schema: str,
+    expected_overhead: float | None,
+) -> None:
     candidate, _evidence, evidence_path, submission_path = _make_candidate(tmp_path)
     notebook = tmp_path / "delivery.ipynb"
     _write_notebook(notebook)
@@ -1215,7 +1237,10 @@ def test_measured_zero_fallback_can_promote_without_mutating_the_local_candidate
         request_id="ticket-12-request-005",
     )
     execution_path = tmp_path / "execution.json"
-    execution_path.write_text(json.dumps(_execution_payload(request)), encoding="utf-8")
+    execution_path.write_text(
+        json.dumps(_execution_payload(request, profile_schema=profile_schema)),
+        encoding="utf-8",
+    )
     approval_path = _approval(tmp_path / "approval.json", request.request_checksum)
     private_path = _write_private_execution(tmp_path / "private-execution.json", request)
     verification = record_kaggle_verification(
@@ -1227,6 +1252,11 @@ def test_measured_zero_fallback_can_promote_without_mutating_the_local_candidate
         submission_path=submission_path,
         private_evidence_path=private_path,
     )
+    stage_timings = verification.payload["execution"]["timing"]["stages"]
+    if expected_overhead is None:
+        assert "study_iteration_overhead" not in stage_timings
+    else:
+        assert stage_timings["study_iteration_overhead"] == expected_overhead
     before = (candidate / "manifest.json").read_bytes()
 
     promotion = promote_kaggle_candidate(

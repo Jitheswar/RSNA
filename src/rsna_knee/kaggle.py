@@ -66,7 +66,7 @@ KAGGLE_ENGINEERING_TARGET_SECONDS = 25_920
 KAGGLE_HARD_LIMIT_SECONDS = 32_400
 KAGGLE_TARGET_STUDIES = 1_300
 KAGGLE_COMPETITION_SLUG = "rsna-knee-abnormality-detection"
-KAGGLE_RUNTIME_STAGES = (
+KAGGLE_RUNTIME_STAGES_V1 = (
     "startup_setup",
     "imports",
     "model_metadata_loading",
@@ -75,7 +75,12 @@ KAGGLE_RUNTIME_STAGES = (
     "inference_ensembling",
     "csv_creation",
 )
+KAGGLE_RUNTIME_STAGES = (*KAGGLE_RUNTIME_STAGES_V1, "study_iteration_overhead")
 KAGGLE_PROFILE_SCHEMA_VERSION = "rsna-knee-kaggle-profile-v2"
+KAGGLE_RUNTIME_STAGES_BY_PROFILE = {
+    "rsna-knee-kaggle-profile-v1": KAGGLE_RUNTIME_STAGES_V1,
+    KAGGLE_PROFILE_SCHEMA_VERSION: KAGGLE_RUNTIME_STAGES,
+}
 KAGGLE_PREDICTION_CHECKPOINT_SCHEMA_VERSION = "rsna-knee-kaggle-prediction-checkpoint-v1"
 OWNER_APPROVAL_SCOPE = "ticket-12-exact-bundle-upload-and-execution"
 TICKET_24_APPROVAL_SCOPE = "ticket-24-hidden-test-delivery"
@@ -2026,8 +2031,13 @@ def _execution_payload(
     if whole_seconds > KAGGLE_HARD_LIMIT_SECONDS:
         raise KaggleDeliveryError("Kaggle execution exceeded the nine-hour hard limit")
     stages = _mapping(timing.get("stages"), "Kaggle runtime stages")
+    detailed_timing = _mapping(timing.get("detailed"), "Kaggle detailed timing")
+    profile_schema = _nonempty(detailed_timing.get("schema_version"), "Kaggle profile schema version")
+    profile_stages = KAGGLE_RUNTIME_STAGES_BY_PROFILE.get(profile_schema)
+    if profile_stages is None:
+        raise KaggleDeliveryError("Kaggle execution has an unsupported profile schema")
     normalized_stages: dict[str, float] = {}
-    for stage in KAGGLE_RUNTIME_STAGES:
+    for stage in profile_stages:
         normalized_stages[stage] = _required_float(stages.get(stage), f"Kaggle runtime stage {stage}")
     if timing.get("stage_timing_source") != "notebook_wall_clock":
         raise KaggleDeliveryError("Kaggle runtime stages must be measured by the notebook wall clock")
