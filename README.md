@@ -60,6 +60,37 @@ The public interfaces are:
   all-invalid study fallback, finite bounded scores, exact UID order, and the
   thirteen-column output contract.
 
+## Ticket 26 frozen research demonstration
+
+The later academic example runs the selected Ticket 11 three-fold candidate
+on one deterministic, generated DICOM study. It shows geometry-ordered slice
+sampling, preprocessing, an explicitly marked synthetic-localizer exclusion,
+twelve uncalibrated scores, and candidate/checkpoint provenance. The temporary
+input and per-slice evidence are removed after the public-safe Markdown report
+is written. It contains no competition or patient data and makes no clinical
+performance claim.
+
+Run the demonstration on the bounded CPU partition and choose a new report path
+outside this repository:
+
+```bash
+RSNA_TICKET26_REPORT=/home/ch.jitheswar/ticket-26-report.md \
+  sbatch --wait slurm/run_ticket26_research_demo.sbatch
+```
+
+For a one-study developer smoke run, outside Slurm and with a separate new
+Markdown destination:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m rsna_knee.research_demo \
+  --allow-local-smoke \
+  --report /home/ch.jitheswar/ticket-26-smoke.md
+```
+
+The CLI refuses to overwrite an existing report or place it inside the RSNA
+repository. Local smoke mode accepts only the generated fixture; competition
+inputs are not accepted through that mode.
+
 ## Ticket 03 private inventory and admission
 
 `rsna_knee.inventory` reads the source CSVs and every training DICOM member's

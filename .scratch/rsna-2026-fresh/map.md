@@ -78,6 +78,12 @@ repository artifacts.
   runtime remains unverified on Kaggle:
   [ticket 25](issues/25-evaluate-one-late-efficiency-optimization.md)
   · [external report](../../../ticket-25-efficiency-report.md).
+- 2026-09-25 — Ticket 26 is complete for one generated synthetic study through
+  the selected frozen candidate. The report records slice sampling, localizer
+  exclusion, all twelve scores, provenance, and limits; no patient data or
+  clinical claim is included:
+  [ticket 26](issues/26-demonstrate-one-frozen-research-example.md)
+  · [external report](../../../ticket-26-report.md).
 
 ## Fog
 
