@@ -84,6 +84,14 @@ repository artifacts.
   clinical claim is included:
   [ticket 26](issues/26-demonstrate-one-frozen-research-example.md)
   · [external report](../../../ticket-26-report.md).
+- 2026-09-25 — Ticket 27 is resolved with a local research/reproduction report
+  outside the repository. It records the gold-only OOF uncertainty, actual
+  controlled results and unrun experiments, selected candidate provenance,
+  resource/recovery evidence, and unresolved limits without identifiers or
+  report text:
+  [ticket 27](issues/27-produce-the-research-and-reproduction-report.md)
+  · [report](../../../RSNA-ticket-27-research-and-reproduction-report.md)
+  (SHA-256 prefix `fc700caf…b06cbee`).
 
 ## Fog
 
