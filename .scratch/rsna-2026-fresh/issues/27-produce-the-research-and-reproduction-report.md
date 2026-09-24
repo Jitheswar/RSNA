@@ -27,7 +27,7 @@
 Ticket 27 is resolved with the local research and reproduction report at
 [`/home/ch.jitheswar/RSNA-ticket-27-research-and-reproduction-report.md`](../../../../RSNA-ticket-27-research-and-reproduction-report.md)
 outside the RSNA folder. Its SHA-256 is
-`fc700cafda09057104131f3010a2453688c454eae4069ed456d9fb843b06cbee`.
+`91363b5e9c1ef627e25ffaeea36f4f187b8eda6fbaf7100135d2c90f8cfb913a`.
 
 The report summarizes the corrected three-fold gold-only OOF results,
 per-target support and uncertainty, controlled report/image-model/student

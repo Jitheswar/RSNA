@@ -91,7 +91,7 @@ repository artifacts.
   report text:
   [ticket 27](issues/27-produce-the-research-and-reproduction-report.md)
   · [report](../../../RSNA-ticket-27-research-and-reproduction-report.md)
-  (SHA-256 prefix `fc700caf…b06cbee`).
+  (SHA-256 prefix `91363b5e…cfb913a`).
 
 ## Fog
 
