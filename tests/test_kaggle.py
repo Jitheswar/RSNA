@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import gc
 import shutil
 import time
+import weakref
 import zipfile
 from pathlib import Path
 
@@ -351,47 +353,99 @@ def _write_private_execution(path: Path, request: object) -> Path:
     return path
 
 
-def _write_kaggle_input(root: Path) -> tuple[str, ...]:
-    study_uid = "1.2.826.0.1.3680043.8.498.3001"
-    series_uid = "1.2.826.0.1.3680043.8.498.3002"
-    study_dir = root / "test_series" / study_uid / series_uid
-    study_dir.mkdir(parents=True, exist_ok=True)
-    for index in range(3):
-        path = study_dir / f"slice-{index}.dcm"
-        file_meta = FileMetaDataset()
-        file_meta.MediaStorageSOPClassUID = MRImageStorage
-        file_meta.MediaStorageSOPInstanceUID = UID(
-            f"1.2.826.0.1.3680043.8.498.{3000 + index}"
-        )
-        file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
-        dataset = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\0" * 128)
-        dataset.SOPClassUID = MRImageStorage
-        dataset.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
-        dataset.StudyInstanceUID = UID(study_uid)
-        dataset.SeriesInstanceUID = UID(series_uid)
-        dataset.Modality = "MR"
-        dataset.ImagePositionPatient = [0.0, 0.0, float(index)]
-        dataset.ImageOrientationPatient = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-        dataset.Rows = 2
-        dataset.Columns = 3
-        dataset.SamplesPerPixel = 1
-        dataset.PhotometricInterpretation = "MONOCHROME2"
-        dataset.BitsAllocated = 16
-        dataset.BitsStored = 16
-        dataset.HighBit = 15
-        dataset.PixelRepresentation = 0
-        dataset.PixelData = np.arange(6, dtype=np.uint16).tobytes()
-        dataset.save_as(path, enforce_file_format=True)
+def _write_kaggle_input(root: Path, *, study_count: int = 1) -> tuple[str, ...]:
+    study_uids: list[str] = []
+    series_rows: list[str] = []
+    for study_index in range(study_count):
+        uid_root = 3000 + study_index * 10
+        study_uid = f"1.2.826.0.1.3680043.8.498.{uid_root + 1}"
+        series_uid = f"1.2.826.0.1.3680043.8.498.{uid_root + 2}"
+        study_uids.append(study_uid)
+        series_rows.append(f"{study_uid},{series_uid},1,1,Sagittal")
+        study_dir = root / "test_series" / study_uid / series_uid
+        study_dir.mkdir(parents=True, exist_ok=True)
+        for index in range(3):
+            path = study_dir / f"slice-{index}.dcm"
+            file_meta = FileMetaDataset()
+            file_meta.MediaStorageSOPClassUID = MRImageStorage
+            file_meta.MediaStorageSOPInstanceUID = UID(f"1.2.826.0.1.3680043.8.498.{uid_root + index}")
+            file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+            dataset = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\0" * 128)
+            dataset.SOPClassUID = MRImageStorage
+            dataset.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+            dataset.StudyInstanceUID = UID(study_uid)
+            dataset.SeriesInstanceUID = UID(series_uid)
+            dataset.Modality = "MR"
+            dataset.ImagePositionPatient = [0.0, 0.0, float(index)]
+            dataset.ImageOrientationPatient = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+            dataset.Rows = 2
+            dataset.Columns = 3
+            dataset.SamplesPerPixel = 1
+            dataset.PhotometricInterpretation = "MONOCHROME2"
+            dataset.BitsAllocated = 16
+            dataset.BitsStored = 16
+            dataset.HighBit = 15
+            dataset.PixelRepresentation = 0
+            dataset.PixelData = np.arange(6, dtype=np.uint16).tobytes()
+            dataset.save_as(path, enforce_file_format=True)
     (root / "test.csv").write_text(
-        "StudyInstanceUID\n" + study_uid + "\n",
+        "StudyInstanceUID\n" + "\n".join(study_uids) + "\n",
         encoding="utf-8",
     )
     (root / "test_series.csv").write_text(
         "StudyInstanceUID,SeriesInstanceUID,Fluid_Sensitive,Fat_Suppression,Anatomical_Plane\n"
-        f"{study_uid},{series_uid},1,1,Sagittal\n",
+        + "\n".join(series_rows)
+        + "\n",
         encoding="utf-8",
     )
-    return (study_uid,)
+    return tuple(study_uids)
+
+
+def test_kaggle_study_stream_decodes_one_study_and_releases_before_next(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rsna_knee.domain import DicomSlice
+
+    input_root = tmp_path / "kaggle-input"
+    expected_uids = _write_kaggle_input(input_root, study_count=2)
+    decoded_arrays: list[weakref.ReferenceType[np.ndarray]] = []
+
+    def fake_decode(_stream, *, filename: str, policy):
+        parts = Path(filename).parts
+        pixels = np.zeros((256, 256), dtype=np.uint16)
+        decoded_arrays.append(weakref.ref(pixels))
+        return DicomSlice(
+            sop_instance_uid=f"synthetic-{len(decoded_arrays)}",
+            image_position=(0.0, 0.0, float(len(decoded_arrays))),
+            image_orientation=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+            pixel_array=pixels,
+            study_instance_uid=parts[1],
+            series_instance_uid=parts[2],
+            modality="MR",
+            rows=256,
+            columns=256,
+        )
+
+    monkeypatch.setattr(kaggle_module, "decode_stream", fake_decode)
+    stream = kaggle_module._iter_kaggle_studies(
+        input_root,
+        kaggle_module.DecoderPolicy(),
+        profile=kaggle_module._KaggleDicomProfile(),
+    )
+    _first_index, first_study, _first_private = next(stream)
+    assert first_study.study_instance_uid == expected_uids[0]
+    assert len(decoded_arrays) == 3
+    first_array_refs = decoded_arrays[:]
+
+    del first_study, _first_private
+    _second_index, second_study, _second_private = next(stream)
+    gc.collect()
+
+    assert second_study.study_instance_uid == expected_uids[1]
+    assert len(decoded_arrays) == 6
+    assert all(reference() is None for reference in first_array_refs)
+    stream.close()
 
 
 def test_discover_kaggle_inputs_resolves_namespaced_mounts_and_mirrors_candidate_code(
@@ -478,6 +532,69 @@ def test_prepare_kaggle_delivery_records_an_exact_offline_runtime_wheel(tmp_path
     assert runtime["package"] == "pydicom"
     assert runtime["version"] == "3.0.1"
     assert len(runtime["sha256"]) == 64
+
+
+def test_discover_kaggle_inputs_accepts_a_verified_extracted_delivery_root(tmp_path: Path) -> None:
+    candidate, _evidence, evidence_path, _submission_path = _make_candidate(tmp_path)
+    notebook = tmp_path / "delivery.ipynb"
+    _write_notebook(notebook)
+    request = prepare_kaggle_delivery(
+        candidate,
+        evidence_path,
+        tmp_path / "request",
+        delivery_notebook_path=notebook,
+        request_id="ticket-24-archive-backed-delivery",
+    )
+
+    input_root = tmp_path / "kaggle-input"
+    mounted_delivery_root = input_root / "datasets" / "owner" / "delivery"
+    mounted_delivery_root.mkdir(parents=True)
+    shutil.copy2(request.root / "request.json", mounted_delivery_root / "request.json")
+    shutil.copy2(notebook, mounted_delivery_root / notebook.name)
+    for archive_name in ("candidate.zip", "code.zip", "runtime.zip"):
+        (mounted_delivery_root / archive_name).write_bytes(b"mounted archive placeholder")
+
+    extracted_delivery_root = tmp_path / "working" / "extracted-delivery"
+    extracted_delivery_root.mkdir(parents=True)
+    shutil.copy2(request.root / "request.json", extracted_delivery_root / "request.json")
+    shutil.copy2(notebook, extracted_delivery_root / notebook.name)
+    shutil.copytree(candidate, extracted_delivery_root / "candidate")
+    extracted_code_root = extracted_delivery_root / "code"
+    shutil.copytree(candidate / "code", extracted_code_root)
+    extracted_adapter = extracted_code_root / "rsna_knee" / "kaggle.py"
+    extracted_adapter.chmod(0o644)
+    extracted_adapter.write_bytes(Path(kaggle_module.__file__).read_bytes())
+
+    approval_path = _approval(tmp_path / "approval.json", request.request_checksum)
+    approval_root = input_root / "datasets" / "owner" / "approval"
+    approval_root.mkdir(parents=True)
+    shutil.copy2(approval_path, approval_root / "owner-approval.json")
+    competition_root = input_root / "competitions" / "rsna-knee-abnormality-detection"
+    _write_kaggle_input(competition_root)
+
+    layout = discover_kaggle_inputs(
+        input_root,
+        expected_request_checksum=request.request_checksum,
+        expected_candidate_manifest_checksum=request.payload["candidate"]["manifest_checksum"],
+        delivery_root_override=extracted_delivery_root,
+    )
+
+    assert layout.input_root == input_root
+    assert layout.delivery_root == extracted_delivery_root
+    assert layout.request_path == extracted_delivery_root / "request.json"
+    assert layout.candidate_root == extracted_delivery_root / "candidate"
+    assert layout.code_root == extracted_delivery_root / "code"
+    assert layout.approval_path == approval_root / "owner-approval.json"
+    assert layout.competition_root == competition_root
+    assert layout.validation is not None
+
+    with pytest.raises(KaggleDeliveryError, match="extracted delivery request checksum"):
+        discover_kaggle_inputs(
+            input_root,
+            expected_request_checksum="wrong-request-checksum",
+            expected_candidate_manifest_checksum=request.payload["candidate"]["manifest_checksum"],
+            delivery_root_override=extracted_delivery_root,
+        )
 
 
 def test_prepare_kaggle_delivery_records_all_offline_runtime_wheels(tmp_path: Path) -> None:
@@ -671,7 +788,88 @@ def test_kaggle_baseline_adapter_writes_exact_local_smoke_output_and_private_dia
     private = json.loads((tmp_path / "run" / "private.json").read_text(encoding="utf-8"))
     assert private["studies"][0]["StudyInstanceUID"] == expected_uids[0]
     assert "prediction" in private["studies"][0]
-    assert private["studies"][0]["timing"]["series"][0]["file_open_count"] == 3
+    assert private["studies"][0]["series"][0]["expected_slice_count"] == 3
+    assert "source_entry_names" not in private["studies"][0]["series"][0]
+    assert detailed["dicom_profile"]["dicom_file_open_count"] == 3
+    memory = detailed["memory_profile"]
+    assert memory["active_study_limit"] == 1
+    assert memory["after_each_study_decode"]["sample_count"] == 1
+    assert memory["after_each_study_release"]["sample_count"] == 1
+    assert memory["exposed_system_memory"]["start"]["system_total_bytes"] is not None
+    assert result.evidence["recovery"]["save_reload_verified"] is True
+    assert result.evidence["recovery"]["interruption_recovery_verified"] is False
+
+
+def test_kaggle_baseline_resumes_only_from_checksum_bound_study_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate, _evidence, _evidence_path, _submission_path = _make_candidate(tmp_path)
+    input_root = tmp_path / "kaggle-input"
+    _write_kaggle_input(input_root, study_count=2)
+    interrupted_output = tmp_path / "resumed" / "submission.csv"
+    checkpoint_path = kaggle_module._prediction_checkpoint_path(interrupted_output)
+    original_append = kaggle_module._KagglePredictionCheckpoint.append
+
+    def append_then_interrupt(self, index, study_uid, scores, private_record):
+        original_append(self, index, study_uid, scores, private_record)
+        if self.completed_count == 1:
+            raise RuntimeError("simulated study-boundary interruption")
+
+    monkeypatch.setattr(kaggle_module._KagglePredictionCheckpoint, "append", append_then_interrupt)
+    with pytest.raises(RuntimeError, match="simulated study-boundary interruption"):
+        run_kaggle_baseline(
+            candidate,
+            input_root,
+            interrupted_output,
+            allow_local_smoke=True,
+        )
+    assert checkpoint_path.is_file()
+    assert not interrupted_output.exists()
+
+    monkeypatch.setattr(kaggle_module._KagglePredictionCheckpoint, "append", original_append)
+    resumed = run_kaggle_baseline(
+        candidate,
+        input_root,
+        interrupted_output,
+        allow_local_smoke=True,
+    )
+    uninterrupted_output = tmp_path / "uninterrupted" / "submission.csv"
+    run_kaggle_baseline(
+        candidate,
+        input_root,
+        uninterrupted_output,
+        allow_local_smoke=True,
+    )
+
+    assert resumed.evidence["recovery"]["checkpoint_rows_resumed"] == 1
+    assert resumed.evidence["recovery"]["save_reload_verified"] is True
+    assert resumed.evidence["recovery"]["interruption_recovery_verified"] is True
+    assert interrupted_output.read_bytes() == uninterrupted_output.read_bytes()
+    assert not checkpoint_path.exists()
+
+
+def test_kaggle_execution_input_summary_preserves_total_series_count() -> None:
+    records = [
+        {
+            "series": [
+                {"expected_slice_count": 2, "decoded_slice_count": 2, "failures": []},
+                {"expected_slice_count": 3, "decoded_slice_count": 3, "failures": []},
+            ]
+        },
+        {
+            "series": [
+                {"expected_slice_count": 5, "decoded_slice_count": 5, "failures": []},
+            ]
+        },
+    ]
+
+    summary = kaggle_module._execution_input_summary(("study-a", "study-b"), 3, records)
+
+    assert summary["study_count"] == 2
+    assert summary["series_count"] == 3
+    assert summary["slice_count"] == 10
+    assert summary["decoded_slice_count"] == 10
 
 
 def test_actual_kaggle_execution_requires_request_and_owner_approval(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

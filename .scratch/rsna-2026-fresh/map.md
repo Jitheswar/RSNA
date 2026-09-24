@@ -59,13 +59,18 @@ repository artifacts.
   · [external report](../../../ticket-23-report.md).
 - 2026-09-23 — The owner selected Ticket 23's recommended Ticket 11 candidate
   for Ticket 24, then requested one full hidden-test submission without any
-  model or pipeline changes. The frozen v13 notebook is bound to the 158-study
-  representative input, so no submission was attempted; changing its hidden
-  input binding requires human direction. No full hidden-test output or
-  leaderboard submission is claimed:
+  model or pipeline changes. At that point the frozen v13 notebook was bound to
+  the 158-study representative input, and no submission had been attempted:
+  [ticket 24](issues/24-select-and-deliver-the-final-candidate.md)
+  · [selection evidence](../../docs/evidence/ticket-24-candidate-selection.md).
+- 2026-09-24 — Ticket 24 is resolved for the owner-approved v6 delivery. The
+  exact frozen candidate completed Kaggle code-submission ref `56515942` with
+  public score `0.498`; the private score is not present in the current status
+  listing. The v3 OOM and v4/v5 layout failures remain historical, and v6's
+  hidden-run interruption recovery is explicitly unverified:
   [ticket 24](issues/24-select-and-deliver-the-final-candidate.md)
   · [selection evidence](../../docs/evidence/ticket-24-candidate-selection.md)
-  · [external report](../../../ticket-24-report.md).
+  · [machine-readable status](../../artifacts/private/ticket-24-v6-remote-upload-status.json).
 
 ## Fog
 

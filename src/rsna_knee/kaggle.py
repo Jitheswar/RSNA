@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import csv
+import gc
 import hashlib
 import importlib
 import importlib.metadata as importlib_metadata
@@ -30,7 +31,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.parser import Parser
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, Callable, Iterator, Mapping, Sequence, cast
 
 import numpy as np
 import pydicom
@@ -75,7 +76,10 @@ KAGGLE_RUNTIME_STAGES = (
     "csv_creation",
 )
 KAGGLE_PROFILE_SCHEMA_VERSION = "rsna-knee-kaggle-profile-v1"
+KAGGLE_PREDICTION_CHECKPOINT_SCHEMA_VERSION = "rsna-knee-kaggle-prediction-checkpoint-v1"
 OWNER_APPROVAL_SCOPE = "ticket-12-exact-bundle-upload-and-execution"
+TICKET_24_APPROVAL_SCOPE = "ticket-24-hidden-test-delivery"
+OWNER_APPROVAL_SCOPES = frozenset({OWNER_APPROVAL_SCOPE, TICKET_24_APPROVAL_SCOPE})
 
 _NETWORK_TEXT_TOKENS = (
     "http://",
@@ -206,7 +210,14 @@ class _KaggleDicomProfile:
     dicom_file_open_count: int = 0
     dicom_file_reopen_count: int = 0
     decode_call_count: int = 0
-    per_study: list[dict[str, object]] = field(default_factory=list)
+    expected_slice_count: int = 0
+    decoded_slice_count: int = 0
+    failure_reasons: dict[str, int] = field(default_factory=dict)
+    rss_after_study_decode_bytes: list[int] = field(default_factory=list)
+    rss_after_study_prediction_bytes: list[int] = field(default_factory=list)
+    rss_after_study_release_bytes: list[int] = field(default_factory=list)
+    stage_rss_bytes: dict[str, int | None] = field(default_factory=dict)
+    max_active_studies: int = 1
 
     @property
     def dicom_read_parse_seconds(self) -> float:
@@ -223,6 +234,10 @@ class _KaggleDicomProfile:
             "dicom_file_open_count": self.dicom_file_open_count,
             "dicom_file_reopen_count": self.dicom_file_reopen_count,
             "decode_call_count": self.decode_call_count,
+            "expected_slice_count": self.expected_slice_count,
+            "decoded_slice_count": self.decoded_slice_count,
+            "failure_reasons": dict(sorted(self.failure_reasons.items())),
+            "max_active_studies": self.max_active_studies,
             "source_kind": "directory",
             "archive_access_mode": "not_applicable_directory_input",
             "dicom_access_mode": "serial_one_open_per_slice",
@@ -1047,7 +1062,16 @@ def _request_payload(root: Path) -> Mapping[str, object]:
         raise KaggleDeliveryError("unsupported Kaggle delivery request schema")
     if payload.get("status") != "owner_approval_required":
         raise KaggleDeliveryError("Kaggle delivery request is not approval-gated")
+    _request_approval_scope(payload)
     return payload
+
+
+def _request_approval_scope(payload: Mapping[str, object]) -> str:
+    approval = _mapping(payload.get("approval"), "request approval")
+    scope = _nonempty(approval.get("scope"), "request approval scope")
+    if scope not in OWNER_APPROVAL_SCOPES:
+        raise KaggleDeliveryError("Kaggle request has an unsupported owner approval scope")
+    return scope
 
 
 def load_kaggle_delivery(
@@ -1118,6 +1142,7 @@ def prepare_kaggle_delivery(
     local_submission_path: str | Path | None = None,
     expected_study_uids: Sequence[str] | None = None,
     execution_input: Mapping[str, object] | None = None,
+    approval_scope: str = OWNER_APPROVAL_SCOPE,
     request_id: str | None = None,
 ) -> KaggleDeliveryRequest:
     """Create one immutable, approval-required Kaggle execution request.
@@ -1154,6 +1179,9 @@ def prepare_kaggle_delivery(
     )
     request_name = request_id or f"ticket-12-{candidate['candidate_id']}"
     request_name = _safe_identifier(request_name, "request_id")
+    request_approval_scope = _nonempty(approval_scope, "owner approval scope")
+    if request_approval_scope not in OWNER_APPROVAL_SCOPES:
+        raise KaggleDeliveryError("owner approval scope is not supported")
     output = Path(output_root)
     _ensure_outside(output, (candidate_root_path,), "Kaggle request")
     payload: dict[str, object] = {
@@ -1201,7 +1229,7 @@ def prepare_kaggle_delivery(
             "required": True,
             "approved": False,
             "status": "pending_owner_confirmation",
-            "scope": OWNER_APPROVAL_SCOPE,
+            "scope": request_approval_scope,
             "rules_and_eligibility_must_be_rechecked": True,
         },
         "upload": {
@@ -1253,18 +1281,22 @@ def prepare_kaggle_delivery(
         input_reference = dict(execution_input)
         if _private_metadata_keys(input_reference):
             raise KaggleDeliveryError("execution input reference contains identifier-bearing fields")
-        for field in (
-            "mount_slug",
-            "workload_kind",
-            "manifest_filename",
-            "manifest_sha256",
-            "test_csv_sha256",
-            "test_series_csv_sha256",
-        ):
-            _nonempty(input_reference.get(field), f"execution input {field}")
+        _nonempty(input_reference.get("mount_slug"), "execution input mount_slug")
+        _nonempty(input_reference.get("workload_kind"), "execution input workload_kind")
         _safe_identifier(input_reference["mount_slug"], "execution input mount slug")
-        _safe_identifier(input_reference["manifest_filename"], "execution input manifest filename")
-        if input_reference["workload_kind"] not in {"hidden_test", "representative"}:
+        if input_reference["workload_kind"] == "representative":
+            for field in ("manifest_sha256", "test_csv_sha256", "test_series_csv_sha256"):
+                _nonempty(input_reference.get(field), f"execution input {field}")
+            _safe_identifier(input_reference["manifest_filename"], "execution input manifest filename")
+        elif input_reference["workload_kind"] == "hidden_test":
+            if input_reference["mount_slug"] != KAGGLE_COMPETITION_SLUG:
+                raise KaggleDeliveryError("hidden-test input must use the official competition mount")
+            if any(
+                field in input_reference
+                for field in ("manifest_filename", "manifest_sha256", "test_csv_sha256", "test_series_csv_sha256")
+            ):
+                raise KaggleDeliveryError("hidden-test input cannot pin replaceable competition files")
+        else:
             raise KaggleDeliveryError("execution input workload kind must be hidden_test or representative")
         payload["execution_input"] = input_reference
         payload.pop("request_checksum", None)
@@ -1277,7 +1309,12 @@ def prepare_kaggle_delivery(
     return load_kaggle_delivery(output)
 
 
-def _approval_payload(path: Path, request_checksum: str) -> Mapping[str, object]:
+def _approval_payload(
+    path: Path,
+    request_checksum: str,
+    *,
+    expected_scope: str = OWNER_APPROVAL_SCOPE,
+) -> Mapping[str, object]:
     if not path.is_file() or path.is_symlink():
         raise KaggleDeliveryError(f"owner approval is not a regular file: {path}")
     payload = _read_json(path, "owner approval")
@@ -1285,8 +1322,8 @@ def _approval_payload(path: Path, request_checksum: str) -> Mapping[str, object]
         raise KaggleDeliveryError("owner approval has an unexpected schema")
     if payload.get("request_checksum") != request_checksum:
         raise KaggleDeliveryError("owner approval does not name this request")
-    if payload.get("approval_scope") != OWNER_APPROVAL_SCOPE:
-        raise KaggleDeliveryError("owner approval scope is not the exact ticket-12 bundle")
+    if expected_scope not in OWNER_APPROVAL_SCOPES or payload.get("approval_scope") != expected_scope:
+        raise KaggleDeliveryError("owner approval scope does not match the exact delivery request")
     if payload.get("approved") is not True:
         raise KaggleDeliveryError("owner approval is not granted")
     for field in (
@@ -1333,10 +1370,16 @@ def _execution_input_reference(
     workload_kind = _nonempty(reference.get("workload_kind"), "execution input workload kind")
     if workload_kind not in {"hidden_test", "representative"}:
         raise KaggleDeliveryError("execution input workload kind must be hidden_test or representative")
-    manifest_filename = _safe_identifier(
-        reference.get("manifest_filename"),
-        "execution input manifest filename",
-    )
+    if workload_kind == "hidden_test":
+        if mount_slug != KAGGLE_COMPETITION_SLUG:
+            raise KaggleDeliveryError("hidden-test input must use the official competition mount")
+        if any(
+            field in reference
+            for field in ("manifest_filename", "manifest_sha256", "test_csv_sha256", "test_series_csv_sha256")
+        ):
+            raise KaggleDeliveryError("hidden-test input cannot pin replaceable competition files")
+        return {"mount_slug": mount_slug, "workload_kind": workload_kind}
+    manifest_filename = _safe_identifier(reference.get("manifest_filename"), "execution input manifest filename")
     for field in ("manifest_sha256", "test_csv_sha256", "test_series_csv_sha256"):
         _nonempty(reference.get(field), f"execution input {field}")
     return {
@@ -1456,6 +1499,7 @@ def discover_kaggle_inputs(
     expected_request_checksum: str,
     expected_candidate_manifest_checksum: str,
     competition_slug: str = KAGGLE_COMPETITION_SLUG,
+    delivery_root_override: str | Path | None = None,
 ) -> KaggleInputLayout:
     """Resolve and validate Kaggle's namespaced input mounts.
 
@@ -1463,6 +1507,9 @@ def discover_kaggle_inputs(
     and a competition at ``/kaggle/input/competitions/<slug>``.  The notebook
     must therefore discover inputs by their checksummed contents, then verify
     every path before importing the delivery adapter or running inference.
+    A notebook that safely stages a verified archive-backed delivery bundle
+    may provide its extracted root while competition and approval inputs
+    continue to resolve from ``input_root``.
     """
 
     root = Path(input_root)
@@ -1474,13 +1521,20 @@ def discover_kaggle_inputs(
     competition_name = _safe_identifier(competition_slug, "competition slug")
 
     request_matches: list[tuple[Path, Mapping[str, object]]] = []
-    for path in _input_mount_files(root, "request.json"):
-        try:
-            payload = _request_payload(path.parent)
-        except KaggleDeliveryError:
-            continue
-        if payload.get("request_checksum") == request_checksum:
-            request_matches.append((path, payload))
+    if delivery_root_override is None:
+        for path in _input_mount_files(root, "request.json"):
+            try:
+                payload = _request_payload(path.parent)
+            except KaggleDeliveryError:
+                continue
+            if payload.get("request_checksum") == request_checksum:
+                request_matches.append((path, payload))
+    else:
+        extracted_delivery_root = Path(delivery_root_override)
+        payload = _request_payload(extracted_delivery_root)
+        if payload.get("request_checksum") != request_checksum:
+            raise KaggleDeliveryError("extracted delivery request checksum differs from the expected request")
+        request_matches.append((extracted_delivery_root / "request.json", payload))
     if len(request_matches) != 1:
         raise KaggleDeliveryError(
             f"expected exactly one mounted request with checksum {request_checksum}; found {len(request_matches)}"
@@ -1567,9 +1621,10 @@ def discover_kaggle_inputs(
     _verify_delivery_code_mirror(candidate_root, code_root, delivery_adapter_path)
 
     approval_matches: list[Path] = []
+    approval_scope = _request_approval_scope(request.payload)
     for path in _input_mount_files(root, "owner-approval.json"):
         try:
-            _approval_payload(path, request_checksum)
+            _approval_payload(path, request_checksum, expected_scope=approval_scope)
         except KaggleDeliveryError:
             continue
         approval_matches.append(path)
@@ -1595,7 +1650,7 @@ def discover_kaggle_inputs(
             f"expected exactly one mounted input {competition_name}; found {len(competition_matches)}"
         )
     input_manifest_sha256: str | None = None
-    if request.payload.get("execution_input") is not None:
+    if input_reference["workload_kind"] == "representative":
         input_root_path = competition_matches[0]
         manifest_path = input_root_path / str(input_reference["manifest_filename"])
         if not manifest_path.is_file() or manifest_path.is_symlink():
@@ -2174,7 +2229,11 @@ def record_kaggle_verification(
 
     request = load_kaggle_delivery(delivery_root, candidate_root=candidate_root)
     approval_file = Path(approval_path)
-    approval = _approval_payload(approval_file, request.request_checksum)
+    approval = _approval_payload(
+        approval_file,
+        request.request_checksum,
+        expected_scope=_request_approval_scope(request.payload),
+    )
     output = Path(output_root)
     candidate = Path(candidate_root)
     _ensure_outside(output, (request.root, candidate.resolve()), "Kaggle verification")
@@ -2478,18 +2537,10 @@ def _series_input_files(series_dir: Path, input_root: Path) -> tuple[Path, ...]:
     return tuple(sorted(files, key=lambda path: path.relative_to(input_root).as_posix()))
 
 
-def _load_kaggle_studies(
+
+def _read_kaggle_study_metadata(
     input_root: Path,
-    decoder: DecoderPolicy,
-    *,
-    profile: _KaggleDicomProfile | None = None,
-) -> tuple[
-    tuple[StudyRecord, ...],
-    dict[str, object],
-    tuple[dict[str, object], ...],
-    float,
-    _KaggleDicomProfile,
-]:
+) -> tuple[tuple[str, ...], dict[str, list[Mapping[str, str]]]]:
     if not input_root.is_dir() or input_root.is_symlink():
         raise KaggleDeliveryError(f"Kaggle input root is not a directory: {input_root}")
     test_csv = input_root / "test.csv"
@@ -2520,165 +2571,398 @@ def _load_kaggle_studies(
             raise KaggleDeliveryError(f"test_series.csv repeats a SeriesInstanceUID: {series_uid}")
         seen_series.add(series_uid)
         by_study[study_uid].append(row)
+    return study_uids, by_study
 
+
+def _load_kaggle_study(
+    input_root: Path,
+    decoder: DecoderPolicy,
+    study_uid: str,
+    series_rows: Sequence[Mapping[str, str]],
+    timing_profile: _KaggleDicomProfile,
+) -> tuple[StudyRecord, dict[str, object]]:
+    series_records: list[SeriesRecord] = []
+    study_private: dict[str, object] = {"StudyInstanceUID": study_uid, "series": []}
+    private_series = cast(list[dict[str, object]], study_private["series"])
+    study_dir = input_root / "test_series" / _safe_input_component(study_uid, "StudyInstanceUID")
+    for series_row in series_rows:
+        series_uid = _row_text(series_row, "SeriesInstanceUID", "test_series.csv")
+        series_dir = study_dir / _safe_input_component(series_uid, "SeriesInstanceUID")
+        if series_dir.exists() and series_dir.is_symlink():
+            raise KaggleDeliveryError(f"Kaggle series directory is a symlink: {series_dir}")
+        index_started = time.perf_counter()
+        files = _series_input_files(series_dir, input_root)
+        index_seconds = time.perf_counter() - index_started
+        timing_profile.archive_index_discovery_seconds += index_seconds
+        timing_profile.index_scan_count += 1
+        timing_profile.indexed_file_count += len(files)
+        slices = []
+        failures: list[dict[str, object]] = []
+        timing_profile.expected_slice_count += len(files)
+        for source_path in files:
+            relative = source_path.relative_to(input_root).as_posix()
+            timing_profile.decode_call_count += 1
+            timing_profile.dicom_file_open_count += 1
+            file_decode_started = time.perf_counter()
+            try:
+                with source_path.open("rb") as handle:
+                    with _timed_pixel_decoding(timing_profile):
+                        decoded = decode_stream(handle, filename=relative, policy=decoder)
+                if decoded.study_instance_uid not in (None, study_uid):
+                    raise DicomDecodeError("decoded StudyInstanceUID disagrees with test.csv")
+                if decoded.series_instance_uid not in (None, series_uid):
+                    raise DicomDecodeError("decoded SeriesInstanceUID disagrees with test_series.csv")
+                slices.append(decoded)
+                timing_profile.decoded_slice_count += 1
+            except DecoderInfrastructureError:
+                raise
+            except (DicomDecodeError, OSError) as exc:
+                reason = type(exc).__name__
+                timing_profile.failure_reasons[reason] = timing_profile.failure_reasons.get(reason, 0) + 1
+                failures.append({"source_entry_name": relative, "reason": reason, "detail": str(exc)})
+            finally:
+                timing_profile.dicom_read_decode_seconds += time.perf_counter() - file_decode_started
+        if not files:
+            timing_profile.failure_reasons["missing_series_input"] = (
+                timing_profile.failure_reasons.get("missing_series_input", 0) + 1
+            )
+            failures.append(
+                {"source_entry_name": "", "reason": "missing_series_input", "detail": str(series_dir)}
+            )
+        series_records.append(
+            SeriesRecord(
+                study_instance_uid=study_uid,
+                series_instance_uid=series_uid,
+                slices=tuple(slices),
+                anatomical_plane=str(series_row.get("Anatomical_Plane", "")).strip() or None,
+                fluid_sensitive=_row_optional_bool(series_row, "Fluid_Sensitive", "test_series.csv"),
+                fat_suppression=_row_optional_bool(series_row, "Fat_Suppression", "test_series.csv"),
+                source_entry_names=tuple(
+                    source_path.relative_to(input_root).as_posix() for source_path in files
+                ),
+            )
+        )
+        private_series.append(
+            {
+                "SeriesInstanceUID": series_uid,
+                "expected_slice_count": len(files),
+                "decoded_slice_count": len(slices),
+                "failures": failures,
+            }
+        )
+    return StudyRecord(study_uid, tuple(series_records)), study_private
+
+
+def _iter_kaggle_studies(
+    input_root: Path,
+    decoder: DecoderPolicy,
+    *,
+    study_uids: Sequence[str] | None = None,
+    by_study: Mapping[str, Sequence[Mapping[str, str]]] | None = None,
+    skip_studies: int = 0,
+    profile: _KaggleDicomProfile | None = None,
+) -> Iterator[tuple[int, StudyRecord, dict[str, object]]]:
+    """Decode one study per yield and drop it before beginning the next study."""
+
+    if study_uids is None or by_study is None:
+        study_uids, by_study = _read_kaggle_study_metadata(input_root)
+    if skip_studies < 0 or skip_studies > len(study_uids):
+        raise KaggleDeliveryError("prediction checkpoint is outside the study order")
     decoder.validate_runtime()
-    decode_started = time.perf_counter()
-    private_records: list[dict[str, object]] = []
-    expected_slices = 0
+    timing_profile = profile or _KaggleDicomProfile()
+    for study_index in range(skip_studies, len(study_uids)):
+        study_uid = study_uids[study_index]
+        study, study_private = _load_kaggle_study(
+            input_root,
+            decoder,
+            study_uid,
+            by_study[study_uid],
+            timing_profile,
+        )
+        yield study_index, study, study_private
+        study = None  # type: ignore[assignment]
+        study_private = {}
+        gc.collect()
+        rss_after_release = _current_rss_bytes()
+        if rss_after_release is not None:
+            timing_profile.rss_after_study_release_bytes.append(rss_after_release)
+
+
+def _prediction_checkpoint_path(output_path: Path) -> Path:
+    return output_path.with_name(f"{output_path.name}.progress.jsonl")
+
+
+class _KagglePredictionCheckpoint:
+    """Private, checksum-bound study results used for safe restart recovery."""
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        identity: Mapping[str, object],
+        expected_uids: Sequence[str],
+    ) -> None:
+        self.path = path
+        self.identity = dict(identity)
+        self.expected_uids = tuple(expected_uids)
+        self.uid_order_sha256 = _json_sha256(list(self.expected_uids))
+        self.predictions: dict[str, np.ndarray] = {}
+        self.private_records: list[dict[str, object]] = []
+        self.resumed_row_count = 0
+        self._header: dict[str, object] = {
+            "kind": "header",
+            "schema_version": KAGGLE_PREDICTION_CHECKPOINT_SCHEMA_VERSION,
+            "identity": self.identity,
+            "expected_study_count": len(self.expected_uids),
+            "uid_order_sha256": self.uid_order_sha256,
+        }
+        self._open_or_load()
+
+    @property
+    def completed_count(self) -> int:
+        return len(self.private_records)
+
+    def _open_or_load(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.is_symlink():
+            raise KaggleDeliveryError("prediction checkpoint cannot be a symlink")
+        if not self.path.exists():
+            try:
+                with self.path.open("xb") as handle:
+                    handle.write((_canonical_json(self._header) + "\n").encode("utf-8"))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except FileExistsError as exc:
+                raise KaggleDeliveryError("prediction checkpoint appeared concurrently") from exc
+            return
+        if not self.path.is_file():
+            raise KaggleDeliveryError("prediction checkpoint is not a regular file")
+        try:
+            data = self.path.read_bytes()
+        except OSError as exc:
+            raise KaggleDeliveryError("prediction checkpoint could not be read") from exc
+        lines = data.splitlines(keepends=True)
+        if not lines or not lines[0].endswith(b"\n"):
+            raise KaggleDeliveryError("prediction checkpoint header is incomplete")
+        try:
+            header = json.loads(lines[0].decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise KaggleDeliveryError("prediction checkpoint header is invalid") from exc
+        if header != self._header:
+            raise KaggleDeliveryError("prediction checkpoint belongs to a different candidate or input")
+        valid_bytes = len(lines[0])
+        for line in lines[1:]:
+            if not line.endswith(b"\n"):
+                break
+            try:
+                row = json.loads(line.decode("utf-8"))
+            except (UnicodeError, json.JSONDecodeError) as exc:
+                raise KaggleDeliveryError("prediction checkpoint contains a malformed completed row") from exc
+            index = len(self.private_records)
+            if not isinstance(row, dict):
+                raise KaggleDeliveryError("prediction checkpoint contains a malformed completed row")
+            row_checksum = row.get("row_sha256")
+            unsigned_row = dict(row)
+            unsigned_row.pop("row_sha256", None)
+            if row_checksum != _json_sha256(unsigned_row):
+                raise KaggleDeliveryError("prediction checkpoint row checksum is invalid")
+            if not isinstance(row, dict) or row.get("kind") != "study" or row.get("index") != index:
+                raise KaggleDeliveryError("prediction checkpoint study order is invalid")
+            if index >= len(self.expected_uids) or row.get("study_uid") != self.expected_uids[index]:
+                raise KaggleDeliveryError("prediction checkpoint UID order differs from the current input")
+            raw_scores = row.get("scores")
+            private_record = row.get("private_record")
+            if not isinstance(raw_scores, list) or len(raw_scores) != NUM_TARGETS or not isinstance(private_record, dict):
+                raise KaggleDeliveryError("prediction checkpoint row has an invalid payload")
+            if private_record.get("StudyInstanceUID") != self.expected_uids[index]:
+                raise KaggleDeliveryError("prediction checkpoint diagnostics belong to a different study")
+            try:
+                scores = np.asarray([float(value) for value in raw_scores], dtype=np.float64)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise KaggleDeliveryError("prediction checkpoint contains invalid scores") from exc
+            if not np.isfinite(scores).all() or (scores < 0.0).any() or (scores > 1.0).any():
+                raise KaggleDeliveryError("prediction checkpoint scores are outside [0, 1]")
+            self.predictions[self.expected_uids[index]] = scores
+            self.private_records.append(private_record)
+            valid_bytes += len(line)
+        if valid_bytes != len(data):
+            try:
+                with self.path.open("r+b") as handle:
+                    handle.truncate(valid_bytes)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except OSError as exc:
+                raise KaggleDeliveryError("incomplete prediction checkpoint tail could not be removed") from exc
+        self.resumed_row_count = self.completed_count
+
+    def append(
+        self,
+        index: int,
+        study_uid: str,
+        scores: np.ndarray,
+        private_record: dict[str, object],
+    ) -> None:
+        if index != self.completed_count or index >= len(self.expected_uids):
+            raise KaggleDeliveryError("prediction checkpoint rows must be committed in UID order")
+        if study_uid != self.expected_uids[index]:
+            raise KaggleDeliveryError("prediction checkpoint row does not match the expected UID")
+        score_values = np.asarray(scores, dtype=np.float64)
+        if score_values.shape != (NUM_TARGETS,) or not np.isfinite(score_values).all():
+            raise KaggleDeliveryError("prediction checkpoint received invalid scores")
+        if (score_values < 0.0).any() or (score_values > 1.0).any():
+            raise KaggleDeliveryError("prediction checkpoint scores are outside [0, 1]")
+        row: dict[str, object] = {
+            "kind": "study",
+            "index": index,
+            "study_uid": study_uid,
+            "scores": [float(value) for value in score_values],
+            "private_record": private_record,
+        }
+        row["row_sha256"] = _json_sha256(row)
+        try:
+            with self.path.open("ab") as handle:
+                handle.write((_canonical_json(row) + "\n").encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as exc:
+            raise KaggleDeliveryError("prediction checkpoint row could not be committed") from exc
+        self.predictions[study_uid] = score_values.copy()
+        self.private_records.append(private_record)
+
+
+def _checkpoint_identity(
+    *,
+    candidate_manifest_checksum: str,
+    delivery_request_checksum: str | None,
+    test_csv_sha256: str,
+    test_series_csv_sha256: str,
+    input_manifest_sha256: str | None,
+) -> dict[str, object]:
+    return {
+        "candidate_manifest_checksum": candidate_manifest_checksum,
+        "delivery_request_checksum": delivery_request_checksum,
+        "test_csv_sha256": test_csv_sha256,
+        "test_series_csv_sha256": test_series_csv_sha256,
+        "input_manifest_sha256": input_manifest_sha256,
+    }
+
+
+def _execution_input_summary(
+    expected_uids: Sequence[str],
+    total_series_count: int,
+    private_records: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    if len(private_records) != len(expected_uids):
+        raise KaggleDeliveryError("completed prediction checkpoint does not cover every study")
+    series_per_study: list[int] = []
+    slices_per_study: list[int] = []
     decoded_slices = 0
     failure_reasons: dict[str, int] = {}
-    studies: list[StudyRecord] = []
-    timing_profile = profile or _KaggleDicomProfile()
-    for study_uid in study_uids:
-        study_index_seconds = 0.0
-        study_read_decode_seconds = 0.0
-        study_pixel_decode_started = timing_profile.pixel_decode_seconds
-        study_series_timings: list[dict[str, object]] = []
-        series_records: list[SeriesRecord] = []
-        study_private: dict[str, object] = {"StudyInstanceUID": study_uid, "series": []}
-        private_series = cast(list[dict[str, object]], study_private["series"])
-        study_dir = series_root / _safe_input_component(study_uid, "StudyInstanceUID")
-        for series_row in by_study[study_uid]:
-            series_uid = _row_text(series_row, "SeriesInstanceUID", "test_series.csv")
-            series_dir = study_dir / _safe_input_component(series_uid, "SeriesInstanceUID")
-            if series_dir.exists() and series_dir.is_symlink():
-                raise KaggleDeliveryError(f"Kaggle series directory is a symlink: {series_dir}")
-            index_started = time.perf_counter()
-            files = _series_input_files(series_dir, input_root)
-            index_seconds = time.perf_counter() - index_started
-            timing_profile.archive_index_discovery_seconds += index_seconds
-            timing_profile.index_scan_count += 1
-            timing_profile.indexed_file_count += len(files)
-            study_index_seconds += index_seconds
-            series_read_decode_started = time.perf_counter()
-            series_pixel_decode_started = timing_profile.pixel_decode_seconds
-            series_file_open_count = 0
-            slices = []
-            failures: list[dict[str, object]] = []
-            expected_slices += len(files)
-            for path in files:
-                relative = path.relative_to(input_root).as_posix()
-                timing_profile.decode_call_count += 1
-                timing_profile.dicom_file_open_count += 1
-                series_file_open_count += 1
-                file_decode_started = time.perf_counter()
-                try:
-                    with path.open("rb") as handle:
-                        with _timed_pixel_decoding(timing_profile):
-                            decoded = decode_stream(handle, filename=relative, policy=decoder)
-                    if decoded.study_instance_uid not in (None, study_uid):
-                        raise DicomDecodeError("decoded StudyInstanceUID disagrees with test.csv")
-                    if decoded.series_instance_uid not in (None, series_uid):
-                        raise DicomDecodeError("decoded SeriesInstanceUID disagrees with test_series.csv")
-                    slices.append(decoded)
-                    decoded_slices += 1
-                except DecoderInfrastructureError:
-                    raise
-                except (DicomDecodeError, OSError) as exc:
-                    reason = type(exc).__name__
-                    failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
-                    failures.append({"source_entry_name": relative, "reason": reason, "detail": str(exc)})
-                finally:
-                    timing_profile.dicom_read_decode_seconds += time.perf_counter() - file_decode_started
-            if not files:
-                failure_reasons["missing_series_input"] = failure_reasons.get("missing_series_input", 0) + 1
-                failures.append({"source_entry_name": "", "reason": "missing_series_input", "detail": str(series_dir)})
-            series_read_decode_seconds = time.perf_counter() - series_read_decode_started
-            series_pixel_decode_seconds = timing_profile.pixel_decode_seconds - series_pixel_decode_started
-            series_timing: dict[str, object] = {
-                "index_seconds": index_seconds,
-                "dicom_read_decode_seconds": series_read_decode_seconds,
-                "dicom_read_parse_seconds": max(
-                    0.0,
-                    series_read_decode_seconds - series_pixel_decode_seconds,
-                ),
-                "pixel_decode_seconds": series_pixel_decode_seconds,
-                "indexed_file_count": len(files),
-                "file_open_count": series_file_open_count,
-                "file_reopen_count": 0,
-                "decode_call_count": len(files),
-            }
-            study_series_timings.append(series_timing)
-            series_records.append(
-                SeriesRecord(
-                    study_instance_uid=study_uid,
-                    series_instance_uid=series_uid,
-                    slices=tuple(slices),
-                    anatomical_plane=str(series_row.get("Anatomical_Plane", "")).strip() or None,
-                    fluid_sensitive=_row_optional_bool(series_row, "Fluid_Sensitive", "test_series.csv"),
-                    fat_suppression=_row_optional_bool(series_row, "Fat_Suppression", "test_series.csv"),
-                    source_entry_names=tuple(
-                        path.relative_to(input_root).as_posix() for path in files
-                    ),
-                )
-            )
-            private_series.append(
-                {
-                    "SeriesInstanceUID": series_uid,
-                    "source_entry_names": [path.relative_to(input_root).as_posix() for path in files],
-                    "expected_slice_count": len(files),
-                    "decoded_slice_count": len(slices),
-                    "failures": failures,
-                    "timing": series_timing,
-                }
-            )
-        study_read_decode_seconds = sum(
-            float(str(item["dicom_read_decode_seconds"])) for item in study_series_timings
-        )
-        study_pixel_decode_seconds = timing_profile.pixel_decode_seconds - study_pixel_decode_started
-        study_timing = {
-            "index_seconds": study_index_seconds,
-            "dicom_read_decode_seconds": study_read_decode_seconds,
-            "dicom_read_parse_seconds": max(
-                0.0,
-                study_read_decode_seconds - study_pixel_decode_seconds,
-            ),
-            "pixel_decode_seconds": study_pixel_decode_seconds,
-            "indexed_file_count": sum(int(str(item["indexed_file_count"])) for item in study_series_timings),
-            "file_open_count": sum(int(str(item["file_open_count"])) for item in study_series_timings),
-            "file_reopen_count": 0,
-            "decode_call_count": sum(int(str(item["decode_call_count"])) for item in study_series_timings),
-            "series": study_series_timings,
-        }
-        study_private["timing"] = study_timing
-        timing_profile.per_study.append({"StudyInstanceUID": study_uid, **study_timing})
-        studies.append(StudyRecord(study_uid, tuple(series_records)))
-        private_records.append(study_private)
-    decode_seconds = time.perf_counter() - decode_started
-    series_per_study = [len(study.series) for study in studies]
-    slices_per_study = [
-        sum(
-            int(str(cast(Mapping[str, object], private)["expected_slice_count"]))
-            for private in cast(list[Mapping[str, object]], record["series"])
-        )
-        for record, study in zip(private_records, studies)
-    ]
+    for record in private_records:
+        series = cast(list[Mapping[str, object]], record.get("series", []))
+        series_per_study.append(len(series))
+        study_expected = 0
+        for series_record in series:
+            study_expected += int(str(series_record.get("expected_slice_count", 0)))
+            decoded_slices += int(str(series_record.get("decoded_slice_count", 0)))
+            for failure in cast(list[Mapping[str, object]], series_record.get("failures", [])):
+                reason = str(failure.get("reason", "unknown"))
+                failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+        slices_per_study.append(study_expected)
     workload_profile = _workload_profile(series_per_study, slices_per_study)
     long_tail = cast(Mapping[str, object], workload_profile["long_tail"])
     series_threshold = int(str(long_tail["series_threshold"]))
     slice_threshold = int(str(long_tail["slice_threshold"]))
-    for record, series_count, slice_count in zip(private_records, series_per_study, slices_per_study):
-        record["workload"] = {
-            "series_count": series_count,
-            "expected_slice_count": slice_count,
-            "long_tail": series_count >= series_threshold or slice_count >= slice_threshold,
-        }
-    input_summary = {
-        "study_count": len(studies),
-        "series_count": len(series_rows),
-        "slice_count": expected_slices,
+    for record, study_series_count, study_slice_count in zip(
+        private_records,
+        series_per_study,
+        slices_per_study,
+    ):
+        if isinstance(record, dict):
+            record["workload"] = {
+                "series_count": study_series_count,
+                "expected_slice_count": study_slice_count,
+                "long_tail": (
+                    study_series_count >= series_threshold
+                    or study_slice_count >= slice_threshold
+                ),
+            }
+    return {
+        "study_count": len(expected_uids),
+        "series_count": total_series_count,
+        "slice_count": sum(slices_per_study),
         "decoded_slice_count": decoded_slices,
         "failure_reasons": dict(sorted(failure_reasons.items())),
         "decode_failure_count": sum(failure_reasons.values()),
         **workload_profile,
     }
-    return (
-        tuple(studies),
-        input_summary,
-        tuple(private_records),
-        decode_seconds,
-        timing_profile,
-    )
+
+
+def _current_rss_bytes() -> int | None:
+    """Return current RSS where Linux procfs exposes it."""
+
+    try:
+        with Path("/proc/self/statm").open(encoding="ascii") as handle:
+            resident_pages = int(handle.read().split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return resident_pages * os.sysconf("SC_PAGE_SIZE")
+
+
+def _system_memory_snapshot_bytes() -> dict[str, int | None]:
+    """Read exposed system and cgroup memory values without inferring a limit."""
+
+    memory: dict[str, int | None] = {
+        "system_total_bytes": None,
+        "system_available_bytes": None,
+        "cgroup_limit_bytes": None,
+        "cgroup_current_bytes": None,
+    }
+    try:
+        for line in Path("/proc/meminfo").read_text(encoding="ascii").splitlines():
+            key, _, raw_value = line.partition(":")
+            if key not in {"MemTotal", "MemAvailable"}:
+                continue
+            value_kib = int(raw_value.strip().split()[0])
+            field_name = "system_total_bytes" if key == "MemTotal" else "system_available_bytes"
+            memory[field_name] = value_kib * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    for limit_path, current_path in (
+        (Path("/sys/fs/cgroup/memory.max"), Path("/sys/fs/cgroup/memory.current")),
+        (
+            Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+            Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+        ),
+    ):
+        try:
+            raw_limit = limit_path.read_text(encoding="ascii").strip()
+            if raw_limit != "max":
+                memory["cgroup_limit_bytes"] = int(raw_limit)
+            raw_current = current_path.read_text(encoding="ascii").strip()
+            memory["cgroup_current_bytes"] = int(raw_current)
+            break
+        except (OSError, ValueError):
+            continue
+    return memory
+
+
+def _rss_sample_summary(values: Sequence[int]) -> dict[str, object]:
+    if not values:
+        return {
+            "sample_count": 0,
+            "minimum_bytes": None,
+            "maximum_bytes": None,
+            "first_bytes": None,
+            "last_bytes": None,
+        }
+    return {
+        "sample_count": len(values),
+        "minimum_bytes": min(values),
+        "maximum_bytes": max(values),
+        "first_bytes": values[0],
+        "last_bytes": values[-1],
+    }
 
 
 def _predict_kaggle_study(
@@ -2871,7 +3155,11 @@ def run_kaggle_baseline(
             delivery_notebook_sha256 = request_notebook_sha256
             delivery_adapter_sha256 = request_adapter_sha256
             approval_path = Path(cast(str | Path, owner_approval_path))
-            _approval_payload(approval_path, request.request_checksum)
+            _approval_payload(
+                approval_path,
+                request.request_checksum,
+                expected_scope=_request_approval_scope(request.payload),
+            )
             approval_sha256 = _sha256_file(approval_path)
             delivery_request_validation_seconds = time.perf_counter() - request_validation_started
             input_reference = _execution_input_reference(
@@ -2879,7 +3167,7 @@ def run_kaggle_baseline(
                 default_mount_slug=KAGGLE_COMPETITION_SLUG,
             )
             workload_kind = str(input_reference["workload_kind"])
-            if request.payload.get("execution_input") is not None:
+            if input_reference["workload_kind"] == "representative":
                 manifest_path = Path(input_root) / str(input_reference["manifest_filename"])
                 if manifest_path.is_file() and not manifest_path.is_symlink():
                     input_manifest_sha256 = _sha256_file(manifest_path)
@@ -2888,6 +3176,10 @@ def run_kaggle_baseline(
             _required_float(notebook_stage_timings.get(stage), f"notebook {stage} seconds")
     else:
         notebook_stage_timings = {"startup_setup": 0.0, "imports": 0.0}
+        representative_manifest = Path(input_root) / "input-manifest.json"
+        if representative_manifest.is_file() and not representative_manifest.is_symlink():
+            input_manifest_sha256 = _sha256_file(representative_manifest)
+            workload_kind = "representative"
     if bundle is None or candidate is None:
         candidate_started = time.perf_counter()
         bundle = load_candidate(candidate_root)
@@ -2941,57 +3233,93 @@ def run_kaggle_baseline(
     if private_destination is not None:
         _ensure_outside(private_destination, (Path(candidate_root).resolve(),), "Kaggle private evidence")
 
+
     adapter_preflight_seconds = time.perf_counter() - adapter_preflight_started
     started = notebook_started_at if notebook_started_at is not None else time.perf_counter()
     input_path = Path(input_root)
-    metadata_started = time.perf_counter()
     metadata_paths = (input_path / "test.csv", input_path / "test_series.csv")
+    test_csv_sha256 = _sha256_file(metadata_paths[0])
+    test_series_csv_sha256 = _sha256_file(metadata_paths[1])
     decoder, preprocess, packing = _candidate_runtime(bundle)
-    dicom_profile = _KaggleDicomProfile()
-    studies, input_summary, private_records, decode_seconds, dicom_profile = _load_kaggle_studies(
-        input_path,
-        decoder,
-        profile=dicom_profile,
+    metadata_started = time.perf_counter()
+    expected_uids, by_study = _read_kaggle_study_metadata(input_path)
+    metadata_seconds = time.perf_counter() - metadata_started
+    series_count = sum(len(rows) for rows in by_study.values())
+    checkpoint_identity = _checkpoint_identity(
+        candidate_manifest_checksum=str(candidate["manifest_checksum"]),
+        delivery_request_checksum=delivery_request_checksum,
+        test_csv_sha256=test_csv_sha256,
+        test_series_csv_sha256=test_series_csv_sha256,
+        input_manifest_sha256=input_manifest_sha256,
     )
-    metadata_seconds = time.perf_counter() - metadata_started - decode_seconds
+    checkpoint_path = _prediction_checkpoint_path(output)
+    checkpoint = _KagglePredictionCheckpoint(
+        checkpoint_path,
+        identity=checkpoint_identity,
+        expected_uids=expected_uids,
+    )
+    resumed_row_count = checkpoint.resumed_row_count
+    dicom_profile = _KaggleDicomProfile()
+    dicom_profile.stage_rss_bytes["adapter_start"] = _current_rss_bytes()
+    dicom_profile.stage_rss_bytes["after_metadata"] = _current_rss_bytes()
+    system_memory_start = _system_memory_snapshot_bytes()
+
     device_object = torch.device(device)
     if device_object.type == "cuda":
         if not torch.cuda.is_available():
             raise KaggleDeliveryError("CUDA was requested but is unavailable")
         torch.cuda.reset_peak_memory_stats(device_object)
-    model_started = time.perf_counter()
-    model = _load_kaggle_ensemble(bundle, device)
-    model_seconds = time.perf_counter() - model_started
-    engine = InferenceEngine(
-        cast(Any, model),
-        preprocess,
-        device=device,
-        fallback_scores=tuple([0.5] * NUM_TARGETS),
-        packing_config=packing,
-    )
-    predictions: list[StudyPrediction] = []
+    model_seconds = 0.0
+    model = None
+    engine: InferenceEngine | None = None
+    if checkpoint.completed_count < len(expected_uids):
+        model_started = time.perf_counter()
+        model = _load_kaggle_ensemble(bundle, device)
+        model_seconds = time.perf_counter() - model_started
+        engine = InferenceEngine(
+            cast(Any, model),
+            preprocess,
+            device=device,
+            fallback_scores=tuple([0.5] * NUM_TARGETS),
+            packing_config=packing,
+        )
+    dicom_profile.stage_rss_bytes["after_model_load"] = _current_rss_bytes()
+
     preprocessing_seconds = 0.0
     preprocessing_resize_seconds = 0.0
     packing_seconds = 0.0
     inference_seconds = 0.0
-    private_by_uid = {str(item["StudyInstanceUID"]): item for item in private_records}
-    for study in studies:
+    decode_started = time.perf_counter()
+    for study_index, study, study_private in _iter_kaggle_studies(
+        input_path,
+        decoder,
+        study_uids=expected_uids,
+        by_study=by_study,
+        skip_studies=checkpoint.completed_count,
+        profile=dicom_profile,
+    ):
+        if engine is None:
+            raise KaggleDeliveryError("prediction checkpoint requested inference without a loaded model")
+        rss_after_decode = _current_rss_bytes()
+        if rss_after_decode is not None:
+            dicom_profile.rss_after_study_decode_bytes.append(rss_after_decode)
         input_failures = tuple(
             SeriesFailure(
                 str(series["SeriesInstanceUID"]),
                 str(failure["reason"]),
             )
-            for series in cast(list[Mapping[str, object]], private_by_uid[study.study_instance_uid]["series"])
+            for series in cast(list[Mapping[str, object]], study_private["series"])
             for failure in cast(list[Mapping[str, object]], series["failures"])
         )
         prediction, timing = _predict_kaggle_study(engine, study, input_failures)
-        predictions.append(prediction)
         preprocessing_seconds += timing["preprocessing_seconds"]
-        preprocessing_resize_seconds += timing.get("preprocessing_resize_seconds", timing["preprocessing_seconds"])
+        preprocessing_resize_seconds += timing.get(
+            "preprocessing_resize_seconds",
+            timing["preprocessing_seconds"],
+        )
         packing_seconds += timing.get("packing_seconds", 0.0)
         inference_seconds += timing["inference_ensembling_seconds"]
-        private_prediction = private_by_uid[study.study_instance_uid]
-        private_prediction["prediction"] = {
+        study_private["prediction"] = {
             "used_full_study_fallback": prediction.used_fallback,
             "valid_series_count": prediction.valid_series_count,
             "rejected_series": [
@@ -3001,18 +3329,97 @@ def run_kaggle_baseline(
                 }
                 for failure in prediction.rejected_series
             ],
-            "warnings": list(prediction.warnings),
-            "sampled_source_indices": [list(indices) for indices in prediction.sampled_source_indices],
         }
+        checkpoint.append(study_index, study.study_instance_uid, prediction.scores, study_private)
+        rss_after_prediction = _current_rss_bytes()
+        if rss_after_prediction is not None:
+            dicom_profile.rss_after_study_prediction_bytes.append(rss_after_prediction)
+        del prediction, timing, input_failures, study, study_private
+    decode_seconds = time.perf_counter() - decode_started
+    if checkpoint.completed_count != len(expected_uids):
+        raise KaggleDeliveryError("study stream ended before every expected UID was checkpointed")
+    # Reopen and validate the durable prefix before publishing the CSV.
+    reloaded_checkpoint = _KagglePredictionCheckpoint(
+        checkpoint_path,
+        identity=checkpoint_identity,
+        expected_uids=expected_uids,
+    )
+    if reloaded_checkpoint.predictions.keys() != checkpoint.predictions.keys() or any(
+        not np.array_equal(reloaded_checkpoint.predictions[uid], checkpoint.predictions[uid])
+        for uid in checkpoint.predictions
+    ):
+        raise KaggleDeliveryError("prediction checkpoint save/load changed one or more scores")
+    if reloaded_checkpoint.private_records != checkpoint.private_records:
+        raise KaggleDeliveryError("prediction checkpoint save/load changed study diagnostics")
+    checkpoint = reloaded_checkpoint
+    input_summary = _execution_input_summary(
+        expected_uids,
+        series_count,
+        checkpoint.private_records,
+    )
+    del engine, model
+    gc.collect()
+    dicom_profile.stage_rss_bytes["after_inference_release"] = _current_rss_bytes()
+    system_memory_after_inference = _system_memory_snapshot_bytes()
+
     output_started = time.perf_counter()
-    expected_uids = tuple(study.study_instance_uid for study in studies)
     write_submission(
         output,
         expected_study_uids=expected_uids,
-        predictions={item.study_instance_uid: item.scores for item in predictions},
+        predictions=checkpoint.predictions,
     )
     submission_validation = validate_submission_csv(output, expected_uids)
     csv_seconds = time.perf_counter() - output_started
+    dicom_profile.stage_rss_bytes["after_csv_validation"] = _current_rss_bytes()
+    system_memory_after_csv = _system_memory_snapshot_bytes()
+    current_rss_after_study_decode = _rss_sample_summary(dicom_profile.rss_after_study_decode_bytes)
+    current_rss_after_study_prediction = _rss_sample_summary(
+        dicom_profile.rss_after_study_prediction_bytes
+    )
+    current_rss_after_study_release = _rss_sample_summary(dicom_profile.rss_after_study_release_bytes)
+    memory_profile = {
+        "sampling_source": "/proc/self/statm (current RSS)" if dicom_profile.stage_rss_bytes["adapter_start"] is not None else "unavailable",
+        "stage_rss_bytes": dict(dicom_profile.stage_rss_bytes),
+        "after_each_study_decode": current_rss_after_study_decode,
+        "after_each_study_prediction": current_rss_after_study_prediction,
+        "after_each_study_release": current_rss_after_study_release,
+        "active_study_limit": 1,
+        "decoded_pixel_arrays_retained_after_prediction": False,
+        "release_action": "drop_study_references_and_collect_garbage",
+        "exposed_system_memory": {
+            "start": system_memory_start,
+            "after_inference": system_memory_after_inference,
+            "after_csv_validation": system_memory_after_csv,
+        },
+    }
+    stage_timings = {
+        "startup_setup": float(notebook_stage_timings["startup_setup"]),
+        "imports": float(notebook_stage_timings["imports"]),
+        "model_metadata_loading": metadata_seconds + model_seconds,
+        "dicom_read_decode": decode_seconds,
+        "preprocessing": preprocessing_seconds,
+        "inference_ensembling": inference_seconds,
+        "csv_creation": csv_seconds,
+    }
+    fallback_numerator = sum(
+        bool(
+            cast(
+                Mapping[str, object],
+                record.get("prediction", {}),
+            ).get("used_full_study_fallback", False)
+        )
+        for record in checkpoint.private_records
+    )
+    fallback_denominator = len(expected_uids)
+    fallback_rate = fallback_numerator / fallback_denominator
+    if device_object.type == "cuda":
+        peak_vram_bytes = int(torch.cuda.max_memory_allocated(device_object))
+    else:
+        peak_vram_bytes = 0
+
+    def timing_detail_seconds(name: str, fallback: float = 0.0) -> float:
+        return _required_float(timing_details_input.get(name, fallback), f"Kaggle timing detail {name}")
+
     whole_seconds = time.perf_counter() - started
     process_wall_seconds = time.perf_counter() - process_wall_started
     process_cpu_finished = os.times()
@@ -3027,28 +3434,9 @@ def run_kaggle_baseline(
         interop_thread_count: int | None = torch.get_num_interop_threads()
     except RuntimeError:
         interop_thread_count = None
-    fallback_numerator = sum(item.used_fallback for item in predictions)
-    fallback_denominator = len(predictions)
-    fallback_rate = fallback_numerator / fallback_denominator
-    if device_object.type == "cuda":
-        peak_vram_bytes = int(torch.cuda.max_memory_allocated(device_object))
-    else:
-        peak_vram_bytes = 0
-    stage_timings = {
-        "startup_setup": float(notebook_stage_timings["startup_setup"]),
-        "imports": float(notebook_stage_timings["imports"]),
-        "model_metadata_loading": max(0.0, metadata_seconds) + model_seconds,
-        "dicom_read_decode": decode_seconds,
-        "preprocessing": preprocessing_seconds,
-        "inference_ensembling": inference_seconds,
-        "csv_creation": csv_seconds,
-    }
-    def timing_detail_seconds(name: str, fallback: float = 0.0) -> float:
-        return _required_float(timing_details_input.get(name, fallback), f"Kaggle timing detail {name}")
-
     projection = _fixed_plus_scaling_projection(
         whole_seconds=whole_seconds,
-        study_count=len(studies),
+        study_count=len(expected_uids),
         target_studies=KAGGLE_TARGET_STUDIES,
         stages={
             **stage_timings,
@@ -3133,10 +3521,11 @@ def run_kaggle_baseline(
         },
         "peak_ram_bytes": _peak_rss_bytes(),
         "dicom_profile": dicom_profile.public_dict(),
+        "memory_profile": memory_profile,
     }
     evidence: dict[str, object] = {
         "schema_version": KAGGLE_EXECUTION_SCHEMA_VERSION,
-        "ticket": "12",
+        "ticket": "24",
         "status": "completed_kaggle_notebook",
         "bundle": {
             "request_checksum": delivery_request_checksum,
@@ -3178,8 +3567,8 @@ def run_kaggle_baseline(
             "ensemble_model_count": len(candidate_checkpoints),
         },
         "input": {
-            "test_csv_sha256": _sha256_file(metadata_paths[0]),
-            "test_series_csv_sha256": _sha256_file(metadata_paths[1]),
+            "test_csv_sha256": test_csv_sha256,
+            "test_series_csv_sha256": test_series_csv_sha256,
             "input_layout": "test.csv + test_series.csv + test_series/",
             "source": "competition_hidden_test" if workload_kind == "hidden_test" else "private_representative_dataset",
             "workload_kind": workload_kind,
@@ -3210,7 +3599,7 @@ def run_kaggle_baseline(
             "accepted_by_kaggle": False,
             "accepted_by_local_contract": True,
             **submission_validation,
-            "expected_row_count": len(studies),
+            "expected_row_count": len(expected_uids),
             "missing_rows": 0,
             "duplicate_rows": 0,
             "decode_failure_count": input_summary["decode_failure_count"],
@@ -3229,10 +3618,13 @@ def run_kaggle_baseline(
             },
         },
         "recovery": {
-            "save_reload_verified": False,
-            "interruption_recovery_verified": False,
+            "checkpoint_schema_version": KAGGLE_PREDICTION_CHECKPOINT_SCHEMA_VERSION,
+            "checkpoint_rows_written_this_run": checkpoint.completed_count - resumed_row_count,
+            "checkpoint_rows_resumed": resumed_row_count,
+            "save_reload_verified": True,
+            "interruption_recovery_verified": resumed_row_count > 0,
             "rollback_seconds": None,
-            "status": "not_demonstrated_by_inference_run",
+            "status": "resumed_after_interruption" if resumed_row_count else "study_checkpoint_saved_reloaded",
         },
         "diagnostics": {
             "failure_reasons": input_summary["failure_reasons"],
@@ -3250,11 +3642,15 @@ def run_kaggle_baseline(
             private_destination,
             {
                 "schema_version": KAGGLE_EXECUTION_SCHEMA_VERSION,
-                "ticket": "12",
+                "ticket": "24",
                 "candidate_manifest_checksum": candidate["manifest_checksum"],
-                "studies": list(private_records),
+                "studies": checkpoint.private_records,
             },
         )
+    try:
+        checkpoint_path.unlink()
+    except FileNotFoundError:
+        pass
     return KaggleInferenceResult(output, evidence, private_destination)
 
 
