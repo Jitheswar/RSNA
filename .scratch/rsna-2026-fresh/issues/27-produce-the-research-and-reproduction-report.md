@@ -24,12 +24,12 @@
 
 ## Answer
 
-Ticket 27 was previously resolved with a local research and reproduction report
-at `/home/ch.jitheswar/RSNA-ticket-27-research-and-reproduction-report.md`,
-outside the RSNA folder. Its recorded SHA-256 is
-`91363b5e9c1ef627e25ffaeea36f4f187b8eda6fbaf7100135d2c90f8cfb913a`.
+Ticket 27 is resolved with the updated local research and reproduction report
+at [`/home/ch.jitheswar/RSNA-ticket-27-research-and-reproduction-report.md`](../../../../RSNA-ticket-27-research-and-reproduction-report.md),
+outside the RSNA folder. Its SHA-256 is
+`d4777ef147ee2c9a4d314a98f43d64c2ec4e56d64ae3cc8de2de13da910d2cec`.
 
-The previously generated report summarized the corrected three-fold gold-only
+The report summarizes the corrected three-fold gold-only
 OOF results, per-target support and uncertainty, controlled report/image-model/student
 experiments, candidate selection and the small Kaggle execution, CPU resource
 and recovery evidence, and reproducible cluster/offline setup. It distinguishes
@@ -40,11 +40,10 @@ records the generated report path `/home/ch.jitheswar/ticket-26-report.md` and
 its SHA-256 `5a2bf90e079d71c127ce48852c3f281bde04b03421f10a31be4b4639b23891e5`.
 The hash matches the Ticket 26 issue. The summary records 1 study, 3 series,
 36 decoded slices, 2 usable series, 16 selected model slices, zero fallback,
-and finite bounded scores. The report body was absent from the workspace during
-this follow-up, so its detailed score and provenance tables could not be
-checked directly. The previously generated Ticket 27 external report is also
-absent from this workspace, so its body could not be edited. The previously
-generated Ticket 27 report does not assert clinical performance,
+and finite bounded scores. The Ticket 26 report body was not available in this
+workspace, so the hash and summary counts were checked against the issue and
+preserved Slurm output; per-target scores and report-only provenance rows were
+not independently compared. The report does not assert clinical performance,
 full-scale runtime, or patient separation.
 
 ## Comments
@@ -53,11 +52,12 @@ full-scale runtime, or patient separation.
   required the Markdown report to be outside the RSNA folder. The report was
   assembled from preserved evidence; no experiment, upload, submission, or
   external publication was performed.
-- 2026-09-25 — Best-effort follow-up from `/home/ch.jitheswar/tsk.txt`: the
-  Ticket 26 run-summary hash and headline counts were checked against the
-  Ticket 26 issue and preserved Slurm output. The Ticket 26 report body and the
-  previously generated Ticket 27 external report were absent from this
-  workspace, so detailed report-to-report comparison and direct editing of the
-  external Ticket 27 report could not be completed. No experiment or model
-  artifact was changed; this follow-up does not claim verification of the
-  Ticket 26 report's detailed tables.
+- 2026-09-25 — Follow-up from `/home/ch.jitheswar/tsk.txt`: restored the exact
+  previous Ticket 27 report from local session output and verified its original
+  recorded SHA before updating its Ticket 26 section. The updated Ticket 27
+  report SHA-256 is `d4777ef147ee2c9a4d314a98f43d64c2ec4e56d64ae3cc8de2de13da910d2cec`.
+  Ticket 26's recorded hash and headline counts match the issue and Slurm
+  completion output. Its report body remains absent from the workspace, so
+  direct comparison of individual scores and report-only provenance remains
+  unverified. No experiment or model artifact was changed; Ticket 27 remains
+  resolved.

@@ -90,8 +90,8 @@ repository artifacts.
   resource/recovery evidence, and unresolved limits without identifiers or
   report text:
   [ticket 27](issues/27-produce-the-research-and-reproduction-report.md)
-  · previous report path `../../../RSNA-ticket-27-research-and-reproduction-report.md`
-  (SHA-256 prefix `91363b5e…cfb913a`; file absent from the current workspace).
+  · [updated report](../../../RSNA-ticket-27-research-and-reproduction-report.md)
+  (SHA-256 prefix `d4777ef1…910d2cec`).
 
 ## Fog
 
