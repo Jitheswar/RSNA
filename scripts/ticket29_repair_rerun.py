@@ -117,8 +117,22 @@ def main() -> int:
     ):
         raise RuntimeError("repair rerun requires a passing, matching training-only probe")
     cache_metadata, cached_examples = load_cache(args.cache)
-    if cache_metadata["cache_file_sha256"] != probe["cache_sha256"]:
-        raise RuntimeError("probe cache identity changed")
+    if (
+        cache_metadata["cache_file_sha256"] != probe["cache_sha256"]
+        or cache_metadata.get("plan_sha256") != plan["plan_sha256"]
+        or cache_metadata.get("target_order") != plan["targets"]
+        or cache_metadata.get("training_studies") != len(selected)
+    ):
+        raise RuntimeError("probe cache identity, plan, targets, or cohort size changed")
+    expected_cpu_request = {
+        "partition": SLURM_RESOURCES["partition"],
+        "cpus": 8,
+        "memory_gb": 32,
+        "wall_time_hours": 6,
+        "exclusive": False,
+    }
+    if repair_plan.get("cpu_request") != expected_cpu_request:
+        raise RuntimeError("repair plan CPU request differs from the approved diagnostic shape")
 
     load_started = time.monotonic()
     loaded = tuple(iter_real_studies(integration, args.source_archive, require_complete_series=True, study_uids=selected))

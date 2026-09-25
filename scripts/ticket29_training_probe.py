@@ -49,6 +49,13 @@ def _write_new(path: Path, value: Mapping[str, object]) -> None:
         target.write("\n")
 
 
+def require_matching_integration_cache(metadata: Mapping[str, object], manifest_path: Path) -> None:
+    """Reject a probe manifest that is not the one used to pack the cached real images."""
+
+    if metadata.get("integration_file_sha256") != _sha256(manifest_path):
+        raise RuntimeError("probe integration manifest differs from the frozen real-input cache")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", required=True)
@@ -66,6 +73,7 @@ def main() -> int:
     metadata, examples = load_cache(cache_dir)
     if len(examples) != COHORT_SIZE or any(item.provenance.source_kind != "reference" for item in examples):
         raise RuntimeError("probe must use the eight reference-only frozen training studies")
+    require_matching_integration_cache(metadata, Path(args.integration_manifest))
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     output.chmod(0o700)
