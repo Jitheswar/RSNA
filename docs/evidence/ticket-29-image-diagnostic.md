@@ -91,3 +91,32 @@ The preceding storage measurement covered only the canonical repository and the 
 The Slurm controller's terminal record for diagnostic job `7160` reports `COMPLETED`, exit `0:0`, and allocated runtime `00:02:55` (175 seconds). The `147.9646`-second value in the run evidence is the Python diagnostic application interval; it excludes Slurm startup/teardown. The separately reported CPU queue wait was `7.6122` seconds. `sacct` remains unavailable because the local Slurm accounting database refuses connections.
 
 Final-freeze disposition: Ticket 29 remains diagnostic-only; no candidate identity was advanced from this run. The frozen optimization gate failed, so the dependent representation experiment stays blocked pending diagnosis or repair. The result is training-only memorization evidence and contains no held-out evaluation.
+
+## Follow-up diagnosis and repaired real-input gate (2026-09-25)
+
+The preceding negative result is retained as the original 500-step diagnostic. A repeatable check against its saved final checkpoint and the exact eight selected training studies reproduced AUC `0.6871527777777778` and BCE `0.641625851392746` twice. A new Slurm job (`7162`) decoded the same source DICOM studies once and saved a private, checksummed training-only tensor cache. Replaying the original 500-step Adam `0.001` configuration from that cache in job `7163` produced the *same* initial, final AUC, and final BCE values. This excludes cache reconstruction or evaluation drift as the reason for the weak result.
+
+The saved original model has a seven-dimensional centered study-embedding rank for eight examples. An oracle linear head fitted on those embeddings can rank all 12 training targets perfectly, although the smaller embedding directions are poorly conditioned. The model therefore retained study distinctions; the evidence pointed to slow fitting rather than lost labels or complete pooling collapse. The following probes changed one training variable at a time and used no held-out input:
+
+| CPU Slurm job | Change from preceding probe | Steps | Learning rate | Training macro AUC, 12 targets | Training masked BCE | Frozen AUC/BCE gate |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| `7163` | Cached-input reproduction of original | 500 | 0.001 | 0.6871527777777778 | 0.641625851392746 | Fail |
+| `7164` | Learning rate only | 500 | 0.01 | 0.7420138888888888 | 0.571163035929203 | Fail |
+| `7165` | Step budget only | 2,000 | 0.01 | 0.9625 | 0.2128522638231516 | **Pass** |
+
+The frozen BCE maximum is half the unchanged training-prevalence control `0.6690861930449804`, or `0.3345430965224902`; the AUC minimum is `0.85` with two-class support for every target. The repaired run changes only optimization time and learning rate. It uses the same compact model, 128-pixel preprocessing, source/fold/cohort/target identity, batch size two, seed, no augmentation, and CPU-only path. These probes diagnose insufficient optimization at the original 500-step, `0.001` setting as the demonstrated cause of the failed memorization gate. They do not establish held-out accuracy.
+
+The repair configuration was frozen privately before a full DICOM rerun. CPU Slurm job `7166` completed with exit `0:0` on `KLEF-C-NODE2`, 8 CPUs, 32 GB, nonexclusive, six-hour allocation limit, and actual allocated runtime `00:06:15`; queue wait was one second. The run reverified the archive fingerprint, integration and corrected-fold manifests, original frozen cohort, all real pixel/geometry and label checks, and exact equality of each fresh packed image, slice/series mask, target vector, and supervision mask against the successful probe cache. All nine frozen real-input checks passed. It read zero held-out studies and allocated zero GPUs.
+
+The full rerun independently passed the **original frozen optimization gate**: initial gradient L2 `0.14292845332737203` (finite and nonzero), relative parameter L2 change `5.296873969186302`, final macro AUC `0.9625` across all 12 targets, and final masked BCE `0.2128522638231516`. Its training-only learning curve was:
+
+| Optimizer steps | Masked BCE | Macro AUC |
+| ---: | ---: | ---: |
+| 0 | 0.6933632344007492 | 0.42638888888888893 |
+| 100 | 0.668996050953865 | 0.525 |
+| 500 | 0.571163035929203 | 0.7420138888888888 |
+| 2,000 | 0.2128522638231516 | 0.9625 |
+
+Private repair-plan SHA-256: `b254279372364118a977bf697539ce92f0a8b5c311e0ff07875773c5f3be6b9a`. Passing probe result SHA-256: `17a698c36ec4b0a757844286234a815fa326d6cd4527bdcf5341d7a58839be7f`. Full real-rerun evidence SHA-256: `d395d3922072ed037c0538b41c6d1c4c3d5be6216da26c0e4b413b9254fb10b6`; final checkpoint SHA-256: `c235a67e65be6f3a0b6705d2522fb6e29eef926e3ae9354fb372365f106c0049`. All remain in `artifacts/private/ticket29-memorization-debug/` under the integration worktree. No per-study identifiers, images, or predictions are included here.
+
+The diagnostic disposition is now **optimization competence demonstrated on the frozen training cohort**. This removes the Ticket 29 optimization block on a later representation experiment, while leaving its resource and scientific approvals separate. Ticket 31 was not started. The additional three non-overlapping worktrees measured `276642825`, `4049622`, and `109500326` logical bytes (integration, Ticket 29 review, Ticket 30 interval fix); combined with the prior 19-root inventory this is `303013958917` bytes before later repository commits. The existing 64 MB temporary-write reserve puts that scoped projection near `303077958917` bytes, well below the 2 TB soft budget. Historical campaign-wide GPU remaining hours are still unknown because Slurm accounting remains unavailable; no GPU attempt was made in this repair.
