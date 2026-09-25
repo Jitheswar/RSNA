@@ -1036,6 +1036,7 @@ def build_fold_examples(
     allow_partial_inputs: bool = False,
     admitted_supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
     pseudo_candidate_study_uids: Sequence[str] | None = None,
+    selected_training_study_uids: Sequence[str] | None = None,
 ) -> tuple[TrainingExample, ...]:
     """Prepare one declared partition with already-resolved supervision.
 
@@ -1054,6 +1055,12 @@ def build_fold_examples(
         raise TrainingDataError("admitted supervision is valid only for training examples")
     if partition != "pseudo_candidates" and pseudo_candidate_study_uids is not None:
         raise TrainingDataError("pseudo candidate identities are valid only for that partition")
+    if partition != "training" and selected_training_study_uids is not None:
+        raise TrainingDataError("selected training identities are valid only for training examples")
+    if admitted_supervision is not None and selected_training_study_uids is not None:
+        raise TrainingDataError(
+            "selected training identities cannot override an admitted supervision cohort"
+        )
     if admitted_supervision is not None:
         if admitted_supervision.fold != fold:
             raise TrainingDataError("admitted supervision fold does not match the requested fold")
@@ -1094,6 +1101,24 @@ def build_fold_examples(
             for item in fold_manifest.memberships
             if item.study_instance_uid in set(selected_uids)
         }
+        memberships = tuple(membership_by_uid[uid] for uid in selected_uids)
+    elif partition == "training" and selected_training_study_uids is not None:
+        selected_uids = tuple(selected_training_study_uids)
+        if not selected_uids or any(not isinstance(uid, str) or not uid.strip() for uid in selected_uids):
+            raise TrainingDataError("selected training identities must be non-empty")
+        if len(set(selected_uids)) != len(selected_uids):
+            raise TrainingDataError("selected training identities must be unique")
+        eligible = {
+            item.study_instance_uid: item
+            for item in fold_manifest.gold_memberships
+            if item.fold != fold
+        }
+        unknown = set(selected_uids).difference(eligible)
+        if unknown:
+            raise TrainingDataError(
+                "selected training identities must belong to reference-labeled training studies"
+            )
+        membership_by_uid = eligible
         memberships = tuple(membership_by_uid[uid] for uid in selected_uids)
     else:
         source_memberships = (
@@ -1221,6 +1246,7 @@ def build_fold_training_examples(
     series_cache: SeriesCache | None = None,
     allow_partial_inputs: bool = False,
     admitted_supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
+    selected_training_study_uids: Sequence[str] | None = None,
 ) -> tuple[TrainingExample, ...]:
     """Named convenience wrapper for the fitting partition."""
 
@@ -1234,6 +1260,7 @@ def build_fold_training_examples(
         series_cache=series_cache,
         allow_partial_inputs=allow_partial_inputs,
         admitted_supervision=admitted_supervision,
+        selected_training_study_uids=selected_training_study_uids,
     )
 
 

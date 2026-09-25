@@ -33,6 +33,7 @@ from rsna_knee.real_inference import (
     RealIntegrationError,
     load_integration_manifest,
     load_real_study,
+    iter_real_studies,
     run_real_inference,
     build_integration_manifest,
     main as real_inference_main,
@@ -142,6 +143,64 @@ def test_private_manifest_round_trip_and_loader_preserve_source_mapping(tmp_path
         (tmp_path / entries[0]).read_bytes()
     ).hexdigest()
     assert loaded_manifest.manifest_checksum
+
+
+def test_real_study_iterator_limits_reads_to_a_unique_manifest_subset(tmp_path: Path) -> None:
+    studies = []
+    for study_index in range(2):
+        study_uid = f"1.2.826.0.1.3680043.8.498.{100 + study_index}"
+        series_uid = f"1.2.826.0.1.3680043.8.498.{200 + study_index}"
+        entries = tuple(
+            _write_slice(
+                tmp_path,
+                study_uid,
+                series_uid,
+                f"1.2.826.0.1.3680043.8.498.{300 + study_index * 10 + index}",
+                float(index),
+            )
+            for index in range(3)
+        )
+        studies.append(
+            IntegrationStudy(
+                study_uid,
+                (IntegrationSeries(study_uid, series_uid, entries=entries),),
+            )
+        )
+    manifest = _manifest_for_studies(tuple(studies))
+    manifest_path = tmp_path / "private" / "manifest.json"
+    write_integration_manifest(manifest, manifest_path)
+    loaded_manifest = load_integration_manifest(manifest_path)
+
+    loaded = tuple(
+        iter_real_studies(
+            loaded_manifest,
+            tmp_path,
+            allow_unverified_directory=True,
+            study_uids=(studies[1].study_instance_uid,),
+        )
+    )
+
+    assert tuple(item.study.study_instance_uid for item in loaded) == (
+        studies[1].study_instance_uid,
+    )
+    with pytest.raises(RealIntegrationError, match="unique"):
+        tuple(
+            iter_real_studies(
+                loaded_manifest,
+                tmp_path,
+                allow_unverified_directory=True,
+                study_uids=(studies[1].study_instance_uid, studies[1].study_instance_uid),
+            )
+        )
+    with pytest.raises(RealIntegrationError, match="absent"):
+        tuple(
+            iter_real_studies(
+                loaded_manifest,
+                tmp_path,
+                allow_unverified_directory=True,
+                study_uids=("not-in-manifest",),
+            )
+        )
 
     with pytest.raises(RealIntegrationError, match="source ZIP"):
         load_real_study(loaded_manifest, loaded_manifest.studies[0], tmp_path)
