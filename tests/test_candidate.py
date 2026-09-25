@@ -180,6 +180,7 @@ def test_freeze_candidate_publishes_a_checksum_verified_immutable_bundle(tmp_pat
     assert loaded.manifest_checksum == bundle.manifest_checksum
     assert (bundle.root / "models" / "fold-0.pt").exists()
     assert not (bundle.root / "code" / "rsna_knee" / "training.py").exists()
+    original_manifest = bundle.manifest_path.read_bytes()
 
     with pytest.raises(FileExistsError):
         freeze_candidate(
@@ -193,6 +194,9 @@ def test_freeze_candidate_publishes_a_checksum_verified_immutable_bundle(tmp_pat
             candidate_id="candidate-001",
             code_revision="test-revision",
         )
+
+    assert bundle.manifest_path.read_bytes() == original_manifest
+    assert load_candidate(bundle.root).manifest_checksum == bundle.manifest_checksum
 
 
 def test_validate_submission_csv_accepts_exact_contract_and_order(tmp_path: Path) -> None:
@@ -260,6 +264,61 @@ def test_load_candidate_rejects_a_changed_frozen_artifact(tmp_path: Path) -> Non
 
     with pytest.raises(CandidateIntegrityError, match="changed"):
         load_candidate(bundle.root)
+
+
+def test_candidate_freeze_rejects_an_unknown_model_identity_without_publication(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "fold-0.pt"
+    _write_checkpoint(checkpoint)
+    checkpoint_payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    checkpoint_config = dict(checkpoint_payload["config"])
+    model_config = dict(checkpoint_config["model"])
+    model_config.update(
+        {
+            "schema_version": "rsna-knee-model-config-v1",
+            "model_id": "unregistered-model-v99",
+            "pooling_id": "masked-series-study-mean-v1",
+        }
+    )
+    checkpoint_config["model"] = model_config
+    checkpoint_payload["config"] = checkpoint_config
+    torch.save(checkpoint_payload, checkpoint)
+
+    oof = tmp_path / "oof.json"
+    oof.write_text(
+        json.dumps(
+            {
+                "schema_version": "rsna-knee-oof-evaluation-v2",
+                "fold_manifest_checksum": "synthetic-fold-checksum",
+                "fold_manifest_superseded": False,
+                "prediction_count": 12,
+                "run_ids": ["run-0"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    requirements = tmp_path / "requirements.lock"
+    requirements.write_text("numpy==2.2.6\npydicom==3.0.1\ntorch==2.7.1+cpu\n", encoding="utf-8")
+    notebook = tmp_path / "candidate.ipynb"
+    notebook.write_text(
+        '{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}\n',
+        encoding="utf-8",
+    )
+    destination = tmp_path / "candidate"
+
+    with pytest.raises(CandidateIntegrityError, match="model configuration is invalid"):
+        freeze_candidate(
+            destination,
+            model_checkpoints=(checkpoint,),
+            oof_evidence_path=oof,
+            code_root=Path("src/rsna_knee"),
+            cluster_requirements_path=requirements,
+            offline_requirements_path=requirements,
+            notebook_path=notebook,
+            candidate_id="candidate-unknown-model",
+            code_revision="test-revision",
+        )
+
+    assert not destination.exists()
 
 
 def test_run_candidate_inference_uses_frozen_model_and_validates_real_csv(tmp_path: Path) -> None:

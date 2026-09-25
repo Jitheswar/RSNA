@@ -17,7 +17,7 @@ import numpy as np
 import torch
 
 from .inference import InferenceEngine, infer_studies
-from .model import HierarchicalStudyModel, ModelConfig
+from .model import ModelConfig, build_study_model
 from .preprocessing import PreprocessConfig
 from .synthetic import make_synthetic_study
 from .targets import SUBMISSION_COLUMNS
@@ -69,7 +69,7 @@ def run_demo(output_path: Path, evidence_path: Path | None = None) -> dict[str, 
     preprocess = PreprocessConfig()
     model_config = ModelConfig()
     torch.manual_seed(20260911)
-    model = HierarchicalStudyModel(model_config)
+    model = build_study_model(model_config)
     engine = InferenceEngine(model, preprocess)
     studies = (
         make_synthetic_study("synthetic-study-001", series_count=2, slices_per_series=6),

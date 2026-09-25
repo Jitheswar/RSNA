@@ -31,7 +31,12 @@ from .archive import atomic_json_write
 from .dicom import DecoderPolicy
 from .geometry import GeometryPolicy
 from .inference import InferenceEngine
-from .model import HierarchicalStudyModel, ModelConfig
+from .model import (
+    HierarchicalStudyModel,
+    ModelConfig,
+    ModelConfigurationError,
+    restore_study_model,
+)
 from .preprocessing import PackingConfig, PreprocessConfig
 from .real_inference import (
     DEFAULT_REAL_DECODER_POLICY,
@@ -40,7 +45,6 @@ from .real_inference import (
     run_real_inference,
 )
 from .submission import validate_submission_csv
-from .targets import NUM_TARGETS
 
 
 CANDIDATE_SCHEMA_VERSION = "rsna-knee-candidate-v1"
@@ -233,36 +237,13 @@ def _safe_candidate_id(value: str) -> str:
 
 
 def _model_config_to_dict(config: ModelConfig) -> dict[str, object]:
-    return {
-        "image_size": list(config.image_size),
-        "channels": list(config.channels),
-        "input_channels": config.input_channels,
-        "num_targets": config.num_targets,
-    }
+    return config.to_dict()
 
 
 def _model_config_from_dict(value: object) -> ModelConfig:
-    payload = _mapping(value, "model configuration")
-    image_size = payload.get("image_size")
-    channels = payload.get("channels")
-    if not isinstance(image_size, (list, tuple)) or len(image_size) != 2:
-        raise CandidateIntegrityError("model image_size must contain two values")
-    if not isinstance(channels, (list, tuple)) or len(channels) != 3:
-        raise CandidateIntegrityError("model channels must contain three values")
     try:
-        image_size_tuple: tuple[int, int] = (int(str(image_size[0])), int(str(image_size[1])))
-        channels_tuple: tuple[int, int, int] = (
-            int(str(channels[0])),
-            int(str(channels[1])),
-            int(str(channels[2])),
-        )
-        return ModelConfig(
-            image_size=image_size_tuple,
-            channels=channels_tuple,
-            input_channels=int(str(payload.get("input_channels", 1))),
-            num_targets=int(str(payload.get("num_targets", NUM_TARGETS))),
-        )
-    except (TypeError, ValueError, OverflowError) as exc:
+        return ModelConfig.from_dict(value)
+    except ModelConfigurationError as exc:
         raise CandidateIntegrityError("model configuration is invalid") from exc
 
 
@@ -329,9 +310,8 @@ def _checkpoint_contract(path: Path) -> tuple[Mapping[str, object], ModelConfig,
     if preprocess.image_size != model_config.image_size:
         raise CandidateError(f"checkpoint model and preprocessing image sizes differ: {path}")
     try:
-        model = HierarchicalStudyModel(model_config)
-        model.load_state_dict(cast(Mapping[str, torch.Tensor], state), strict=True)
-    except (RuntimeError, TypeError, ValueError) as exc:
+        restore_study_model(model_config, state)
+    except (ModelConfigurationError, RuntimeError, TypeError, ValueError) as exc:
         raise CandidateError(f"checkpoint model state is incompatible: {path}") from exc
     _nonempty(payload.get("config_fingerprint"), "checkpoint config_fingerprint")
     return payload, model_config, preprocess, packing
@@ -799,6 +779,12 @@ def load_candidate(root: str | Path) -> CandidateBundle:
     payload = _read_json(manifest_path, "candidate manifest")
     stored_checksum = _nonempty(payload.get("manifest_checksum"), "manifest_checksum")
     _verify_manifest(candidate_root, payload, stored_checksum)
+    model_payload = _mapping(payload.get("model"), "model")
+    model_config = _model_config_from_dict(model_payload.get("configuration"))
+    inference_config = _mapping(payload.get("inference"), "inference")
+    inference_model_config = _model_config_from_dict(inference_config.get("model"))
+    if model_config != inference_model_config:
+        raise CandidateIntegrityError("candidate model and inference configurations disagree")
     candidate_id = _nonempty(payload.get("candidate_id"), "candidate_id")
     return CandidateBundle(
         root=candidate_root.resolve(),
@@ -819,9 +805,8 @@ def _load_candidate_models(bundle: CandidateBundle, device: str | torch.device) 
             raise CandidateIntegrityError("candidate checkpoint preprocessing differs from manifest")
         try:
             state = cast(Mapping[str, torch.Tensor], payload["model_state_dict"])
-            model = HierarchicalStudyModel(model_config)
-            model.load_state_dict(state, strict=True)
-        except (RuntimeError, TypeError, ValueError) as exc:
+            model = restore_study_model(model_config, state)
+        except (ModelConfigurationError, RuntimeError, TypeError, ValueError) as exc:
             raise CandidateIntegrityError(f"could not restore candidate model {path}") from exc
         model.to(device)
         model.eval()

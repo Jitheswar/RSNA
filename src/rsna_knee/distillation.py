@@ -20,7 +20,7 @@ from .folds import FOLD_IDS, FoldManifest
 from .image_model_comparison import compare_image_model_predictions
 from .image_variant import TICKET19_VARIANT, image_model_training_config
 from .inference import InferenceEngine
-from .model import HierarchicalStudyModel
+from .model import HierarchicalStudyModel, build_study_model
 from .oof import OOFRunRecord, load_oof_run_record
 from .real_inference import IntegrationManifest
 from .series_cache import SeriesCache
@@ -276,7 +276,7 @@ def _load_ticket19_teacher(
         raise DistillationExperimentError("Ticket 19 teacher checkpoint checksum does not match its run record")
 
     config = _teacher_config(integration_manifest)
-    model = HierarchicalStudyModel(config.model_config())
+    model = build_study_model(config.model_config())
     load_training_checkpoint(
         checkpoint_path,
         model=model,
@@ -500,7 +500,7 @@ def _measure_ensemble_runtime(
         started = time.perf_counter()
         models: list[HierarchicalStudyModel] = []
         for fold, checkpoint in enumerate(checkpoints):
-            model = HierarchicalStudyModel(config.model_config())
+            model = build_study_model(config.model_config())
             load_training_checkpoint(
                 checkpoint,
                 model=model,
