@@ -43,7 +43,7 @@ from .folds import (
 )
 from .geometry import GeometryPolicy
 from .inference import InferenceEngine, StudyPrediction
-from .model import HierarchicalStudyModel, ModelConfig
+from .model import HierarchicalStudyModel, ModelConfig, build_study_model
 from .preprocessing import (
     PREPROCESS_SCHEMA_VERSION,
     PackingConfig,
@@ -1388,7 +1388,7 @@ def run_real_inference(
         prior = fallback_prior or default_reference_fallback_prior()
     if model is None:
         torch.manual_seed(model_seed)
-        model = HierarchicalStudyModel(ModelConfig(image_size=manifest.preprocess_config.image_size))
+        model = build_study_model(ModelConfig(image_size=manifest.preprocess_config.image_size))
     series_cache = SeriesCache(cache_root) if cache_root is not None else None
     engine = InferenceEngine(
         model,

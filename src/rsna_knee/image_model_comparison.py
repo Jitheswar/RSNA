@@ -17,7 +17,12 @@ from .archive import atomic_json_write
 from .evaluation import evaluate_oof_predictions, roc_auc_score
 from .folds import FOLD_IDS, FoldManifest, load_fold_manifest
 from .image_variant import TICKET19_ENCODER_CHANNELS
-from .model import HierarchicalStudyModel, ModelConfig
+from .model import (
+    HierarchicalStudyModel,
+    ModelConfig,
+    ModelConfigurationError,
+    build_study_model,
+)
 from .oof import OOFArtifactError, OOFRunRecord, aggregate_oof_run_records, load_oof_run_record
 from .targets import NUM_TARGETS, TARGET_COLUMNS
 
@@ -296,19 +301,11 @@ def _arm_cost(records: Sequence[OOFRunRecord]) -> dict[str, object]:
             raise ImageModelComparisonError(f"fold run is missing final checkpoint evidence: {record.path}")
         checkpoint_evidence = cast(Mapping[str, object], run_record["checkpoint"])
         total_checkpoint_bytes += checkpoint_bytes
-        model_settings = cast(Mapping[str, object], record.config["model"])
-        image_size = cast(Sequence[int], model_settings["image_size"])
-        channels = _channels(record)
-        if len(image_size) != 2 or len(channels) != 3:
-            raise ImageModelComparisonError("run configuration has an invalid model shape")
-        model = HierarchicalStudyModel(
-            ModelConfig(
-                image_size=(image_size[0], image_size[1]),
-                channels=cast(tuple[int, int, int], channels),
-                input_channels=cast(int, model_settings["input_channels"]),
-                num_targets=cast(int, model_settings["num_targets"]),
-            )
-        )
+        try:
+            model_config = ModelConfig.from_dict(record.config.get("model"))
+            model = build_study_model(model_config)
+        except ModelConfigurationError as exc:
+            raise ImageModelComparisonError("run configuration has an invalid model identity") from exc
         current_parameter_count = sum(item.numel() for item in model.parameters())
         if parameter_count is not None and current_parameter_count != parameter_count:
             raise ImageModelComparisonError("parameter count differs between folds in one model arm")

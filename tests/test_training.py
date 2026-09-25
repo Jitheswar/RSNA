@@ -23,6 +23,7 @@ from rsna_knee.training import (
     masked_bce_loss,
     retry_is_allowed,
     run_cpu_preflight,
+    save_training_checkpoint,
     semantic_fingerprint,
     _json_sha256,
     _legacy_config_fingerprint,
@@ -33,7 +34,7 @@ from rsna_knee.training import (
 )
 from rsna_knee.folds import freeze_folds
 from rsna_knee.inventory import SourceManifest, SourceStudy
-from rsna_knee.model import HierarchicalStudyModel
+from rsna_knee.model import HierarchicalStudyModel, ModelConfig
 from rsna_knee.synthetic import make_synthetic_study
 from rsna_knee.targets import TARGET_COLUMNS
 
@@ -68,6 +69,76 @@ def test_run_record_reports_heldout_model_inference_time() -> None:
     )
 
     assert result.to_public_dict()["counts"]["heldout_model_inference_seconds"] == 1.25
+
+
+def test_checkpoint_boundary_rejects_unknown_and_incompatible_model_configurations(tmp_path) -> None:
+    config = TrainingConfig(
+        image_size=(16, 16),
+        channels=(2, 4, 8),
+        max_slices=1,
+        max_series=1,
+        successful_optimizer_steps=1,
+    )
+    model = HierarchicalStudyModel(config.model_config())
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    checkpoint = tmp_path / "checkpoint.pt"
+    save_training_checkpoint(
+        checkpoint,
+        model,
+        optimizer,
+        scheduler,
+        config,
+        successful_optimizer_steps=0,
+        attempted_batches=0,
+        skipped_batches=0,
+        loss_history=(),
+    )
+    original = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    original_bytes = checkpoint.read_bytes()
+
+    mismatched_model = HierarchicalStudyModel(
+        ModelConfig(image_size=(16, 16), channels=(3, 4, 8))
+    )
+    mismatched_optimizer = torch.optim.Adam(
+        mismatched_model.parameters(), lr=config.learning_rate
+    )
+    mismatched_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        mismatched_optimizer, lr_lambda=lambda _: 1.0
+    )
+    with pytest.raises(CheckpointError, match="does not match TrainingConfig"):
+        save_training_checkpoint(
+            checkpoint,
+            mismatched_model,
+            mismatched_optimizer,
+            mismatched_scheduler,
+            config,
+            successful_optimizer_steps=0,
+            attempted_batches=0,
+            skipped_batches=0,
+            loss_history=(),
+        )
+    assert checkpoint.read_bytes() == original_bytes
+
+    unknown = dict(original)
+    unknown_config = dict(original["config"])
+    unknown_model = dict(unknown_config["model"])
+    unknown_model["model_id"] = "unregistered-model-v99"
+    unknown_config["model"] = unknown_model
+    unknown["config"] = unknown_config
+    torch.save(unknown, checkpoint)
+    with pytest.raises(CheckpointError, match="model configuration is unsupported"):
+        load_training_checkpoint(checkpoint)
+
+    incompatible = dict(original)
+    incompatible_config = dict(original["config"])
+    incompatible_model = dict(incompatible_config["model"])
+    incompatible_model["channels"] = [3, 4, 8]
+    incompatible_config["model"] = incompatible_model
+    incompatible["config"] = incompatible_config
+    torch.save(incompatible, checkpoint)
+    with pytest.raises(TrainingConfigurationError, match="model state or configuration"):
+        load_training_checkpoint(checkpoint)
 
 
 def test_fully_masked_batches_make_no_optimizer_progress() -> None:

@@ -35,7 +35,13 @@ from torch.nn import functional as F
 from .archive import atomic_json_write
 from .domain import StudyRecord
 from .folds import FOLD_IDS, FoldManifest
-from .model import HierarchicalStudyModel, ModelConfig
+from .model import (
+    HierarchicalStudyModel,
+    ModelConfig,
+    ModelConfigurationError,
+    build_study_model,
+    restore_study_model,
+)
 from .pseudo_labels import AdmittedFoldPseudoLabels
 from .preprocessing import (
     PackedStudy,
@@ -519,12 +525,7 @@ class TrainingConfig:
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": TRAINING_SCHEMA_VERSION,
-            "model": {
-                "image_size": list(self.image_size),
-                "channels": list(self.channels),
-                "input_channels": self.input_channels,
-                "num_targets": NUM_TARGETS,
-            },
+            "model": self.model_config().to_dict(),
             "packing": self.packing_config().to_dict(),
             "preprocessing": self.preprocess_config().cache_config(),
             "optimization": {
@@ -560,6 +561,15 @@ class TrainingConfig:
             progress.pop("persistent_no_progress_limit", None)
             progress.pop("checkpoint_interval_seconds", None)
             payload["progress"] = progress
+        model_payload = payload.get("model")
+        if isinstance(model_payload, dict) and model_payload.get("model_id") == ModelConfig.model_id:
+            # Explicit identity metadata is additive for this same compact
+            # architecture, so it does not create a new scientific run.
+            model_payload = dict(model_payload)
+            model_payload.pop("schema_version", None)
+            model_payload.pop("model_id", None)
+            model_payload.pop("pooling_id", None)
+            payload["model"] = model_payload
         payload.pop("device", None)
         return payload
 
@@ -1437,6 +1447,8 @@ def save_training_checkpoint(
 
     if successful_optimizer_steps < 0 or attempted_batches < successful_optimizer_steps:
         raise CheckpointError("checkpoint progress counters are inconsistent")
+    if model.config != config.model_config():
+        raise CheckpointError("checkpoint model configuration does not match TrainingConfig")
     if sample_exposures < 0 or supervised_entry_exposures < 0:
         raise CheckpointError("checkpoint exposure counters cannot be negative")
     source_exposure_payload = None
@@ -1548,6 +1560,13 @@ def _legacy_scientific_config_payload(
     """Recreate the ticket-08 v1 scientific configuration representation."""
 
     payload = dict(config_payload)
+    model_payload = payload.get("model")
+    if isinstance(model_payload, Mapping) and model_payload.get("model_id") == ModelConfig.model_id:
+        model_payload = dict(model_payload)
+        model_payload.pop("schema_version", None)
+        model_payload.pop("model_id", None)
+        model_payload.pop("pooling_id", None)
+        payload["model"] = model_payload
     progress = payload.get("progress")
     if isinstance(progress, Mapping):
         progress_payload = dict(progress)
@@ -1746,6 +1765,10 @@ def load_training_checkpoint(
     checkpoint_fingerprint = payload.get("config_fingerprint")
     if not isinstance(checkpoint_config, Mapping) or not isinstance(checkpoint_fingerprint, str):
         raise CheckpointError("checkpoint configuration metadata is incomplete")
+    try:
+        checkpoint_model_config = ModelConfig.from_dict(checkpoint_config.get("model"))
+    except ModelConfigurationError as exc:
+        raise CheckpointError("checkpoint model configuration is unsupported") from exc
     if is_legacy_checkpoint:
         if _legacy_config_fingerprint_from_payload(checkpoint_config) != checkpoint_fingerprint:
             raise CheckpointError("legacy checkpoint configuration fingerprint is invalid")
@@ -1781,6 +1804,12 @@ def load_training_checkpoint(
         )
         checkpoint_config = payload["config"]
         checkpoint_fingerprint = payload["config_fingerprint"]
+        try:
+            checkpoint_model_config = ModelConfig.from_dict(
+                cast(Mapping[str, object], checkpoint_config).get("model")
+            )
+        except ModelConfigurationError as exc:
+            raise CheckpointError("checkpoint model configuration is unsupported") from exc
     if expected_config is not None and checkpoint_fingerprint != expected_config.config_fingerprint:
         raise TrainingConfigurationError(
             "checkpoint scientific configuration does not match the requested run"
@@ -1818,11 +1847,19 @@ def load_training_checkpoint(
         scheduler_state, Mapping
     ):
         raise CheckpointError("checkpoint is missing complete training state")
-    if model is not None:
-        try:
-            model.load_state_dict(model_state)
-        except (RuntimeError, ValueError) as exc:
-            raise TrainingConfigurationError("checkpoint model state is incompatible") from exc
+    if model is not None and model.config != checkpoint_model_config:
+        raise TrainingConfigurationError(
+            "checkpoint model configuration does not match the supplied model"
+        )
+    try:
+        if model is None:
+            restore_study_model(checkpoint_model_config, model_state)
+        else:
+            model.load_state_dict(model_state, strict=True)
+    except (ModelConfigurationError, RuntimeError, TypeError, ValueError) as exc:
+        raise TrainingConfigurationError(
+            "checkpoint model state or configuration is incompatible"
+        ) from exc
     if optimizer is not None:
         try:
             optimizer.load_state_dict(dict(optimizer_state))
@@ -2327,7 +2364,7 @@ def _train_fixed_budget_impl(
     seed_everything(config.seed)
     device = torch.device(config.device)
     if model is None:
-        model = HierarchicalStudyModel(config.model_config())
+        model = build_study_model(config.model_config())
     elif model.config != config.model_config():
         raise TrainingConfigurationError("provided model configuration does not match TrainingConfig")
     initial_model_state_sha256 = _model_state_sha256(model)
@@ -3228,7 +3265,7 @@ def run_cpu_preflight(
             and roc_auc_score((0, 1), (0.5, 0.5)) == 0.5
         )
         checks["known_roc_auc"] = known
-        tiny_model = HierarchicalStudyModel(ModelConfig(image_size=(16, 16), channels=(2, 4, 8)))
+        tiny_model = build_study_model(ModelConfig(image_size=(16, 16), channels=(2, 4, 8)))
         tiny_optimizer = torch.optim.Adam(tiny_model.parameters(), lr=0.001)
         tiny_scheduler = torch.optim.lr_scheduler.LambdaLR(tiny_optimizer, lr_lambda=lambda _: 1.0)
         tiny_images = torch.rand((2, 1, 1, 1, 16, 16))
@@ -3266,7 +3303,7 @@ def run_cpu_preflight(
                 loss_history=(),
                 overwrite=False,
             )
-            reloaded = HierarchicalStudyModel(ModelConfig(image_size=(16, 16), channels=(2, 4, 8)))
+            reloaded = build_study_model(ModelConfig(image_size=(16, 16), channels=(2, 4, 8)))
             loaded = load_training_checkpoint(checkpoint, model=reloaded)
             checks["checkpoint_save_reload"] = isinstance(loaded.get("model_state_dict"), dict)
         isolated, message = _inference_import_check()
