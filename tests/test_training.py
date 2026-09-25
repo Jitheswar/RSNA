@@ -12,6 +12,7 @@ from rsna_knee.training import (
     LEGACY_CHECKPOINT_SCHEMA_VERSION,
     TrainingConfig,
     TrainingConfigurationError,
+    TrainingDataError,
     TrainingExample,
     SupervisionProvenance,
     TrainingInterrupted,
@@ -29,6 +30,7 @@ from rsna_knee.training import (
     _legacy_config_fingerprint,
     _legacy_scientific_config_payload,
     _train_fixed_budget_impl,
+    build_fold_training_examples,
     train_fixed_budget,
     train_one_fold,
 )
@@ -324,6 +326,63 @@ def test_one_fold_uses_reference_gold_only_and_evaluates_final_checkpoint(tmp_pa
     assert (tmp_path / "fold-0" / "metrics.json").exists()
     assert (tmp_path / "fold-0" / "run.json").exists()
     assert result.evaluation.fold == 0
+
+
+def test_bounded_training_examples_accept_only_an_explicit_training_subset() -> None:
+    studies = tuple(
+        make_synthetic_study(
+            f"subset-gold-{index}", series_count=1, slices_per_series=4, seed=300 + index
+        )
+        for index in range(18)
+    )
+    source = SourceManifest(
+        "train",
+        tuple(
+            SourceStudy(
+                study.study_instance_uid,
+                True,
+                tuple((index + target_index) % 2 for target_index in range(len(TARGET_COLUMNS))),
+            )
+            for index, study in enumerate(studies)
+        )
+        + (SourceStudy("subset-report-only", True, (None,) * len(TARGET_COLUMNS)),),
+        (),
+    )
+    fold_manifest = freeze_folds(source, source_version="synthetic-subset-v1", seed=23)
+    selected = tuple(
+        item.study_instance_uid
+        for item in fold_manifest.gold_memberships
+        if item.fold != 0
+    )[:2]
+    inputs = {study.study_instance_uid: study for study in studies if study.study_instance_uid in selected}
+
+    examples = build_fold_training_examples(
+        inputs,
+        fold_manifest,
+        0,
+        selected_training_study_uids=selected,
+    )
+
+    assert tuple(item.study_instance_uid for item in examples) == selected
+    assert all(item.provenance.fold == 0 and item.provenance.held_out_excluded for item in examples)
+    assert all(item.provenance.eligible_study_uids == selected for item in examples)
+    held_out = next(
+        item.study_instance_uid for item in fold_manifest.gold_memberships if item.fold == 0
+    )
+    with pytest.raises(TrainingDataError, match="reference-labeled training"):
+        build_fold_training_examples(
+            inputs,
+            fold_manifest,
+            0,
+            selected_training_study_uids=(selected[0], held_out),
+        )
+    with pytest.raises(TrainingDataError, match="unique"):
+        build_fold_training_examples(
+            inputs,
+            fold_manifest,
+            0,
+            selected_training_study_uids=(selected[0], selected[0]),
+        )
 
 
 def test_one_fold_rejects_a_nonempty_trainer_directory(tmp_path) -> None:

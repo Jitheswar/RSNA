@@ -1015,13 +1015,31 @@ def iter_real_studies(
     *,
     require_complete_series: bool = True,
     allow_unverified_directory: bool = False,
+    study_uids: Sequence[str] | None = None,
 ) -> Iterator[LoadedStudy]:
-    """Yield canonical manifest studies while keeping a ZIP handle open once."""
+    """Yield canonical manifest studies while keeping a ZIP handle open once.
+
+    ``study_uids`` limits reading to a declared manifest subset. It cannot add
+    studies or alter the canonical series mapping and is intended for bounded
+    training-only diagnostics.
+    """
 
     if allow_unverified_directory:
         _validate_local_smoke_scope(manifest, Path(source))
+    selected: set[str] | None = None
+    if study_uids is not None:
+        selected = set(study_uids)
+        if not selected or any(not isinstance(uid, str) or not uid.strip() for uid in study_uids):
+            raise RealIntegrationError("selected study identities must be non-empty")
+        if len(selected) != len(study_uids):
+            raise RealIntegrationError("selected study identities must be unique")
+        unknown = selected.difference(manifest.study_uids)
+        if unknown:
+            raise RealIntegrationError("selected study is absent from the integration manifest")
     with _SourceReader(Path(source), allow_unverified_directory=allow_unverified_directory) as reader:
         for study_manifest in manifest.studies:
+            if selected is not None and study_manifest.study_instance_uid not in selected:
+                continue
             yield _load_real_study_with_reader(
                 manifest,
                 study_manifest,
