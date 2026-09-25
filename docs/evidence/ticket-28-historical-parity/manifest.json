@@ -1,0 +1,19 @@
+{
+  "candidate_id": "ticket-11-local-candidate-20260911-v1",
+  "identical_bytes": true,
+  "input": "same synthetic three-slice DICOM study and frozen candidate in old bundled path and new shared-construction path",
+  "outputs": {
+    "new": {
+      "bytes": 396,
+      "file": "new-submission.csv",
+      "sha256": "181d9e23e972b352b2557e08ad8b0b9640b051e7b8e0dc6532a799551c8759e5"
+    },
+    "old": {
+      "bytes": 396,
+      "file": "old-submission.csv",
+      "sha256": "181d9e23e972b352b2557e08ad8b0b9640b051e7b8e0dc6532a799551c8759e5"
+    }
+  },
+  "schema_version": "rsna-ticket28-historical-parity-v1",
+  "source_evidence_directory": "/tmp/rsna-ticket28-history.91huyO"
+}
