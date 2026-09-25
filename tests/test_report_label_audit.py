@@ -15,6 +15,7 @@ from rsna_knee.report_label_audit import (
     _target_metrics,
     make_policy_payload,
     validate_frozen_policy,
+    wilson_interval,
 )
 from rsna_knee.report_labels import interpret_report
 from rsna_knee.supervision import merge_reference_and_weak_labels
@@ -140,6 +141,68 @@ def test_paired_coverage_separates_new_calls_from_shared_admitted_calls() -> Non
     assert paired["learned_only_admitted_calls"] == 1
     assert paired["shared_admitted_by_both_calls"] == 1
     assert paired["shared_admitted_by_either_calls"] == 1
+    assert paired["learned_only_reference_reliability_95_ci"] is None
+    assert paired["shared_learned_reference_support"] is None
+    assert paired["shared_learned_reference_reliability_95_ci"] is None
+
+
+def test_paired_gold_metrics_include_wilson_intervals_for_new_and_shared_calls() -> None:
+    def gold_pair(uid: str, reference: int, ticket15_state: str, learned_state: str) -> tuple[LabelObservation, LabelObservation]:
+        def row(state: str) -> LabelObservation:
+            return LabelObservation(
+                study_uid=uid,
+                cohort="gold",
+                assigned_fold=0,
+                report_sha256="d" * 64,
+                states=(state,) + ("unknown",) * (NUM_TARGETS - 1),
+                consuming_folds=(0,),
+                reference_labels=(reference,) + (0,) * (NUM_TARGETS - 1),
+            )
+
+        return row(ticket15_state), row(learned_state)
+
+    pairs = (
+        gold_pair("learned-new-correct", 1, "unknown", "positive"),
+        gold_pair("learned-new-wrong", 0, "not-mentioned", "positive"),
+        gold_pair("shared-correct", 1, "positive", "negative"),
+        gold_pair("shared-mixed", 0, "negative", "negative"),
+        gold_pair("ticket15-only", 0, "negative", "unknown"),
+    )
+    ticket15_gates = {
+        (0, "positive"): Gate("ACL", "positive", 20, 10, 10, 10, 1.0, 0.8, 1.0, 0.5, True, "admitted"),
+        (0, "negative"): Gate("ACL", "negative", 20, 10, 10, 10, 1.0, 0.8, 1.0, 0.5, True, "admitted"),
+    }
+    learned_gates = {
+        (0, "positive"): Gate("ACL", "positive", 20, 10, 10, 10, 1.0, 0.8, 1.0, 0.5, True, "admitted"),
+        (0, "negative"): Gate("ACL", "negative", 20, 10, 10, 10, 1.0, 0.8, 1.0, 0.5, True, "admitted"),
+    }
+
+    paired = _paired_coverage(
+        tuple(left for left, _ in pairs),
+        tuple(right for _, right in pairs),
+        0,
+        ticket15_gates,
+        learned_gates,
+        with_reference=True,
+    )
+
+    assert paired["learned_only_new_calls"] == 2
+    assert paired["learned_only_reference_correct"] == 1
+    assert paired["learned_only_reference_support"] == 2
+    assert paired["learned_only_reference_reliability"] == 0.5
+    assert paired["learned_only_reference_reliability_95_ci"] == list(wilson_interval(1, 2))
+    assert paired["shared_calls"] == 2
+    assert paired["shared_ticket15_reference_correct"] == 2
+    assert paired["shared_ticket15_reference_support"] == 2
+    assert paired["shared_ticket15_reference_reliability"] == 1.0
+    assert paired["shared_ticket15_reference_reliability_95_ci"] == list(wilson_interval(2, 2))
+    assert paired["shared_learned_reference_correct"] == 1
+    assert paired["shared_learned_reference_support"] == 2
+    assert paired["shared_learned_reference_reliability"] == 0.5
+    assert paired["shared_learned_reference_reliability_95_ci"] == list(wilson_interval(1, 2))
+    assert paired["ticket15_only_reference_correct"] == 1
+    assert paired["ticket15_only_reference_support"] == 1
+    assert paired["ticket15_only_reference_reliability_95_ci"] == list(wilson_interval(1, 1))
 
 
 def test_heldout_metrics_separate_raw_and_policy_admitted_reliability() -> None:

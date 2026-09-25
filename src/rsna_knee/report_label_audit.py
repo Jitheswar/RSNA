@@ -292,30 +292,32 @@ class Gate:
         }
 
 
-def wilson_interval(successes: int, total: int, *, confidence_level: float = 0.95) -> tuple[float, float] | None:
-    """Return the two-sided Wilson interval; None means no estimable calls."""
-
+def _wilson_interval_at_z(successes: int, total: int, z: float) -> tuple[float, float] | None:
     if total == 0:
         return None
     if successes < 0 or successes > total:
         raise ReportLabelAuditError("Wilson successes must be within the call support")
-    z = NormalDist().inv_cdf(0.5 + confidence_level / 2.0)
     proportion = successes / total
     denominator = 1.0 + z * z / total
     center = (proportion + z * z / (2.0 * total)) / denominator
     radius = z * math.sqrt(proportion * (1.0 - proportion) / total + z * z / (4.0 * total * total)) / denominator
     return max(0.0, center - radius), min(1.0, center + radius)
+
+
+def wilson_interval(successes: int, total: int, *, confidence_level: float = 0.95) -> tuple[float, float] | None:
+    """Return the two-sided Wilson interval; None means no estimable calls."""
+
+    if total == 0:
+        return None
+    z = NormalDist().inv_cdf(0.5 + confidence_level / 2.0)
+    return _wilson_interval_at_z(successes, total, z)
 
 
 def _one_sided_wilson(successes: int, total: int, *, confidence_level: float = 0.95) -> tuple[float, float] | None:
     if total == 0:
         return None
     z = NormalDist().inv_cdf(confidence_level)
-    proportion = successes / total
-    denominator = 1.0 + z * z / total
-    center = (proportion + z * z / (2.0 * total)) / denominator
-    radius = z * math.sqrt(proportion * (1.0 - proportion) / total + z * z / (4.0 * total * total)) / denominator
-    return max(0.0, center - radius), min(1.0, center + radius)
+    return _wilson_interval_at_z(successes, total, z)
 
 
 def _fit_gates(source: LabelSource, consuming_fold: int) -> dict[tuple[int, str], Gate]:
@@ -525,6 +527,7 @@ def _paired_coverage(
     ticket15_only = learned_only = shared = neither = agreement = disagreement = 0
     learned_only_correct = learned_only_support = 0
     ticket15_only_correct = ticket15_only_support = 0
+    shared_ticket15_correct = shared_learned_correct = shared_reference_support = 0
     admitted_learned_only = admitted_ticket15_only = 0
     shared_admitted_by_ticket15 = shared_admitted_by_learned = 0
     shared_admitted_by_both = shared_admitted_by_either = 0
@@ -541,6 +544,15 @@ def _paired_coverage(
             shared += 1
             agreement += left_state == right_state
             disagreement += left_state != right_state
+            if with_reference:
+                if left.reference_labels is None or right.reference_labels is None:
+                    raise ReportLabelAuditError("shared gold calls require reference labels from both sources")
+                if left.reference_labels != right.reference_labels:
+                    raise ReportLabelAuditError("paired gold calls have conflicting reference labels")
+                reference = left.reference_labels[target_index]
+                shared_reference_support += 1
+                shared_ticket15_correct += _state_value(left_state) == reference
+                shared_learned_correct += _state_value(right_state) == reference
             left_admitted = _admitted_state(left_state, ticket15_gates[(target_index, left_state)])
             right_admitted = _admitted_state(right_state, learned_gates[(target_index, right_state)])
             shared_admitted_by_ticket15 += int(left_admitted)
@@ -563,6 +575,10 @@ def _paired_coverage(
                 learned_only_correct += _state_value(right_state) == right.reference_labels[target_index]
         else:
             neither += 1
+    learned_only_ci = wilson_interval(learned_only_correct, learned_only_support)
+    ticket15_only_ci = wilson_interval(ticket15_only_correct, ticket15_only_support)
+    shared_ticket15_ci = wilson_interval(shared_ticket15_correct, shared_reference_support)
+    shared_learned_ci = wilson_interval(shared_learned_correct, shared_reference_support)
     return {
         "ticket15_only_calls": ticket15_only,
         "learned_only_new_calls": learned_only,
@@ -581,11 +597,29 @@ def _paired_coverage(
         "learned_only_reference_reliability": (
             learned_only_correct / learned_only_support if with_reference and learned_only_support else None
         ),
+        "learned_only_reference_reliability_95_ci": list(learned_only_ci) if learned_only_ci else None,
         "ticket15_only_reference_correct": ticket15_only_correct if with_reference else None,
         "ticket15_only_reference_support": ticket15_only_support if with_reference else None,
         "ticket15_only_reference_reliability": (
             ticket15_only_correct / ticket15_only_support if with_reference and ticket15_only_support else None
         ),
+        "ticket15_only_reference_reliability_95_ci": list(ticket15_only_ci) if ticket15_only_ci else None,
+        "shared_ticket15_reference_correct": shared_ticket15_correct if with_reference else None,
+        "shared_ticket15_reference_support": shared_reference_support if with_reference else None,
+        "shared_ticket15_reference_reliability": (
+            shared_ticket15_correct / shared_reference_support
+            if with_reference and shared_reference_support
+            else None
+        ),
+        "shared_ticket15_reference_reliability_95_ci": list(shared_ticket15_ci) if shared_ticket15_ci else None,
+        "shared_learned_reference_correct": shared_learned_correct if with_reference else None,
+        "shared_learned_reference_support": shared_reference_support if with_reference else None,
+        "shared_learned_reference_reliability": (
+            shared_learned_correct / shared_reference_support
+            if with_reference and shared_reference_support
+            else None
+        ),
+        "shared_learned_reference_reliability_95_ci": list(shared_learned_ci) if shared_learned_ci else None,
     }
 
 
