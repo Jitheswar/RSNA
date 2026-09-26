@@ -226,7 +226,7 @@ def write_ticket37_approval(
 ) -> Path:
     """Write the explicit model/report-use authorization outside the repository."""
 
-    return write_immutable_json(
+    return write_ticket37_json(
         path,
         ticket37_approval_record(
             approval_reference=approval_reference,
@@ -1428,7 +1428,11 @@ def write_ticket37_json(
     *,
     mode: int = 0o600,
 ) -> Path:
-    return write_immutable_json(path, dict(payload), mode=mode)
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if mode == 0o600:
+        destination.parent.chmod(0o700)
+    return write_immutable_json(destination, dict(payload), mode=mode)
 
 
 def sha256_file(path: str | Path) -> str:

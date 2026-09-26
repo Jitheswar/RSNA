@@ -95,6 +95,7 @@ def _current_peak_rss_bytes() -> int:
 def _cmd_approve(args: argparse.Namespace) -> int:
     output = _outside_repository(args.output, "ticket-37 approval artifact")
     output.parent.mkdir(parents=True, exist_ok=True)
+    output.parent.chmod(0o700)
     path = write_ticket37_approval(
         output,
         approval_reference=args.approval_reference,
@@ -129,7 +130,8 @@ def _cmd_pilot(args: argparse.Namespace) -> int:
     output_root = _outside_repository(args.output_dir, "ticket-37 pilot output")
     private_root = output_root / "private"
     public_root = output_root / "public"
-    private_root.mkdir(parents=True, exist_ok=True)
+    private_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    private_root.chmod(0o700)
     public_root.mkdir(parents=True, exist_ok=True)
 
     manifest, corpus = load_ticket37_inputs(

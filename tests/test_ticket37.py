@@ -237,6 +237,7 @@ def test_ticket37_private_json_is_restrictive_and_immutable(tmp_path) -> None:
     write_ticket37_json(path, {"schema_version": "fixture"})
 
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     with pytest.raises(ReportLabelAuditError, match="immutable artifact already exists"):
         write_ticket37_json(path, {"schema_version": "changed"})
 
