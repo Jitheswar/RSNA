@@ -259,6 +259,18 @@ def test_ticket37_private_json_refuses_symlinks_and_permissive_existing_director
     assert stat.S_IMODE(shared.stat().st_mode) == 0o755
 
 
+def test_ticket37_public_model_manifest_can_live_in_a_shared_snapshot_directory(tmp_path) -> None:
+    model_directory = tmp_path / "public-model"
+    model_directory.mkdir(mode=0o755)
+    model_directory.chmod(0o755)
+    manifest_path = model_directory / "ticket37-model-manifest.json"
+
+    write_ticket37_json(manifest_path, {"schema_version": "public-model"}, mode=0o644)
+
+    assert stat.S_IMODE(model_directory.stat().st_mode) == 0o755
+    assert stat.S_IMODE(manifest_path.stat().st_mode) == 0o644
+
+
 def test_ticket37_comparison_counts_new_calls_only_against_matching_prior_admissions() -> None:
     manifest = _manifest()
     # Restrict this public-boundary comparison to two selected studies per

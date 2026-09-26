@@ -1274,7 +1274,8 @@ def download_qwen3_snapshot(model_directory: str | Path) -> Path:
     if Path(downloaded).resolve() != target.resolve():
         raise Ticket37Error("Hugging Face returned an unexpected model snapshot directory")
     manifest = make_qwen3_snapshot_manifest(target)
-    write_ticket37_json(manifest_path, manifest)
+    # The snapshot and its digest manifest contain only public model files.
+    write_ticket37_json(manifest_path, manifest, mode=0o644)
     return target
 
 
