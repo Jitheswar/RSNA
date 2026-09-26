@@ -48,6 +48,7 @@
     "gpu_count": 0
   },
   "external_spend_usd": 0,
+  "gpu_count": 0,
   "soft_budget_bytes": 2000000000000,
   "model_use": false,
   "feature_extraction_or_prediction": false,

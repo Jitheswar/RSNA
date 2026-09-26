@@ -222,6 +222,25 @@ def test_membership_freezes_fold_safe_union_target_coverage_and_image_exclusions
             cache_root=tmp_path / "cache",
         )
 
+    approved = {
+        **pending_approval,
+        "decision": "approved",
+        "approval_status": "approved_by_project_owner",
+        "approved_by": "Project owner",
+        "approved_at": "2026-09-26T11:46:40+05:30",
+    }
+    approval_path.write_text(json.dumps(approved), encoding="utf-8")
+    accepted = _approve_cpu_batch(
+        approval_path,
+        manifest,
+        0,
+        inventory_path=tmp_path / "inventory.json",
+        reference_integration_path=tmp_path / "integration.json",
+        source_path=tmp_path / "source.zip",
+        cache_root=tmp_path / "cache",
+    )
+    assert accepted["decision"] == "approved"
+
 
 def test_batch_storage_estimate_counts_archive_once_and_rejects_over_budget() -> None:
     estimate = estimate_batch_storage(
