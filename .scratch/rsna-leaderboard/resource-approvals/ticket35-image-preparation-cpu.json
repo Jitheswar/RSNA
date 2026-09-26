@@ -1,8 +1,8 @@
 {
   "schema_version": "rsna-ticket35-cpu-preparation-approval-v1",
   "ticket": "35",
-  "decision": "pending_owner_review",
-  "approval_status": "pending_owner_decision",
+  "decision": "approved",
+  "approval_status": "approved_by_project_owner",
   "scope": "ticket35-image-preparation-single-batch",
   "membership_path": "artifacts/private/ticket35-expanded-image-preparation/membership-v2.json",
   "membership_checksum": "6cacc1f4fad294d843b6a1f42cd8a3a38b9dd57513d2e69ca6faaa8345aa4f2d",
@@ -61,7 +61,7 @@
     "stop_before_dicom_access_if_projection_exceeds_budget": true
   },
   "requested_owner_decision": "Approve only CPU image materialization for batch 0 of the checksum-bound Ticket 35 plan, under the exact single-node 16-CPU, 64-GiB, six-hour request above. The job will first measure all declared campaign roots and will stop before reading DICOM pixels if the batch peak exceeds 2 TB. This proposal authorizes no model loading, feature extraction, prediction, training, GPU use, external spend, cache cleanup, or later batch. Review measured throughput and actual cache/storage results before any further request.",
-  "approved_by": null,
-  "approved_at": null,
-  "approval_recorded_from": null
+  "approved_by": "Project owner via chat approval",
+  "approved_at": "2026-09-26T11:46:40+05:30",
+  "approval_recorded_from": "User message in this conversation: approved"
 }
