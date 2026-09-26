@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import hashlib
 import importlib
 import json
+import os
 import re
 import statistics
 import time
@@ -235,6 +236,22 @@ def write_ticket37_approval(
         ),
         mode=0o600,
     )
+
+
+def prepare_ticket37_private_directory(path: str | Path) -> Path:
+    """Create a private directory without following or changing an existing path."""
+
+    directory = Path(path)
+    absolute = Path(os.path.abspath(directory))
+    if absolute.resolve() != absolute or directory.is_symlink():
+        raise Ticket37Error("ticket-37 private output directory must not traverse a symlink")
+    existed = directory.exists()
+    if existed and not directory.is_dir():
+        raise Ticket37Error("ticket-37 private output path must be a directory")
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if existed and directory.stat().st_mode & 0o077:
+        raise Ticket37Error("ticket-37 private output directory has group or world access")
+    return directory
 
 
 def freeze_ticket37_prompt() -> tuple[str, str]:
@@ -1429,9 +1446,12 @@ def write_ticket37_json(
     mode: int = 0o600,
 ) -> Path:
     destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
     if mode == 0o600:
-        destination.parent.chmod(0o700)
+        prepare_ticket37_private_directory(destination.parent)
+        if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+            raise Ticket37Error("ticket-37 private artifact destination is not a regular file")
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
     return write_immutable_json(destination, dict(payload), mode=mode)
 
 

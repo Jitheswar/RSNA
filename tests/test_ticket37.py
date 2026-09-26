@@ -242,6 +242,23 @@ def test_ticket37_private_json_is_restrictive_and_immutable(tmp_path) -> None:
         write_ticket37_json(path, {"schema_version": "changed"})
 
 
+def test_ticket37_private_json_refuses_symlinks_and_permissive_existing_directories(tmp_path) -> None:
+    protected = tmp_path / "protected"
+    protected.mkdir(mode=0o700)
+    alias = tmp_path / "alias"
+    alias.symlink_to(protected, target_is_directory=True)
+    with pytest.raises(Ticket37Error, match="symlink"):
+        write_ticket37_json(alias / "evidence.json", {"schema_version": "fixture"})
+    assert stat.S_IMODE(protected.stat().st_mode) == 0o700
+
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o755)
+    shared.chmod(0o755)
+    with pytest.raises(Ticket37Error, match="group or world access"):
+        write_ticket37_json(shared / "evidence.json", {"schema_version": "fixture"})
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o755
+
+
 def test_ticket37_comparison_counts_new_calls_only_against_matching_prior_admissions() -> None:
     manifest = _manifest()
     # Restrict this public-boundary comparison to two selected studies per

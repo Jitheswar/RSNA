@@ -21,6 +21,7 @@ from .ticket37 import (
     load_ticket37_inputs,
     make_qwen3_snapshot_manifest,
     plan_ticket37_sample,
+    prepare_ticket37_private_directory,
     run_ticket37_pilot,
     sha256_file,
     ticket37_sample_plan_artifacts,
@@ -45,10 +46,17 @@ def _repo_root() -> Path:
 
 
 def _outside_repository(path: str | Path, description: str) -> Path:
-    resolved = Path(path).resolve()
-    if resolved == _repo_root() or _repo_root() in resolved.parents:
+    candidate = Path(os.path.abspath(path))
+    repository = _repo_root()
+    resolved = candidate.resolve()
+    if (
+        candidate == repository
+        or repository in candidate.parents
+        or resolved == repository
+        or repository in resolved.parents
+    ):
         raise Ticket37Error(f"{description} must be outside the RSNA repository")
-    return resolved
+    return candidate
 
 
 def _validate_source_identities(
@@ -94,8 +102,7 @@ def _current_peak_rss_bytes() -> int:
 
 def _cmd_approve(args: argparse.Namespace) -> int:
     output = _outside_repository(args.output, "ticket-37 approval artifact")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.parent.chmod(0o700)
+    prepare_ticket37_private_directory(output.parent)
     path = write_ticket37_approval(
         output,
         approval_reference=args.approval_reference,
@@ -130,8 +137,7 @@ def _cmd_pilot(args: argparse.Namespace) -> int:
     output_root = _outside_repository(args.output_dir, "ticket-37 pilot output")
     private_root = output_root / "private"
     public_root = output_root / "public"
-    private_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    private_root.chmod(0o700)
+    prepare_ticket37_private_directory(private_root)
     public_root.mkdir(parents=True, exist_ok=True)
 
     manifest, corpus = load_ticket37_inputs(
