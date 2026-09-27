@@ -12,7 +12,7 @@ from .folds import FOLD_IDS, FoldManifest, FoldMembership
 from .targets import NUM_TARGETS, TARGET_COLUMNS
 
 if TYPE_CHECKING:
-    from .model import HierarchicalStudyModel
+    from .model import StudyModel
     from .training import TrainingExample
 
 
@@ -1146,7 +1146,7 @@ def evaluate_oof_predictions(
 
 
 def predict_training_examples(
-    model: "HierarchicalStudyModel",
+    model: "StudyModel",
     examples: Sequence["TrainingExample"],
     *,
     device: str | torch.device = "cpu",
@@ -1165,14 +1165,33 @@ def predict_training_examples(
     with torch.inference_mode():
         for start in range(0, len(examples), batch_size):
             batch = examples[start : start + batch_size]
-            images = torch.from_numpy(np.stack([item.images for item in batch])).to(target_device)
             slice_mask = torch.from_numpy(
                 np.stack([item.slice_mask for item in batch])
             ).to(target_device)
             series_mask = torch.from_numpy(
                 np.stack([item.series_mask for item in batch])
             ).to(target_device)
-            scores = model.predict_proba(images, slice_mask, series_mask).cpu().numpy()
+            from .dinov2 import Dinov2StudyModel
+
+            if isinstance(model, Dinov2StudyModel):
+                if any(item.features is None or item.series_descriptors is None for item in batch):
+                    raise EvaluationError(
+                        "frozen encoder held-out prediction requires cached features and series descriptors"
+                    )
+                features = torch.from_numpy(
+                    np.stack([cast(np.ndarray, item.features) for item in batch])
+                ).to(target_device)
+                descriptors = torch.from_numpy(
+                    np.stack([cast(np.ndarray, item.series_descriptors) for item in batch])
+                ).to(target_device)
+                scores = model.predict_proba_from_features(
+                    features, slice_mask, series_mask, descriptors
+                ).cpu().numpy()
+            else:
+                images = torch.from_numpy(
+                    np.stack([item.images for item in batch])
+                ).to(target_device)
+                scores = model.predict_proba(images, slice_mask, series_mask).cpu().numpy()
             for item, row in zip(batch, scores, strict=True):
                 values = _validate_prediction_vector(item.study_instance_uid, row)
                 predictions[item.study_instance_uid] = values

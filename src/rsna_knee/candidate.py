@@ -32,9 +32,10 @@ from .dicom import DecoderPolicy
 from .geometry import GeometryPolicy
 from .inference import InferenceEngine
 from .model import (
-    HierarchicalStudyModel,
+    DINOV2_MODEL_ID,
     ModelConfig,
     ModelConfigurationError,
+    StudyModel,
     restore_study_model,
 )
 from .preprocessing import PackingConfig, PreprocessConfig
@@ -148,7 +149,7 @@ class CandidateExecution:
 class _CandidateEnsemble(nn.Module):
     """Internal probability-averaging adapter for one or more frozen models."""
 
-    def __init__(self, models: Sequence[HierarchicalStudyModel]) -> None:
+    def __init__(self, models: Sequence[StudyModel]) -> None:
         super().__init__()
         if not models:
             raise CandidateError("a candidate requires at least one model")
@@ -163,11 +164,26 @@ class _CandidateEnsemble(nn.Module):
         images: torch.Tensor,
         slice_mask: torch.Tensor,
         series_mask: torch.Tensor,
+        series_descriptors: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        logits = torch.stack(
-            tuple(model(images, slice_mask, series_mask) for model in self.models),
-            dim=0,
-        )
+        if self.config.model_id == DINOV2_MODEL_ID:
+            if series_descriptors is None:
+                raise CandidateError("frozen image-model candidate inference requires series descriptors")
+            logits = torch.stack(
+                tuple(
+                    cast(Any, model)(images, slice_mask, series_mask, series_descriptors)
+                    for model in self.models
+                ),
+                dim=0,
+            )
+        else:
+            logits = torch.stack(
+                tuple(
+                    cast(Any, model)(images, slice_mask, series_mask)
+                    for model in self.models
+                ),
+                dim=0,
+            )
         return logits.mean(dim=0)
 
     def predict_proba(
@@ -175,11 +191,28 @@ class _CandidateEnsemble(nn.Module):
         images: torch.Tensor,
         slice_mask: torch.Tensor,
         series_mask: torch.Tensor,
+        series_descriptors: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        probabilities = torch.stack(
-            tuple(model.predict_proba(images, slice_mask, series_mask) for model in self.models),
-            dim=0,
-        )
+        if self.config.model_id == DINOV2_MODEL_ID:
+            if series_descriptors is None:
+                raise CandidateError("frozen image-model candidate inference requires series descriptors")
+            probabilities = torch.stack(
+                tuple(
+                    cast(Any, model).predict_proba(
+                        images, slice_mask, series_mask, series_descriptors
+                    )
+                    for model in self.models
+                ),
+                dim=0,
+            )
+        else:
+            probabilities = torch.stack(
+                tuple(
+                    cast(Any, model).predict_proba(images, slice_mask, series_mask)
+                    for model in self.models
+                ),
+                dim=0,
+            )
         return probabilities.mean(dim=0).clamp(0.0, 1.0)
 
 
@@ -273,6 +306,11 @@ def _preprocess_from_dict(value: object, *, packing: PackingConfig) -> Preproces
             interpolation=str(payload.get("interpolation", "nearest")),
             padding_fill_value=float(str(payload.get("padding_fill_value", 0.0))),
             output_dtype=str(payload.get("output_dtype", "float32")),
+            representation_id=(
+                str(payload["representation_id"])
+                if payload.get("representation_id") is not None
+                else None
+            ),
         )
     except (TypeError, ValueError, OverflowError) as exc:
         raise CandidateIntegrityError("preprocessing configuration is invalid") from exc
@@ -396,19 +434,52 @@ def _pinned_packages(path: Path) -> dict[str, str]:
     return packages
 
 
-def _audit_requirements(cluster_path: Path, offline_path: Path) -> dict[str, object]:
+def _audit_requirements(
+    cluster_path: Path,
+    offline_path: Path,
+    *,
+    require_dinov2: bool = False,
+) -> dict[str, object]:
     cluster = _pinned_packages(cluster_path)
     offline = _pinned_packages(offline_path)
     for package in _REQUIRED_RUNTIME_PACKAGES:
         if cluster[package] != offline[package]:
             raise CandidateError(f"cluster and offline pin differs for {package}")
-    if any(name in {"requests", "transformers", "reportlab"} for name in offline):
+    forbidden = {"reportlab"}
+    if not require_dinov2:
+        forbidden.update({"requests", "transformers"})
+    if any(name in forbidden for name in offline):
         raise CandidateError("offline environment contains an unapproved report/network dependency")
+    optional_runtime_pins: dict[str, str] = {}
+    if require_dinov2:
+        optional_runtime_pins = {
+            "transformers": "4.53.3",
+            "safetensors": "0.6.2",
+            "huggingface-hub": "0.34.4",
+        }
+        for package, expected in optional_runtime_pins.items():
+            if cluster.get(package) != expected or offline.get(package) != expected:
+                raise CandidateError(
+                    f"DINOv2 candidate environments require the exact {package}=={expected} pin"
+                )
     return {
-        "cluster": {"sha256": _sha256_file(cluster_path), "runtime_pins": {name: cluster[name] for name in sorted(_REQUIRED_RUNTIME_PACKAGES)}},
-        "offline": {"sha256": _sha256_file(offline_path), "runtime_pins": {name: offline[name] for name in sorted(_REQUIRED_RUNTIME_PACKAGES)}},
+        "cluster": {
+            "sha256": _sha256_file(cluster_path),
+            "runtime_pins": {
+                name: cluster[name]
+                for name in sorted(_REQUIRED_RUNTIME_PACKAGES | optional_runtime_pins.keys())
+            },
+        },
+        "offline": {
+            "sha256": _sha256_file(offline_path),
+            "runtime_pins": {
+                name: offline[name]
+                for name in sorted(_REQUIRED_RUNTIME_PACKAGES | optional_runtime_pins.keys())
+            },
+        },
         "shared_runtime_pins": True,
         "runtime_network_download": False,
+        "dinov2_dependencies_required": require_dinov2,
     }
 
 
@@ -548,7 +619,11 @@ def freeze_candidate(
     if len(set(model_configs)) != 1 or len(set(preprocess_configs)) != 1 or len(set(packing_configs)) != 1:
         raise CandidateError("candidate checkpoints do not share one inference configuration")
     _, oof_audit = _audit_public_oof(oof_path)
-    requirements_audit = _audit_requirements(cluster_path, offline_path)
+    requirements_audit = _audit_requirements(
+        cluster_path,
+        offline_path,
+        require_dinov2=model_configs[0].model_id == DINOV2_MODEL_ID,
+    )
     code_files, code_audit = _audit_code_root(code_path)
     notebook_audit = _audit_notebook(notebook)
 
@@ -795,7 +870,7 @@ def load_candidate(root: str | Path) -> CandidateBundle:
 
 
 def _load_candidate_models(bundle: CandidateBundle, device: str | torch.device) -> _CandidateEnsemble:
-    models: list[HierarchicalStudyModel] = []
+    models: list[StudyModel] = []
     for path in bundle.model_paths:
         payload, model_config, preprocess, packing = _checkpoint_contract(path)
         if model_config != bundle.model_config:

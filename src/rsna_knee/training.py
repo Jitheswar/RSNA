@@ -47,6 +47,21 @@ from .model import (
     build_study_model,
     restore_study_model,
 )
+from .dinov2 import (
+    DINOV2_ARTIFACT_BYTES,
+    DINOV2_ENCODER_ID,
+    DINOV2_FEATURE_DIM,
+    DINOV2_FEATURE_REPRESENTATION,
+    DINOV2_MODEL_ID,
+    DINOV2_PREPROCESSING_ID,
+    DINOV2_RESOURCE_SCOPE,
+    DINOV2_SOURCE_REVISION,
+    DINOV2_WEIGHTS_SHA256,
+    Dinov2ResourceError,
+    Dinov2StudyModel,
+    load_dinov2_resource_approval,
+    load_dinov2_weights,
+)
 from .resnet18 import RESNET18_ENCODER_ID, RESNET18_FEATURE_DIM, RESNET18_FIXTURE_ENCODER_ID, ResNet18StudyModel
 from .pretrained import (
     RESNET18_ARTIFACT_BYTES,
@@ -530,6 +545,7 @@ class TrainingConfig:
     pooling_id: str = COMPACT_POOLING_ID
     encoder_id: str | None = None
     encoder_weights_sha256: str | None = None
+    encoder_source_revision: str | None = None
     head_hidden_size: int = 32
 
     def __post_init__(self) -> None:
@@ -596,7 +612,28 @@ class TrainingConfig:
                 != "ticket31-resnet18-224-whole-field-v1"
             ):
                 raise TrainingConfigurationError("Ticket 31 requires its versioned 224-pixel preprocessing")
-        elif self.model_id != COMPACT_MODEL_ID or self.pooling_id != COMPACT_POOLING_ID:
+        elif self.model_id == DINOV2_MODEL_ID:
+            if self.image_size != (224, 224):
+                raise TrainingConfigurationError("Ticket 38 DINOv2 requires 224-pixel inputs")
+            if self.pooling_id != ANATOMICAL_POOLING_ID:
+                raise TrainingConfigurationError("Ticket 38 requires plane-stratified pooling")
+            if self.encoder_id != DINOV2_ENCODER_ID:
+                raise TrainingConfigurationError("Ticket 38 requires the admitted DINOv2 encoder")
+            if self.encoder_weights_sha256 != DINOV2_WEIGHTS_SHA256:
+                raise TrainingConfigurationError("Ticket 38 requires the admitted DINOv2 checkpoint")
+            if self.encoder_source_revision != DINOV2_SOURCE_REVISION:
+                raise TrainingConfigurationError("Ticket 38 requires the pinned DINOv2 revision")
+            if self.device != "cpu":
+                raise TrainingConfigurationError("Ticket 38 is scoped to CPU execution")
+            if self.preprocessing_config is not None and (
+                self.preprocessing_config.representation_id != DINOV2_PREPROCESSING_ID
+            ):
+                raise TrainingConfigurationError("Ticket 38 preprocessing identity is unsupported")
+        elif (
+            self.model_id != COMPACT_MODEL_ID
+            or self.pooling_id != COMPACT_POOLING_ID
+            or self.encoder_source_revision is not None
+        ):
             raise TrainingConfigurationError("training model variant is unsupported")
 
     def model_config(self) -> ModelConfig:
@@ -608,6 +645,7 @@ class TrainingConfig:
             pooling_id=self.pooling_id,
             encoder_id=self.encoder_id,
             encoder_weights_sha256=self.encoder_weights_sha256,
+            encoder_source_revision=self.encoder_source_revision,
             head_hidden_size=self.head_hidden_size,
         )
 
@@ -621,6 +659,8 @@ class TrainingConfig:
             representation_id=(
                 "ticket31-resnet18-224-whole-field-v1"
                 if self.model_id == RESNET18_MODEL_ID
+                else DINOV2_PREPROCESSING_ID
+                if self.model_id == DINOV2_MODEL_ID
                 else None
             ),
         )
@@ -891,8 +931,12 @@ class TrainingExample:
                 raise TrainingDataError("training series descriptors must be finite numeric arrays")
         if self.features is not None:
             features = np.asarray(self.features)
-            if features.shape != (*image_shape[:2], RESNET18_FEATURE_DIM):
-                raise TrainingDataError("frozen features must have shape (series, slices, 512)")
+            if (
+                features.ndim != 3
+                or features.shape[:2] != image_shape[:2]
+                or features.shape[2] <= 0
+            ):
+                raise TrainingDataError("frozen features must have shape (series, slices, width)")
             if features.dtype.kind not in "fiu" or not np.isfinite(features).all():
                 raise TrainingDataError("frozen features must be finite numeric arrays")
         if targets.shape != (NUM_TARGETS,) or supervision_mask.shape != (NUM_TARGETS,):
@@ -1431,10 +1475,10 @@ def build_fold_examples(
     return tuple(examples)
 
 
-def _attach_cached_resnet_features(
+def _attach_cached_frozen_features(
     examples: Sequence[TrainingExample],
     *,
-    model: ResNet18StudyModel,
+    model: ResNet18StudyModel | Dinov2StudyModel,
     cache: FrozenFeatureCache,
     device: torch.device,
     fallback_cache: FrozenFeatureCache | None = None,
@@ -1450,10 +1494,16 @@ def _attach_cached_resnet_features(
             result.append(example)
             continue
         if example.series_descriptors is None:
-            raise TrainingDataError("ResNet-18 training requires declared series descriptors")
-        images = torch.from_numpy(np.asarray(example.images, dtype=np.float32)).unsqueeze(0).to(device)
-        slice_mask = torch.from_numpy(np.asarray(example.slice_mask, dtype=bool)).unsqueeze(0).to(device)
-        series_mask = torch.from_numpy(np.asarray(example.series_mask, dtype=bool)).unsqueeze(0).to(device)
+            raise TrainingDataError("frozen image models require declared series descriptors")
+        example_images = example.images
+        example_slice_mask = example.slice_mask
+        example_series_mask = example.series_mask
+        series_descriptors = example.series_descriptors
+        if example_images is None or example_slice_mask is None or example_series_mask is None:
+            raise TrainingDataError("image examples require images and both masks")
+        images = torch.from_numpy(np.asarray(example_images, dtype=np.float32)).unsqueeze(0).to(device)
+        slice_mask = torch.from_numpy(np.asarray(example_slice_mask, dtype=bool)).unsqueeze(0).to(device)
+        series_mask = torch.from_numpy(np.asarray(example_series_mask, dtype=bool)).unsqueeze(0).to(device)
 
         def compute() -> np.ndarray:
             if fallback_cache is not None:
@@ -1464,10 +1514,10 @@ def _attach_cached_resnet_features(
 
                 features, _ = fallback_cache.get_or_compute(
                     example.study_instance_uid,
-                    example.images,
-                    example.slice_mask,
-                    example.series_mask,
-                    example.series_descriptors,
+                    example_images,
+                    example_slice_mask,
+                    example_series_mask,
+                    series_descriptors,
                     unexpected_fallback_recompute,
                 )
                 cache.fallback_imports += 1
@@ -1482,10 +1532,10 @@ def _attach_cached_resnet_features(
 
         features, _ = cache.get_or_compute(
             example.study_instance_uid,
-            example.images,
-            example.slice_mask,
-            example.series_mask,
-            example.series_descriptors,
+            example_images,
+            example_slice_mask,
+            example_series_mask,
+            series_descriptors,
             compute,
         )
         result.append(replace(example, features=features))
@@ -1585,7 +1635,7 @@ def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConf
         if example.study_instance_uid in seen:
             raise TrainingDataError(f"duplicate training study {example.study_instance_uid}")
         seen.add(example.study_instance_uid)
-        if config.model_id == RESNET18_MODEL_ID:
+        if config.model_id in {RESNET18_MODEL_ID, DINOV2_MODEL_ID}:
             if example.series_descriptors is None or example.features is None:
                 raise TrainingDataError(
                     f"study {example.study_instance_uid} is missing frozen features or series descriptors"
@@ -1594,7 +1644,12 @@ def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConf
                 raise TrainingDataError(
                     f"study {example.study_instance_uid} has shape {example.images.shape}; expected {expected_shape}"
                 )
-            if tuple(example.features.shape) != (*expected_shape[:2], RESNET18_FEATURE_DIM):
+            feature_width = (
+                RESNET18_FEATURE_DIM
+                if config.model_id == RESNET18_MODEL_ID
+                else DINOV2_FEATURE_DIM
+            )
+            if tuple(example.features.shape) != (*expected_shape[:2], feature_width):
                 raise TrainingDataError(
                     f"study {example.study_instance_uid} has invalid frozen feature dimensions"
                 )
@@ -2285,6 +2340,8 @@ def _checkpoint_identity(
     )
     model_config = config.model_config()
     resnet_model = config.model_id == RESNET18_MODEL_ID
+    dinov2_model = config.model_id == DINOV2_MODEL_ID
+    frozen_encoder_model = resnet_model or dinov2_model
     compact_architecture = {
         "image_size": model_config.image_size,
         "channels": model_config.channels,
@@ -2292,7 +2349,7 @@ def _checkpoint_identity(
         "num_targets": model_config.num_targets,
     }
     architecture: Mapping[str, object] = (
-        model_config.to_dict() if resnet_model else compact_architecture
+        model_config.to_dict() if frozen_encoder_model else compact_architecture
     )
     encoder_initialization: object = (
         {
@@ -2302,6 +2359,13 @@ def _checkpoint_identity(
             "source_revision": "pytorch/vision@v0.22.1",
         }
         if resnet_model and config.encoder_id == RESNET18_ENCODER_ID
+        else {
+            "kind": "frozen-external-weights",
+            "encoder_id": config.encoder_id,
+            "sha256": config.encoder_weights_sha256,
+            "source_revision": config.encoder_source_revision,
+        }
+        if dinov2_model
         else {
             "kind": "deterministic-random-fixture",
             "encoder_id": config.encoder_id,
@@ -2314,6 +2378,11 @@ def _checkpoint_identity(
         "model_source": (
             f"external:{config.encoder_id};sha256={config.encoder_weights_sha256};frozen"
             if resnet_model and config.encoder_id == RESNET18_ENCODER_ID
+            else (
+                f"external:{config.encoder_id};revision={config.encoder_source_revision};"
+                f"sha256={config.encoder_weights_sha256};frozen"
+            )
+            if dinov2_model
             else "synthetic:random-resnet18-fixture;frozen"
             if resnet_model
             else "local:HierarchicalStudyModel;weights=deterministic-initialization"
@@ -3149,7 +3218,7 @@ def _train_fixed_budget_impl(
                 )
                 if cuda_step_start is not None:
                     cuda_step_start.record()
-                if isinstance(model, ResNet18StudyModel):
+                if isinstance(model, (ResNet18StudyModel, Dinov2StudyModel)):
                     if any(
                         example.features is None or example.series_descriptors is None
                         for example in batch_examples
@@ -3878,6 +3947,34 @@ def _train_one_fold_impl(
             "approved_at": approval["approved_at"],
             "external_spend": approval["external_spend"],
         }
+    elif config.model_id == DINOV2_MODEL_ID:
+        if pretrained_weights_path is None or resource_approval_path is None:
+            raise TrainingConfigurationError(
+                "Ticket 38 DINOv2 requires its exact weights and resource approval"
+            )
+        try:
+            approval = load_dinov2_resource_approval(resource_approval_path)
+        except Dinov2ResourceError as exc:
+            raise TrainingConfigurationError("Ticket 38 DINOv2 resource approval is invalid") from exc
+        approval_bytes = Path(resource_approval_path).read_bytes()
+        pretrained_resource_evidence = {
+            "approval_sha256": hashlib.sha256(approval_bytes).hexdigest(),
+            "artifact_id": approval["artifact_id"],
+            "source_revision": approval["source_revision"],
+            "repository": approval["repository"],
+            "download_url": approval["download_url"],
+            "expected_bytes": approval["expected_bytes"],
+            "sha256": approval["weights_sha256"],
+            "snapshot_manifest_sha256": approval["snapshot_manifest_sha256"],
+            "scope": approval["scope"],
+            "decision": approval["decision"],
+            "rights_status": approval["rights_status"],
+            "pretraining_rights_status": approval["pretraining_rights_status"],
+            "rights_basis": approval["rights_basis"],
+            "approved_by": approval["approved_by"],
+            "approved_at": approval["approved_at"],
+            "external_spend": approval["external_spend"],
+        }
     if require_preflight and not (source_fingerprint or "").strip():
         raise TrainingConfigurationError(
             "real training requires a checksum-backed source fingerprint"
@@ -4172,7 +4269,120 @@ def _train_one_fold_impl(
     feature_cache_evidence: Mapping[str, object] | None = None
     feature_cache_identity_evidence: Mapping[str, object] | None = None
     held_out_feature_materialization_seconds = 0.0
-    if config.model_id == RESNET18_MODEL_ID:
+    if config.model_id == DINOV2_MODEL_ID:
+        if allow_gpu or config.device != "cpu":
+            raise TrainingConfigurationError("Ticket 38 frozen DINOv2 runs are CPU-only")
+        if supervision is not None or additional_examples:
+            raise TrainingConfigurationError("Ticket 38 uses reference labels only")
+        if precomputed_feature_examples is not None:
+            raise TrainingConfigurationError("Ticket 38 materializes its own frozen DINOv2 features")
+        if pretrained_weights_path is None or resource_approval_path is None:
+            raise TrainingConfigurationError("Ticket 38 requires its exact DINOv2 weights and approval")
+        try:
+            pretrained_state = load_dinov2_weights(pretrained_weights_path, resource_approval_path)
+        except Dinov2ResourceError as exc:
+            raise TrainingConfigurationError("Ticket 38 DINOv2 resource admission failed") from exc
+        seed_everything(config.seed)
+        built_model = build_study_model(config.model_config())
+        if not isinstance(built_model, Dinov2StudyModel):
+            raise TrainingConfigurationError("Ticket 38 model construction returned the wrong model")
+        try:
+            built_model.load_pretrained_state(pretrained_state)
+        except ValueError as exc:
+            raise TrainingConfigurationError("admitted DINOv2 checkpoint is incompatible") from exc
+        built_model.to(torch.device(config.device))
+        membership = tuple(
+            sorted({item.study_instance_uid for item in (*training_examples, *held_out_examples)})
+        )
+        dinov2_feature_identity: dict[str, object] = {
+            "source_version": source_version,
+            "source_fingerprint": source_fingerprint,
+            "integration_manifest_checksum": integration_manifest_checksum,
+            "fold_manifest_checksum": fold_manifest.manifest_checksum,
+            "source_membership_sha256": _json_sha256(membership),
+            "encoder_id": config.encoder_id,
+            "encoder_source_revision": config.encoder_source_revision,
+            "encoder_weights_sha256": config.encoder_weights_sha256,
+            "preprocessing": config.preprocess_config().cache_config(),
+            "encoder_normalization": {
+                "kind": "replicate-grayscale-rgb-imagenet-mean-std-v1",
+                "mean": [0.485, 0.456, 0.406],
+                "std": [0.229, 0.224, 0.225],
+            },
+            "position_embedding_interpolation": {
+                "kind": "transformers-dinov2-bicubic-align-corners-false-v1",
+                "source_grid": [37, 37],
+                "input_grid": [16, 16],
+            },
+            "pooling_id": config.pooling_id,
+            "packing": config.packing_config().to_dict(),
+            "sampling_policy": "geometry-ordered-rounded-uniform-v1",
+            "output_representation": DINOV2_FEATURE_REPRESENTATION,
+            "dtype": "float32",
+        }
+        feature_root = (
+            Path(feature_cache_root)
+            if feature_cache_root is not None
+            else Path(output_dir).with_name(f"{Path(output_dir).name}-feature-cache")
+        )
+        feature_cache = FrozenFeatureCache(
+            feature_root,
+            dinov2_feature_identity,
+            feature_width=DINOV2_FEATURE_DIM,
+            read_only=read_only_feature_cache,
+        )
+        training_cache_hits_before = feature_cache.hits
+        training_cache_misses_before = feature_cache.misses
+        training_started = time.perf_counter()
+        training_examples = _attach_cached_frozen_features(
+            training_examples,
+            model=built_model,
+            cache=feature_cache,
+            device=torch.device(config.device),
+        )
+        training_seconds = time.perf_counter() - training_started
+        training_cache_hits = feature_cache.hits - training_cache_hits_before
+        training_cache_misses = feature_cache.misses - training_cache_misses_before
+        heldout_cache_hits_before = feature_cache.hits
+        heldout_cache_misses_before = feature_cache.misses
+        heldout_started = time.perf_counter()
+        held_out_examples = _attach_cached_frozen_features(
+            held_out_examples,
+            model=built_model,
+            cache=feature_cache,
+            device=torch.device(config.device),
+        )
+        heldout_seconds = time.perf_counter() - heldout_started
+        held_out_feature_materialization_seconds = heldout_seconds
+        heldout_cache_hits = feature_cache.hits - heldout_cache_hits_before
+        heldout_cache_misses = feature_cache.misses - heldout_cache_misses_before
+        feature_cache_identity_evidence = {
+            "identity": dinov2_feature_identity,
+            "identity_fingerprint": feature_cache.identity_fingerprint,
+        }
+        feature_cache_evidence = {
+            **feature_cache_identity_evidence,
+            "read_only": feature_cache.read_only,
+            "entries": feature_cache.hits + feature_cache.misses,
+            "cache_hits": feature_cache.hits,
+            "materialized_entries": feature_cache.misses,
+            "partitions": {
+                "training": {
+                    "cache_hits": training_cache_hits,
+                    "materialized_entries": training_cache_misses,
+                    "elapsed_seconds": training_seconds,
+                },
+                "held_out": {
+                    "cache_hits": heldout_cache_hits,
+                    "materialized_entries": heldout_cache_misses,
+                    "elapsed_seconds": heldout_seconds,
+                },
+            },
+            "held_out_features_used_for_prediction_only": True,
+            "encoder_adapted_on_held_out_data": False,
+        }
+        model_for_run = built_model
+    elif config.model_id == RESNET18_MODEL_ID:
         if allow_gpu:
             if config.encoder_id != RESNET18_ENCODER_ID:
                 raise TrainingConfigurationError(
@@ -4287,7 +4497,7 @@ def _train_one_fold_impl(
         training_cache_misses_before = feature_cache.misses
         training_fallback_imports_before = feature_cache.fallback_imports
         training_features_started = time.perf_counter()
-        training_examples = _attach_cached_resnet_features(
+        training_examples = _attach_cached_frozen_features(
             training_examples,
             model=built_model,
             cache=feature_cache,
@@ -4302,7 +4512,7 @@ def _train_one_fold_impl(
         heldout_cache_misses_before = feature_cache.misses
         heldout_fallback_imports_before = feature_cache.fallback_imports
         heldout_features_started = time.perf_counter()
-        held_out_examples = _attach_cached_resnet_features(
+        held_out_examples = _attach_cached_frozen_features(
             held_out_examples,
             model=built_model,
             cache=feature_cache,
@@ -4321,7 +4531,7 @@ def _train_one_fold_impl(
             additional_cache_hits_before = feature_cache.hits
             additional_cache_misses_before = feature_cache.misses
             additional_features_started = time.perf_counter()
-            additional_examples = _attach_cached_resnet_features(
+            additional_examples = _attach_cached_frozen_features(
                 additional_examples,
                 model=built_model,
                 cache=feature_cache,
@@ -4401,7 +4611,7 @@ def _train_one_fold_impl(
         model_for_run = built_model
     elif pretrained_weights_path is not None or resource_approval_path is not None:
         raise TrainingConfigurationError(
-            "pretrained resource arguments are valid only for the Ticket 31 ResNet-18 variant"
+            "pretrained resource arguments require an admitted frozen encoder"
         )
     supervision_public: dict[str, object]
     supervision_private: Mapping[str, object] | None
@@ -4536,7 +4746,7 @@ def _train_one_fold_impl(
                     "packing": config.packing_config().to_dict(),
                     "checkpoint_selection": "final_checkpoint",
                 },
-            "feature_cache_execution": dict(feature_cache_evidence or {}),
+                "feature_cache_execution": dict(feature_cache_evidence or {}),
                 "preflight": preflight.to_dict() if preflight is not None else None,
             },
         )
@@ -4605,7 +4815,7 @@ def _train_one_fold_impl(
         expected_identity=identity,
         expected_checkpoint_kind="final_selected",
     )
-    if config.model_id == RESNET18_MODEL_ID:
+    if config.model_id in {RESNET18_MODEL_ID, DINOV2_MODEL_ID}:
         from .inference import InferenceEngine, infer_studies
 
         source_studies = _study_mapping(studies)
@@ -4900,6 +5110,7 @@ def _parser() -> Any:
             "mechanics-baseline",
             "ticket19-wider-slice-encoder-v1",
             "ticket31-resnet18-imagenet1k-v1",
+            "ticket38-frozen-dinov2-small-vits14",
         ),
         default="mechanics-baseline",
         help="select a named image architecture whose values enter the scientific fingerprint",
@@ -4908,19 +5119,19 @@ def _parser() -> Any:
         "--pooling-id",
         choices=(ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID),
         default=ANATOMICAL_POOLING_ID,
-        help="freeze the ResNet-18 study-pooling comparator before held-out prediction",
+        help="freeze the study-pooling policy before held-out prediction",
     )
     parser.add_argument(
         "--pretrained-weights",
         type=Path,
         default=None,
-        help="previously admitted exact ResNet-18 weights artifact; never downloaded implicitly",
+        help="previously admitted exact encoder weights artifact; never downloaded implicitly",
     )
     parser.add_argument(
         "--resource-approval",
         type=Path,
         default=None,
-        help="exact resource and rights approval required before ResNet-18 weights are read",
+        help="exact resource and rights approval required before pretrained weights are read",
     )
     parser.add_argument("--feature-cache-root", type=Path, default=None)
     parser.add_argument("--cache-root", type=Path, default=None)
@@ -4948,6 +5159,20 @@ def _parser() -> Any:
     )
     parser.add_argument("--allow-local-smoke", action="store_true")
     return parser
+
+
+def _model_input_study_uids(
+    model_id: str,
+    gold_study_uids: Sequence[str],
+) -> tuple[str, ...] | None:
+    """Limit Ticket 38 archive access to its corrected gold reference cohort."""
+
+    if model_id != DINOV2_MODEL_ID:
+        return None
+    selected = tuple(sorted(set(gold_study_uids)))
+    if not selected or len(selected) != len(gold_study_uids):
+        raise TrainingDataError("Ticket 38 input study scope must be non-empty and unique")
+    return selected
 
 
 def _check_training_execution_context(*, require_slurm: bool, allow_local_smoke: bool) -> None:
@@ -5016,6 +5241,10 @@ def main(argv: list[str] | None = None) -> int:
             raise TrainingDataError(
                 "integration manifest does not cover every frozen gold study"
             )
+        selected_study_uids = _model_input_study_uids(
+            training_config.model_id,
+            tuple(item.study_instance_uid for item in fold_manifest.gold_memberships),
+        )
         preflight = run_cpu_preflight(
             output_path=args.preflight_evidence,
             require_isolated_python=not args.allow_local_smoke,
@@ -5028,6 +5257,7 @@ def main(argv: list[str] | None = None) -> int:
             source,
             require_complete_series=True,
             allow_unverified_directory=args.allow_local_smoke,
+            study_uids=selected_study_uids,
         ):
             studies[loaded.study.study_instance_uid] = loaded.study
         cache = SeriesCache(args.cache_root) if args.cache_root is not None else None

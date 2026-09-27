@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence, cast
 
 import numpy as np
 import torch
 
 from .domain import StudyRecord
-from .model import HierarchicalStudyModel
+from .model import DINOV2_MODEL_ID, StudyModel
 from .preprocessing import (
     PackedStudy,
     PreprocessConfig,
@@ -55,7 +55,7 @@ class InferenceEngine:
 
     def __init__(
         self,
-        model: HierarchicalStudyModel,
+        model: StudyModel,
         preprocess_config: PreprocessConfig = PreprocessConfig(),
         *,
         device: str | torch.device = "cpu",
@@ -93,7 +93,17 @@ class InferenceEngine:
         slice_mask = torch.from_numpy(packed.slice_mask).unsqueeze(0).to(self.device)
         series_mask = torch.from_numpy(packed.series_mask).unsqueeze(0).to(self.device)
         with torch.inference_mode():
-            scores = self.model.predict_proba(images, slice_mask, series_mask).squeeze(0).cpu().numpy()
+            if self.model.config.model_id == DINOV2_MODEL_ID:
+                if packed.series_descriptors is None:
+                    raise InferenceError("packed study is missing frozen-model series descriptors")
+                descriptors = torch.from_numpy(packed.series_descriptors).unsqueeze(0).to(self.device)
+                scores = cast(Any, self.model).predict_proba(
+                    images, slice_mask, series_mask, descriptors
+                ).squeeze(0).cpu().numpy()
+            else:
+                scores = cast(Any, self.model).predict_proba(
+                    images, slice_mask, series_mask
+                ).squeeze(0).cpu().numpy()
         values = np.asarray(scores, dtype=np.float64)
         if values.shape != (NUM_TARGETS,) or not np.isfinite(values).all():
             raise InferenceError(f"model returned an invalid score vector for {packed.study_instance_uid}")

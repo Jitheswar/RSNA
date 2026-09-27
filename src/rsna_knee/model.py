@@ -10,6 +10,15 @@ from torch import nn
 
 from .targets import NUM_TARGETS
 from .pretrained import RESNET18_SHA256
+from .dinov2 import (
+    DINOV2_ENCODER_ID,
+    DINOV2_IMAGE_SIZE,
+    DINOV2_MODEL_ID,
+    DINOV2_POOLING_ID,
+    DINOV2_SOURCE_REVISION,
+    DINOV2_WEIGHTS_SHA256,
+    Dinov2StudyModel,
+)
 from .resnet18 import (
     ANATOMICAL_POOLING_ID,
     RESNET18_ENCODER_ID,
@@ -48,6 +57,7 @@ class ModelConfig:
     pooling_id: str = COMPACT_POOLING_ID
     encoder_id: str | None = None
     encoder_weights_sha256: str | None = None
+    encoder_source_revision: str | None = None
     head_hidden_size: int = 32
 
     def __post_init__(self) -> None:
@@ -62,7 +72,11 @@ class ModelConfig:
         if self.model_id == COMPACT_MODEL_ID:
             if self.pooling_id != COMPACT_POOLING_ID:
                 raise ValueError("compact model configuration has an unsupported pooling identity")
-            if self.encoder_id is not None or self.encoder_weights_sha256 is not None:
+            if (
+                self.encoder_id is not None
+                or self.encoder_weights_sha256 is not None
+                or self.encoder_source_revision is not None
+            ):
                 raise ValueError("compact model configuration cannot name an external encoder")
         elif self.model_id == RESNET18_MODEL_ID:
             if self.input_channels != 1 or min(self.image_size) < 32:
@@ -76,6 +90,21 @@ class ModelConfig:
                 raise ValueError("fixture encoder cannot claim a pretrained artifact digest")
             if self.pooling_id not in {ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID}:
                 raise ValueError("ResNet-18 configuration has an unsupported pooling identity")
+            if self.head_hidden_size <= 0:
+                raise ValueError("head_hidden_size must be positive")
+            if self.encoder_source_revision is not None:
+                raise ValueError("ResNet-18 revision is pinned by its registered encoder identity")
+        elif self.model_id == DINOV2_MODEL_ID:
+            if self.image_size != DINOV2_IMAGE_SIZE or self.input_channels != 1:
+                raise ValueError("DINOv2 requires grayscale 224 by 224 inputs")
+            if (
+                self.encoder_id != DINOV2_ENCODER_ID
+                or self.encoder_weights_sha256 != DINOV2_WEIGHTS_SHA256
+                or self.encoder_source_revision != DINOV2_SOURCE_REVISION
+            ):
+                raise ValueError("DINOv2 configuration requires the exact admitted model revision and weights")
+            if self.pooling_id != DINOV2_POOLING_ID:
+                raise ValueError("DINOv2 configuration has an unsupported pooling identity")
             if self.head_hidden_size <= 0:
                 raise ValueError("head_hidden_size must be positive")
         else:
@@ -98,6 +127,15 @@ class ModelConfig:
                 {
                     "encoder_id": self.encoder_id,
                     "encoder_weights_sha256": self.encoder_weights_sha256,
+                    "head_hidden_size": self.head_hidden_size,
+                }
+            )
+        elif self.model_id == DINOV2_MODEL_ID:
+            payload.update(
+                {
+                    "encoder_id": self.encoder_id,
+                    "encoder_weights_sha256": self.encoder_weights_sha256,
+                    "encoder_source_revision": self.encoder_source_revision,
                     "head_hidden_size": self.head_hidden_size,
                 }
             )
@@ -129,7 +167,9 @@ class ModelConfig:
                 SIMPLE_POOLING_ID,
             }:
                 raise ModelConfigurationError(f"unsupported pooling identity {pooling_id!r}")
-            if model_id not in {COMPACT_MODEL_ID, RESNET18_MODEL_ID}:
+            if model_id == DINOV2_MODEL_ID and pooling_id != DINOV2_POOLING_ID:
+                raise ModelConfigurationError(f"unsupported pooling identity {pooling_id!r}")
+            if model_id not in {COMPACT_MODEL_ID, RESNET18_MODEL_ID, DINOV2_MODEL_ID}:
                 raise ModelConfigurationError(f"unsupported model identity {model_id!r}")
             allowed = {
                 "schema_version",
@@ -142,6 +182,15 @@ class ModelConfig:
             }
             if model_id == RESNET18_MODEL_ID:
                 allowed.update({"encoder_id", "encoder_weights_sha256", "head_hidden_size"})
+            if model_id == DINOV2_MODEL_ID:
+                allowed.update(
+                    {
+                        "encoder_id",
+                        "encoder_weights_sha256",
+                        "encoder_source_revision",
+                        "head_hidden_size",
+                    }
+                )
         unexpected = set(payload) - allowed
         if unexpected:
             raise ModelConfigurationError(
@@ -173,6 +222,11 @@ class ModelConfig:
                 encoder_weights_sha256=(
                     str(payload["encoder_weights_sha256"])
                     if payload.get("encoder_weights_sha256") is not None
+                    else None
+                ),
+                encoder_source_revision=(
+                    str(payload["encoder_source_revision"])
+                    if payload.get("encoder_source_revision") is not None
                     else None
                 ),
                 head_hidden_size=int(str(payload.get("head_hidden_size", 32))),
@@ -265,7 +319,7 @@ class HierarchicalStudyModel(nn.Module):
         return torch.sigmoid(self(images, slice_mask, series_mask)).clamp(0.0, 1.0)
 
 
-StudyModel = HierarchicalStudyModel | ResNet18StudyModel
+StudyModel = HierarchicalStudyModel | ResNet18StudyModel | Dinov2StudyModel
 
 
 def build_study_model(config: ModelConfig) -> StudyModel:
@@ -280,6 +334,11 @@ def build_study_model(config: ModelConfig) -> StudyModel:
             return ResNet18StudyModel(config)
         except (TypeError, ValueError) as exc:
             raise ModelConfigurationError("model configuration selects an invalid ResNet-18 implementation") from exc
+    if config.model_id == DINOV2_MODEL_ID:
+        try:
+            return Dinov2StudyModel(config)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise ModelConfigurationError("model configuration selects an invalid DINOv2 implementation") from exc
     raise ModelConfigurationError("model configuration selects an unsupported implementation")
 
 
@@ -305,6 +364,7 @@ __all__ = [
     "COMPACT_MODEL_ID",
     "COMPACT_POOLING_ID",
     "RESNET18_MODEL_ID",
+    "DINOV2_MODEL_ID",
     "ANATOMICAL_POOLING_ID",
     "SIMPLE_POOLING_ID",
     "MODEL_CONFIG_SCHEMA_VERSION",
