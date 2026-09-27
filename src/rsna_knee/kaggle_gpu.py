@@ -34,7 +34,7 @@ from .training import (
     TrainingDataError,
     TrainingInterrupted,
     TrainingResult,
-    _attach_cached_resnet_features,
+    _attach_cached_frozen_features,
     _default_run_id,
     _model_state_sha256,
     _new_kaggle_gpu_execution_authorization,
@@ -860,7 +860,7 @@ def _materialize_kaggle_frozen_features(
     encoder = _make_pretrained_model(request).to(torch.device(config.device))
     encoder.eval()
     feature_started = time.monotonic()
-    featured_examples = _attach_cached_resnet_features(
+    featured_examples = _attach_cached_frozen_features(
         examples,
         model=encoder,
         cache=cache,
