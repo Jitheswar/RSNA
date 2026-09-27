@@ -12,11 +12,14 @@ from typing import Any, Mapping
 from .gpu import (
     GPU_DEFAULT_PARTITION,
     GpuResourceRequest,
+    _training_config_from_dict,
     prepare_gpu_experiment,
+    record_gpu_allocation,
     run_approved_gpu_experiment,
     submit_gpu_experiment,
 )
 from .training import TrainingConfig, TrainingDataError, run_cpu_preflight
+from .gpu_campaign import reconcile_gpu_unallocated_attempt
 
 
 _TICKET13_CPU_PREFLIGHT_RESOURCES = {
@@ -74,11 +77,16 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--output", type=Path, required=True)
     prepare.add_argument("--experiment-id", default=None)
     prepare.add_argument("--identity-json", type=Path, default=None)
+    prepare.add_argument("--execution-json", type=Path, default=None)
+    prepare.add_argument("--training-config-json", type=Path, default=None)
+    prepare.add_argument("--campaign-ledger", type=Path, default=None)
+    prepare.add_argument("--reserved-comparison-hours", type=float, default=0.0)
+    prepare.add_argument("--comparison-reserve-release-minutes", type=int, default=0)
     prepare.add_argument("--partition", default=GPU_DEFAULT_PARTITION)
     prepare.add_argument("--gres", default="gpu:1")
     prepare.add_argument("--cpus-per-task", type=int, default=16)
     prepare.add_argument("--memory-gb", type=int, default=64)
-    prepare.add_argument("--wall-time-minutes", type=int, default=360)
+    prepare.add_argument("--wall-time-minutes", type=int, default=None)
     prepare.add_argument("--exclusive", action="store_true")
     prepare.add_argument("--smoke-test", action="store_true")
     prepare.add_argument("--steps", type=int, default=None)
@@ -114,28 +122,66 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--source-version", required=True)
     run.add_argument("--source-fingerprint", default=None)
     run.add_argument("--cache-root", type=Path, default=None)
+
+    allocation = subparsers.add_parser(
+        "record-allocation",
+        help="record Slurm queue wait and allocated time from the job exit trap",
+    )
+    allocation.add_argument("--ledger", type=Path, required=True)
+    allocation.add_argument("--request-checksum", required=True)
+    allocation.add_argument("--attempt-number", type=int, required=True)
+    allocation.add_argument("--job-id", required=True)
+    allocation.add_argument("--allocated-start-epoch", type=int, required=True)
+    allocation.add_argument("--allocated-end-epoch", type=int, required=True)
+    allocation.add_argument("--exit-code", type=int, required=True)
+    allocation.add_argument("--submission-wait", action="store_true")
+
+    reconcile = subparsers.add_parser(
+        "reconcile-unallocated",
+        help="close a terminal Slurm job verified to have ended before GPU allocation",
+    )
+    reconcile.add_argument("--ledger", type=Path, required=True)
+    reconcile.add_argument("--request-checksum", required=True)
+    reconcile.add_argument("--attempt-number", type=int, required=True)
+    reconcile.add_argument("--job-id", required=True)
+    reconcile.add_argument(
+        "--scheduler-evidence",
+        type=Path,
+        required=True,
+        help="saved output of sacct -n -P --format=JobIDRaw,State,Submit,Start,End,ElapsedRaw",
+    )
     return parser
 
 
 def _prepare(args: argparse.Namespace) -> int:
-    steps = args.steps if args.steps is not None else (1 if args.smoke_test else 100)
-    image_size = _tuple_ints(args.image_size, count=2, field_name="--image-size")
-    channels = _tuple_ints(args.channels, count=3, field_name="--channels")
     identity = _read_json_object(args.identity_json) if args.identity_json is not None else None
-    config = TrainingConfig(
-        image_size=(image_size[0], image_size[1]),
-        channels=(channels[0], channels[1], channels[2]),
-        max_slices=args.max_slices,
-        max_series=args.max_series,
-        successful_optimizer_steps=steps,
-        device="cuda",
-    )
+    execution = _read_json_object(args.execution_json) if args.execution_json is not None else None
+    if args.training_config_json is not None:
+        config = _training_config_from_dict(_read_json_object(args.training_config_json))
+    else:
+        steps = args.steps if args.steps is not None else (1 if args.smoke_test else 100)
+        image_size = _tuple_ints(args.image_size, count=2, field_name="--image-size")
+        channels = _tuple_ints(args.channels, count=3, field_name="--channels")
+        config = TrainingConfig(
+            image_size=(image_size[0], image_size[1]),
+            channels=(channels[0], channels[1], channels[2]),
+            max_slices=args.max_slices,
+            max_series=args.max_series,
+            successful_optimizer_steps=steps,
+            device="cuda",
+        )
+    if config.device != "cuda" and not config.device.startswith("cuda:"):
+        raise ValueError("--training-config-json must select a CUDA device")
     resource = GpuResourceRequest(
         partition=args.partition,
         gres=args.gres,
         cpus_per_task=args.cpus_per_task,
         memory_gb=args.memory_gb,
-        wall_time_minutes=args.wall_time_minutes,
+        wall_time_minutes=(
+            args.wall_time_minutes
+            if args.wall_time_minutes is not None
+            else (30 if args.smoke_test else 360)
+        ),
         exclusive=args.exclusive,
         smoke_test=args.smoke_test,
     )
@@ -143,9 +189,13 @@ def _prepare(args: argparse.Namespace) -> int:
         args.output,
         preflight_path=args.preflight,
         resource=resource,
+        campaign_ledger_path=args.campaign_ledger,
+        reserved_comparison_hours=args.reserved_comparison_hours,
+        comparison_reserve_release_minutes=args.comparison_reserve_release_minutes,
         training_config=config,
         experiment_id=args.experiment_id,
         experiment_identity=identity,
+        execution=execution,
         fold=args.fold,
         source_version=args.source_version,
         source_fingerprint=args.source_fingerprint,
@@ -154,6 +204,33 @@ def _prepare(args: argparse.Namespace) -> int:
         retry_allowed=not args.no_retry,
     )
     print(json.dumps(dict(request.payload), indent=2, sort_keys=True))
+    return 0
+
+
+def _record_allocation(args: argparse.Namespace) -> int:
+    entry = record_gpu_allocation(
+        args.ledger,
+        request_checksum=args.request_checksum,
+        attempt_number=args.attempt_number,
+        job_id=args.job_id,
+        allocated_start_epoch=args.allocated_start_epoch,
+        allocated_end_epoch=args.allocated_end_epoch,
+        exit_code=args.exit_code,
+        submission_wait=args.submission_wait,
+    )
+    print(json.dumps(dict(entry), indent=2, sort_keys=True))
+    return 0
+
+
+def _reconcile_unallocated(args: argparse.Namespace) -> int:
+    entry = reconcile_gpu_unallocated_attempt(
+        args.ledger,
+        request_checksum=args.request_checksum,
+        attempt_number=args.attempt_number,
+        job_id=args.job_id,
+        scheduler_evidence_path=args.scheduler_evidence,
+    )
+    print(json.dumps(dict(entry), indent=2, sort_keys=True))
     return 0
 
 
@@ -236,6 +313,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
             return 0 if result.status != "failed" else 1
+        if args.command == "record-allocation":
+            return _record_allocation(args)
+        if args.command == "reconcile-unallocated":
+            return _reconcile_unallocated(args)
         return _run(args)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ticket-13 GPU path failed: {exc}", file=sys.stderr)

@@ -356,6 +356,100 @@ class SeriesCache:
                 bytes_read=bytes_read,
             )
 
+    def load_validated_entry(
+        self,
+        cache_key: str,
+        *,
+        study_instance_uid: str,
+        series_instance_uid: str,
+        expected_source_entry_names: Sequence[str],
+        config: PreprocessConfig = PreprocessConfig(),
+    ) -> PreparedSeries:
+        """Read one immutable cache entry against its frozen source membership.
+
+        This boundary supports feature extraction from an already materialized
+        series without reopening the source DICOM pixels. It never rebuilds a
+        missing or stale entry.
+        """
+
+        key = _validate_cache_key(cache_key)
+        expected_entries = tuple(expected_source_entry_names)
+        if (
+            not study_instance_uid.strip()
+            or not series_instance_uid.strip()
+            or not expected_entries
+            or len(set(expected_entries)) != len(expected_entries)
+            or any(not isinstance(item, str) or not item.strip() for item in expected_entries)
+        ):
+            raise SeriesCacheError("cached series reads require exact study, series and entry identities")
+        entry = self.entry_path(key)
+        metadata = self._read_metadata(entry)
+        source = metadata.get("source")
+        if not isinstance(source, dict):
+            raise SeriesCacheIntegrityError("cache entry source identity is malformed")
+        slices_value = source.get("slices")
+        if not isinstance(slices_value, list) or not slices_value:
+            raise SeriesCacheIntegrityError("cache entry source slices are missing")
+        if (
+            source.get("study_instance_uid") != study_instance_uid
+            or source.get("series_instance_uid") != series_instance_uid
+            or metadata.get("preprocessing") != config.cache_config()
+        ):
+            raise SeriesCacheIntegrityError("cache entry identity differs from the frozen request")
+        try:
+            ordered_slices = sorted(
+                (
+                    {
+                        "sop_instance_uid": str(item["sop_instance_uid"]),
+                        "source_identity": str(item["source_identity"]),
+                        "content_sha256": str(item["content_sha256"]),
+                    }
+                    for item in slices_value
+                    if isinstance(item, dict)
+                ),
+                key=lambda item: item["sop_instance_uid"],
+            )
+        except (KeyError, TypeError) as exc:
+            raise SeriesCacheIntegrityError("cache entry source slice identity is malformed") from exc
+        if (
+            len(ordered_slices) != len(slices_value)
+            or tuple(item["source_identity"] for item in ordered_slices)
+            != tuple(sorted(expected_entries))
+            or len({item["sop_instance_uid"] for item in ordered_slices}) != len(ordered_slices)
+            or any(
+                len(item["content_sha256"]) != 64
+                or any(character not in "0123456789abcdef" for character in item["content_sha256"])
+                for item in ordered_slices
+            )
+        ):
+            raise SeriesCacheIntegrityError("cache entry source entries differ from the frozen manifest")
+        series = SeriesRecord(
+            study_instance_uid=study_instance_uid,
+            series_instance_uid=series_instance_uid,
+            slices=tuple(
+                DicomSlice(
+                    sop_instance_uid=item["sop_instance_uid"],
+                    image_position=None,
+                    image_orientation=None,
+                    pixel_array=np.empty((0, 0), dtype=np.uint8),
+                    study_instance_uid=study_instance_uid,
+                    series_instance_uid=series_instance_uid,
+                    filename=item["source_identity"],
+                    source_content_sha256=item["content_sha256"],
+                )
+                for item in ordered_slices
+            ),
+            source_entry_names=tuple(item["source_identity"] for item in ordered_slices),
+        )
+        source_payload = _source_payload(
+            series,
+            tuple(item["content_sha256"] for item in ordered_slices),
+        )
+        if self._cache_key_for(source_payload, config) != key:
+            raise SeriesCacheIntegrityError("cache entry key is inconsistent with its source identity")
+        prepared, _ = self._load(series, config, source_payload, key)
+        return prepared
+
     def prepare_study(
         self,
         study: StudyRecord,

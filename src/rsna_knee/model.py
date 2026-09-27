@@ -9,6 +9,15 @@ import torch
 from torch import nn
 
 from .targets import NUM_TARGETS
+from .pretrained import RESNET18_SHA256
+from .resnet18 import (
+    ANATOMICAL_POOLING_ID,
+    RESNET18_ENCODER_ID,
+    RESNET18_FIXTURE_ENCODER_ID,
+    RESNET18_MODEL_ID,
+    SIMPLE_POOLING_ID,
+    ResNet18StudyModel,
+)
 
 
 MODEL_CONFIG_SCHEMA_VERSION = "rsna-knee-model-config-v1"
@@ -24,20 +33,22 @@ class ModelConfigurationError(ValueError):
 class ModelConfig:
     """Versioned architecture values for the compact mechanics model.
 
-    ``to_dict`` writes explicit identity metadata.  ``from_dict`` also accepts
+    ``to_dict`` writes explicit identity metadata. ``from_dict`` also accepts
     the pre-versioned shape used by historical checkpoints and candidates.
-    Keeping the identity constants outside the dataclass fields leaves the
-    compact model's legacy ``__dict__`` and tensor names unchanged.
+    Compact-model identity defaults preserve the historical tensor names and
+    serialized configuration while allowing additive registered variants.
     """
 
     schema_version: ClassVar[str] = MODEL_CONFIG_SCHEMA_VERSION
-    model_id: ClassVar[str] = COMPACT_MODEL_ID
-    pooling_id: ClassVar[str] = COMPACT_POOLING_ID
-
     image_size: tuple[int, int] = (128, 128)
     channels: tuple[int, int, int] = (8, 16, 32)
     input_channels: int = 1
     num_targets: int = NUM_TARGETS
+    model_id: str = COMPACT_MODEL_ID
+    pooling_id: str = COMPACT_POOLING_ID
+    encoder_id: str | None = None
+    encoder_weights_sha256: str | None = None
+    head_hidden_size: int = 32
 
     def __post_init__(self) -> None:
         if len(self.image_size) != 2 or any(size <= 0 for size in self.image_size):
@@ -48,11 +59,32 @@ class ModelConfig:
             raise ValueError("input_channels must be positive")
         if self.num_targets != NUM_TARGETS:
             raise ValueError(f"the mechanics head must have exactly {NUM_TARGETS} outputs")
+        if self.model_id == COMPACT_MODEL_ID:
+            if self.pooling_id != COMPACT_POOLING_ID:
+                raise ValueError("compact model configuration has an unsupported pooling identity")
+            if self.encoder_id is not None or self.encoder_weights_sha256 is not None:
+                raise ValueError("compact model configuration cannot name an external encoder")
+        elif self.model_id == RESNET18_MODEL_ID:
+            if self.input_channels != 1 or min(self.image_size) < 32:
+                raise ValueError("ResNet-18 configuration requires grayscale images of at least 32 pixels")
+            if self.encoder_id not in {RESNET18_ENCODER_ID, RESNET18_FIXTURE_ENCODER_ID}:
+                raise ValueError("ResNet-18 configuration requires a registered encoder identity")
+            if self.encoder_id == RESNET18_ENCODER_ID:
+                if self.encoder_weights_sha256 != RESNET18_SHA256:
+                    raise ValueError("ImageNet encoder requires its admitted full SHA-256")
+            elif self.encoder_weights_sha256 is not None:
+                raise ValueError("fixture encoder cannot claim a pretrained artifact digest")
+            if self.pooling_id not in {ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID}:
+                raise ValueError("ResNet-18 configuration has an unsupported pooling identity")
+            if self.head_hidden_size <= 0:
+                raise ValueError("head_hidden_size must be positive")
+        else:
+            raise ValueError(f"unsupported model identity {self.model_id!r}")
 
     def to_dict(self) -> dict[str, object]:
         """Return the canonical, explicitly identified model configuration."""
 
-        return {
+        payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "model_id": self.model_id,
             "pooling_id": self.pooling_id,
@@ -61,6 +93,15 @@ class ModelConfig:
             "input_channels": self.input_channels,
             "num_targets": self.num_targets,
         }
+        if self.model_id == RESNET18_MODEL_ID:
+            payload.update(
+                {
+                    "encoder_id": self.encoder_id,
+                    "encoder_weights_sha256": self.encoder_weights_sha256,
+                    "head_hidden_size": self.head_hidden_size,
+                }
+            )
+        return payload
 
     @classmethod
     def from_dict(cls, value: object) -> ModelConfig:
@@ -79,14 +120,17 @@ class ModelConfig:
         else:
             if version != MODEL_CONFIG_SCHEMA_VERSION:
                 raise ModelConfigurationError(f"unsupported model configuration schema {version!r}")
-            if payload.get("model_id") != COMPACT_MODEL_ID:
-                raise ModelConfigurationError(
-                    f"unsupported model identity {payload.get('model_id')!r}"
-                )
-            if payload.get("pooling_id") != COMPACT_POOLING_ID:
-                raise ModelConfigurationError(
-                    f"unsupported pooling identity {payload.get('pooling_id')!r}"
-                )
+            model_id = payload.get("model_id")
+            pooling_id = payload.get("pooling_id")
+            if model_id == COMPACT_MODEL_ID and pooling_id != COMPACT_POOLING_ID:
+                raise ModelConfigurationError(f"unsupported pooling identity {pooling_id!r}")
+            if model_id == RESNET18_MODEL_ID and pooling_id not in {
+                ANATOMICAL_POOLING_ID,
+                SIMPLE_POOLING_ID,
+            }:
+                raise ModelConfigurationError(f"unsupported pooling identity {pooling_id!r}")
+            if model_id not in {COMPACT_MODEL_ID, RESNET18_MODEL_ID}:
+                raise ModelConfigurationError(f"unsupported model identity {model_id!r}")
             allowed = {
                 "schema_version",
                 "model_id",
@@ -96,6 +140,8 @@ class ModelConfig:
                 "input_channels",
                 "num_targets",
             }
+            if model_id == RESNET18_MODEL_ID:
+                allowed.update({"encoder_id", "encoder_weights_sha256", "head_hidden_size"})
         unexpected = set(payload) - allowed
         if unexpected:
             raise ModelConfigurationError(
@@ -117,6 +163,19 @@ class ModelConfig:
                 ),
                 input_channels=int(str(payload.get("input_channels", 1))),
                 num_targets=int(str(payload.get("num_targets", NUM_TARGETS))),
+                model_id=str(payload.get("model_id", COMPACT_MODEL_ID)),
+                pooling_id=str(payload.get("pooling_id", COMPACT_POOLING_ID)),
+                encoder_id=(
+                    str(payload["encoder_id"])
+                    if payload.get("encoder_id") is not None
+                    else None
+                ),
+                encoder_weights_sha256=(
+                    str(payload["encoder_weights_sha256"])
+                    if payload.get("encoder_weights_sha256") is not None
+                    else None
+                ),
+                head_hidden_size=int(str(payload.get("head_hidden_size", 32))),
             )
         except (TypeError, ValueError, OverflowError) as exc:
             raise ModelConfigurationError("model configuration values are invalid") from exc
@@ -206,17 +265,25 @@ class HierarchicalStudyModel(nn.Module):
         return torch.sigmoid(self(images, slice_mask, series_mask)).clamp(0.0, 1.0)
 
 
-def build_study_model(config: ModelConfig) -> HierarchicalStudyModel:
+StudyModel = HierarchicalStudyModel | ResNet18StudyModel
+
+
+def build_study_model(config: ModelConfig) -> StudyModel:
     """Reconstruct the supported model implementation from its configuration."""
 
     if not isinstance(config, ModelConfig):
         raise ModelConfigurationError("build_study_model requires a ModelConfig")
-    if config.model_id != COMPACT_MODEL_ID or config.pooling_id != COMPACT_POOLING_ID:
-        raise ModelConfigurationError("model configuration selects an unsupported implementation")
-    return HierarchicalStudyModel(config)
+    if config.model_id == COMPACT_MODEL_ID and config.pooling_id == COMPACT_POOLING_ID:
+        return HierarchicalStudyModel(config)
+    if config.model_id == RESNET18_MODEL_ID:
+        try:
+            return ResNet18StudyModel(config)
+        except (TypeError, ValueError) as exc:
+            raise ModelConfigurationError("model configuration selects an invalid ResNet-18 implementation") from exc
+    raise ModelConfigurationError("model configuration selects an unsupported implementation")
 
 
-def restore_study_model(config_value: object, state_dict: object) -> HierarchicalStudyModel:
+def restore_study_model(config_value: object, state_dict: object) -> StudyModel:
     """Build a model and strictly load its checkpoint state."""
 
     config = config_value if isinstance(config_value, ModelConfig) else ModelConfig.from_dict(config_value)
@@ -237,11 +304,15 @@ MechanicsModel = HierarchicalStudyModel
 __all__ = [
     "COMPACT_MODEL_ID",
     "COMPACT_POOLING_ID",
+    "RESNET18_MODEL_ID",
+    "ANATOMICAL_POOLING_ID",
+    "SIMPLE_POOLING_ID",
     "MODEL_CONFIG_SCHEMA_VERSION",
     "HierarchicalStudyModel",
     "MechanicsModel",
     "ModelConfig",
     "ModelConfigurationError",
+    "StudyModel",
     "build_study_model",
     "restore_study_model",
 ]

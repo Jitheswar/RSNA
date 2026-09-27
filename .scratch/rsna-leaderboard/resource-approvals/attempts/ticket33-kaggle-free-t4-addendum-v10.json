@@ -1,0 +1,42 @@
+{
+  "approved_at_utc": "2026-09-26T21:16:00Z",
+  "approved_by": "RSNA project owner (explicit authorization to continue in this conversation)",
+  "decision": "approved_for_one_private_zero_spend_10_minute_validation_run_using_request_bound_frozen_features_and_unique_recovery_attempts",
+  "external_spend_usd": 0,
+  "internet_enabled": false,
+  "pretrained_weights_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+  "public_or_redistribution_authorized": false,
+  "schema_version": "rsna-ticket33-kaggle-resource-addendum-v1",
+  "scope": "ticket33-kaggle-free-t4-validation",
+  "scope_details": {
+    "additional_attempt": {
+      "correction": "Materialize the two request-bound frozen ResNet-18 training features using the approved ImageNet encoder; allow each lifecycle call, including resumed recovery, to receive a distinct generated execution-attempt ID; seed the trainable study head before model construction. Keep the exact pinned pydicom 3.0.1 wheel installed offline.",
+      "new_run": "Exactly one run, capped at 600 wall seconds on private offline T4x2; expose one T4 to trainer; no retry under this request.",
+      "prior_campaign_gpu_seconds_charged": 120,
+      "prior_failure_evidence_sha256": "d9c2b095b4edb06dc096bf087d0de9887d3d9c0cf6a138bfcad346eb07c5ecc2",
+      "prior_quota_wall_seconds": 59.193,
+      "prior_request_checksum": "42e92144c7f67137e5ff0d985f1b1e30a4d10df71c0c0ce09e8b6638a7aca618",
+      "reason": "The last request-bound run validated the two real reference-training studies, materialized both frozen-feature cache entries, completed the uninterrupted and intentional interrupted training paths, and saved the recovery checkpoint. The adapter then reused the same explicit execution-attempt ID for recovery. This request uses the training lifecycle's unique attempt IDs; scientific configuration and checkpoint identity are unchanged.",
+      "request_checksum": "cb5a5e6c8d53616d8db41e66d0324db0eaafa1ffd9477d3bac8aba60f1c80aea"
+    },
+    "candidate_promotion_or_downstream_scope": false,
+    "cleanup": "Delete the private Kaggle input dataset after completed output is retrieved; retain checksum-verified local evidence and the private notebook execution record.",
+    "held_out_inputs_or_outcomes": "Never read for training, adaptation, calibration, or selection; hardware smoke uses two canonical reference-training studies only.",
+    "offline_dependency": {
+      "bytes": 2376126,
+      "distribution": "pydicom",
+      "installation": "extract the request-checksum-bound wheel locally before project imports; no package index or runtime network",
+      "sha256": "db32f78b2641bd7972096b8289111ddab01fb221610de8d7afa835eb938adb41",
+      "version": "3.0.1",
+      "wheel": "inputs/pydicom-3.0.1-py3-none-any.whl"
+    },
+    "pretrained_weights": "Reuse only the exact previously approved 46,830,571-byte checkpoint after SHA-256 verification; no new model weights or ImageNet source images.",
+    "private_processing_copy": "Upload only the previously approved checkpoint, required code, manifests, and the already-pinned pydicom 3.0.1 pure-Python wheel to one private owner-controlled Kaggle dataset; attach only to the exact private kernel; do not enable public access.",
+    "public_or_redistribution_authorized": false,
+    "ticket": "33 only; same frozen fold-0 ResNet-18 scientific identity and two-step hardware smoke",
+    "upstream_rights": "ImageNet/checkpoint and derivative rights remain unresolved; no public release or reuse outside this exact Ticket 33 run."
+  },
+  "supersedes_only_processing_backend": true,
+  "upstream_resource_approval_path": ".scratch/rsna-leaderboard/resource-approvals/ticket33-resnet18-imagenet1k-gpu.json",
+  "upstream_resource_approval_sha256": "b704db21a0a53c6cd8a3f5009a22defb3901f2638be3f4068667d55025439a97"
+}

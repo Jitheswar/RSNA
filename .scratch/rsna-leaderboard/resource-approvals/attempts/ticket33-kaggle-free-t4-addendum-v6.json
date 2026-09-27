@@ -1,0 +1,41 @@
+{
+  "approved_at_utc": "2026-09-26T20:32:28Z",
+  "approved_by": "RSNA project owner (explicit authorization to continue in this conversation)",
+  "decision": "approved_for_one_private_zero_spend_28_minute_validation_run_with_offline_manifest_pinned_decoder",
+  "external_spend_usd": 0,
+  "internet_enabled": false,
+  "pretrained_weights_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+  "public_or_redistribution_authorized": false,
+  "schema_version": "rsna-ticket33-kaggle-resource-addendum-v1",
+  "scope": "ticket33-kaggle-free-t4-validation",
+  "scope_details": {
+    "additional_attempt": {
+      "correction": "Bundle the exact already-pinned pure-Python pydicom 3.0.1 wheel, bind its bytes and SHA-256 in the immutable request, and install it offline before importing the study decoder.",
+      "new_run": "Exactly one run, capped at 1,680 wall seconds on private offline T4x2; expose one T4 to trainer; no retry under this request.",
+      "prior_campaign_gpu_seconds_charged": 68,
+      "prior_failure_evidence_sha256": "3116dbe61a9ec255ca549e3be3f5296a0c3fa1bd283402a4952ae2ea8ba0a6bb",
+      "prior_quota_wall_seconds": 33.426,
+      "prior_request_checksum": "4e661620abc6115f912b6efb48c0e655f39317eac43586b721825f951f1ab478",
+      "reason": "Kaggle CPU preflight passed and the real T4 mounted the official competition source, but its preinstalled pydicom 3.0.2 did not satisfy the integration manifest pin to pydicom 3.0.1."
+    },
+    "candidate_promotion_or_downstream_scope": false,
+    "cleanup": "Delete the private Kaggle input dataset after completed output is retrieved; retain checksum-verified local evidence and the private notebook execution record.",
+    "held_out_inputs_or_outcomes": "Never read for training, adaptation, calibration, or selection; hardware smoke uses two canonical reference-training studies only.",
+    "offline_dependency": {
+      "bytes": 2376126,
+      "distribution": "pydicom",
+      "installation": "extract the request-checksum-bound wheel locally before project imports; no package index or runtime network",
+      "sha256": "db32f78b2641bd7972096b8289111ddab01fb221610de8d7afa835eb938adb41",
+      "version": "3.0.1",
+      "wheel": "inputs/pydicom-3.0.1-py3-none-any.whl"
+    },
+    "pretrained_weights": "Reuse only the exact previously approved 46,830,571-byte checkpoint after SHA-256 verification; no new model weights or ImageNet source images.",
+    "private_processing_copy": "Upload only the previously approved checkpoint, required code, manifests, and the already-pinned pydicom 3.0.1 pure-Python wheel to one private owner-controlled Kaggle dataset; attach only to the exact private kernel; do not enable public access.",
+    "public_or_redistribution_authorized": false,
+    "ticket": "33 only; same frozen fold-0 ResNet-18 scientific identity and two-step hardware smoke",
+    "upstream_rights": "ImageNet/checkpoint and derivative rights remain unresolved; no public release or reuse outside this exact Ticket 33 run."
+  },
+  "supersedes_only_processing_backend": true,
+  "upstream_resource_approval_path": ".scratch/rsna-leaderboard/resource-approvals/ticket33-resnet18-imagenet1k-gpu.json",
+  "upstream_resource_approval_sha256": "b704db21a0a53c6cd8a3f5009a22defb3901f2638be3f4068667d55025439a97"
+}

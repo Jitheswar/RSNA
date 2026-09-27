@@ -34,6 +34,40 @@ evidence_path="${RSNA_TICKET13_EVIDENCE:?set RSNA_TICKET13_EVIDENCE to a private
 source_version="${RSNA_TICKET13_SOURCE_VERSION:?set RSNA_TICKET13_SOURCE_VERSION}"
 source_fingerprint="${RSNA_TICKET13_SOURCE_FINGERPRINT:-}"
 cache_root="${RSNA_TICKET13_CACHE_ROOT:-}"
+campaign_ledger="${RSNA_TICKET13_CAMPAIGN_LEDGER:?set RSNA_TICKET13_CAMPAIGN_LEDGER to the shared campaign ledger}"
+request_checksum="${RSNA_TICKET13_REQUEST_CHECKSUM:?set RSNA_TICKET13_REQUEST_CHECKSUM}"
+attempt_number="${RSNA_TICKET13_ATTEMPT_NUMBER:?set RSNA_TICKET13_ATTEMPT_NUMBER}"
+submitted_epoch="${RSNA_TICKET13_SUBMITTED_EPOCH:?set RSNA_TICKET13_SUBMITTED_EPOCH}"
+submission_wait="${RSNA_TICKET13_SUBMISSION_WAIT:?set RSNA_TICKET13_SUBMISSION_WAIT}"
+allocation_started_epoch="$(date +%s)"
+
+ticket13_record_allocation() {
+  local exit_code="$?"
+  local allocation_ended_epoch
+  local wait_args=()
+  trap - EXIT
+  allocation_ended_epoch="$(date +%s)"
+  if [[ "${submission_wait}" == "1" ]]; then
+    wait_args+=(--submission-wait)
+  fi
+  if ! PYTHONPATH="${project_dir}/src${PYTHONPATH:+:${PYTHONPATH}}" \
+    "${project_dir}/.venv/bin/python" -m rsna_knee.gpu_cli record-allocation \
+      --ledger "${campaign_ledger}" \
+      --request-checksum "${request_checksum}" \
+      --attempt-number "${attempt_number}" \
+      --job-id "${job_id}" \
+      --allocated-start-epoch "${allocation_started_epoch}" \
+      --allocated-end-epoch "${allocation_ended_epoch}" \
+      --exit-code "${exit_code}" \
+      "${wait_args[@]}"; then
+    echo "failed to record this Slurm allocation in the shared GPU campaign ledger" >&2
+    if (( exit_code == 0 )); then
+      exit 1
+    fi
+  fi
+  exit "${exit_code}"
+}
+trap ticket13_record_allocation EXIT
 
 cd "${project_dir}"
 mkdir -p artifacts
@@ -203,4 +237,4 @@ if [[ -n "${cache_root}" ]]; then
   run_args+=(--cache-root "${cache_root}")
 fi
 
-exec "${gpu_python}" -m rsna_knee.gpu_cli "${run_args[@]}"
+"${gpu_python}" -m rsna_knee.gpu_cli "${run_args[@]}"

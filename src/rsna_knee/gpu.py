@@ -14,6 +14,8 @@ import os
 import re
 import subprocess
 import fcntl
+import getpass
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,6 +26,31 @@ from typing import Any, Callable, Iterator, Mapping, Sequence, cast
 import torch
 
 from .archive import atomic_json_write
+from .model import COMPACT_MODEL_ID, COMPACT_POOLING_ID, RESNET18_MODEL_ID
+from .pretrained import (
+    PretrainedResourceError,
+    RESNET18_ARTIFACT_BYTES,
+    RESNET18_ARTIFACT_ID,
+    RESNET18_DOWNLOAD_URL,
+    RESNET18_SHA256,
+    RESNET18_SOURCE_REVISION,
+    TICKET33_RESOURCE_SCOPE,
+    load_resource_approval,
+)
+from .resnet18 import RESNET18_ENCODER_ID
+from .gpu_campaign import (
+    GPU_CAMPAIGN_BUDGET_HOURS,
+    GpuCampaignActiveRequestError,
+    GpuCampaignBudgetError,
+    GpuCampaignLedgerError,
+    begin_gpu_submission_attempt,
+    check_gpu_campaign_capacity,
+    finish_gpu_campaign_request,
+    initialize_gpu_campaign_ledger,
+    record_gpu_allocation,
+    record_gpu_submission_result,
+    reserve_gpu_campaign_request,
+)
 from .training import (
     PREFLIGHT_SCHEMA_VERSION,
     CpuPreflightResult,
@@ -41,7 +68,7 @@ from .training import (
 )
 
 
-GPU_EXPERIMENT_SCHEMA_VERSION = "rsna-knee-gpu-experiment-v1"
+GPU_EXPERIMENT_SCHEMA_VERSION = "rsna-knee-gpu-experiment-v2"
 GPU_APPROVAL_SCHEMA_VERSION = "rsna-knee-gpu-owner-approval-v1"
 GPU_EXECUTION_SCHEMA_VERSION = "rsna-knee-gpu-execution-v1"
 GPU_SUBMISSION_SCHEMA_VERSION = "rsna-knee-gpu-submission-v1"
@@ -52,7 +79,8 @@ GPU_DEFAULT_PARTITION = "cluster1-gpu"
 GPU_SMOKE_PARTITION = "cluster1-gpu-add"
 GPU_ALLOWED_PARTITIONS = (GPU_DEFAULT_PARTITION, GPU_SMOKE_PARTITION)
 GPU_RETRY_LIMIT = 1
-GPU_SMOKE_WALL_TIME_LIMIT = 60
+GPU_SMOKE_WALL_TIME_LIMIT = 30
+GPU_FULL_WALL_TIME_LIMIT = 6 * 60
 
 
 class GpuExperimentError(RuntimeError):
@@ -164,8 +192,8 @@ class GpuResourceRequest:
             raise GpuConfigurationError("cpus_per_task must be between 1 and 16")
         if not 1 <= self.memory_gb <= 64:
             raise GpuConfigurationError("memory_gb must be between 1 and 64")
-        if not 1 <= self.wall_time_minutes <= 24 * 60:
-            raise GpuConfigurationError("wall_time_minutes must be between 1 and 1440")
+        if not 1 <= self.wall_time_minutes <= GPU_FULL_WALL_TIME_LIMIT:
+            raise GpuConfigurationError("wall_time_minutes must be between 1 minute and six hours")
         if not isinstance(self.exclusive, bool) or not isinstance(self.smoke_test, bool):
             raise GpuConfigurationError("exclusive and smoke_test must be boolean")
         if self.partition == GPU_SMOKE_PARTITION and not self.smoke_test:
@@ -338,6 +366,11 @@ def _training_config_from_dict(value: object) -> TrainingConfig:
             interpolation=str(preprocessing["interpolation"]),
             padding_fill_value=float(cast(Any, preprocessing["padding_fill_value"])),
             output_dtype=str(preprocessing["output_dtype"]),
+            representation_id=(
+                str(preprocessing["representation_id"])
+                if preprocessing.get("representation_id") is not None
+                else None
+            ),
         )
         config = TrainingConfig(
             image_size=(int(cast(Any, image_size_value[0])), int(cast(Any, image_size_value[1]))),
@@ -364,12 +397,64 @@ def _training_config_from_dict(value: object) -> TrainingConfig:
             device=str(value["device"]),
             selection_policy=str(value["selection_policy"]),
             preprocessing_config=preprocess,
+            model_id=str(model.get("model_id", COMPACT_MODEL_ID)),
+            pooling_id=str(model.get("pooling_id", COMPACT_POOLING_ID)),
+            encoder_id=(
+                str(model["encoder_id"])
+                if model.get("encoder_id") is not None
+                else None
+            ),
+            encoder_weights_sha256=(
+                str(model["encoder_weights_sha256"])
+                if model.get("encoder_weights_sha256") is not None
+                else None
+            ),
+            head_hidden_size=int(cast(Any, model.get("head_hidden_size", 32))),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise GpuConfigurationError("GPU request training_config fields are invalid") from exc
     if config.to_dict() != dict(value):
         raise GpuConfigurationError("GPU request training_config is not canonical")
     return config
+
+
+def _ticket33_pretrained_resource(execution: object) -> Mapping[str, object]:
+    """Validate request-bound provenance for the only pretrained GPU model."""
+
+    if not isinstance(execution, Mapping):
+        raise GpuApprovalError("GPU request execution section is invalid")
+    resource = execution.get("pretrained_resource")
+    if not isinstance(resource, Mapping):
+        raise GpuApprovalError("GPU request has no pretrained artifact authorization scope")
+    expected = {
+        "artifact_id": RESNET18_ARTIFACT_ID,
+        "source_revision": RESNET18_SOURCE_REVISION,
+        "download_url": RESNET18_DOWNLOAD_URL,
+        "sha256": RESNET18_SHA256,
+        "expected_bytes": RESNET18_ARTIFACT_BYTES,
+        "scope": TICKET33_RESOURCE_SCOPE,
+        "encoder_frozen": True,
+        "runtime_network": False,
+        "external_spend": 0,
+    }
+    if any(resource.get(name) != value for name, value in expected.items()):
+        raise GpuApprovalError("GPU request pretrained artifact identity or scope is invalid")
+    if (
+        not isinstance(resource.get("expected_bytes"), int)
+        or isinstance(resource.get("expected_bytes"), bool)
+        or not isinstance(resource.get("external_spend"), int)
+        or isinstance(resource.get("external_spend"), bool)
+    ):
+        raise GpuApprovalError("GPU request pretrained artifact numeric fields are invalid")
+    weights_path = Path(_nonempty(resource.get("weights_path"), "pretrained weights path"))
+    if not weights_path.is_absolute():
+        raise GpuApprovalError("GPU request pretrained weights path must be absolute")
+    approval_path = Path(
+        _nonempty(resource.get("resource_approval_path"), "pretrained resource approval path")
+    )
+    if not approval_path.is_absolute():
+        raise GpuApprovalError("GPU request pretrained resource approval path must be absolute")
+    return cast(Mapping[str, object], resource)
 
 
 def _load_cpu_preflight(path: Path) -> CpuPreflightResult:
@@ -457,6 +542,16 @@ def load_gpu_experiment_request(path: str | Path) -> GpuExperimentRequest:
     config = _training_config_from_dict(experiment_payload.get("training_config"))
     if experiment_payload.get("scientific_config_fingerprint") != config.config_fingerprint:
         raise GpuApprovalError("GPU request scientific configuration fingerprint is invalid")
+    execution_payload = payload.get("execution", {})
+    if config.model_id == RESNET18_MODEL_ID:
+        if (
+            config.encoder_id != RESNET18_ENCODER_ID
+            or config.encoder_weights_sha256 != RESNET18_SHA256
+        ):
+            raise GpuApprovalError("GPU ResNet request must use the admitted ImageNet encoder")
+        _ticket33_pretrained_resource(execution_payload)
+    elif isinstance(execution_payload, Mapping) and execution_payload.get("pretrained_resource") is not None:
+        raise GpuApprovalError("GPU request binds pretrained weights for an unsupported model")
     inputs = payload.get("inputs", {})
     if not isinstance(inputs, Mapping):
         raise GpuConfigurationError("GPU request inputs section is invalid")
@@ -471,6 +566,59 @@ def load_gpu_experiment_request(path: str | Path) -> GpuExperimentRequest:
         raise GpuConfigurationError("GPU request must use a CUDA device")
     if resources.smoke_test and config.successful_optimizer_steps > 2:
         raise GpuConfigurationError("GPU smoke requests must use at most two optimizer steps")
+    campaign = payload.get("campaign")
+    if not isinstance(campaign, Mapping):
+        raise GpuApprovalError("GPU request is missing the shared campaign budget contract")
+    ledger_path_value = _nonempty(campaign.get("ledger_path"), "campaign ledger path")
+    ledger_path = Path(ledger_path_value)
+    if not ledger_path.is_absolute():
+        raise GpuApprovalError("GPU campaign ledger path must be absolute")
+    budget_seconds = campaign.get("budget_seconds")
+    comparison_reserve_seconds = campaign.get("reserved_comparison_seconds")
+    comparison_release_seconds = campaign.get("comparison_reserve_release_seconds")
+    comparison_after_request_seconds = campaign.get("comparison_reserve_after_request_seconds")
+    max_attempts = campaign.get("max_attempts")
+    request_reservation_seconds = campaign.get("request_reservation_seconds")
+    if (
+        budget_seconds != int(GPU_CAMPAIGN_BUDGET_HOURS * 3600)
+        or not isinstance(comparison_reserve_seconds, int)
+        or isinstance(comparison_reserve_seconds, bool)
+        or not isinstance(comparison_release_seconds, int)
+        or isinstance(comparison_release_seconds, bool)
+        or comparison_release_seconds < 0
+        or comparison_release_seconds > comparison_reserve_seconds
+        or not isinstance(comparison_after_request_seconds, int)
+        or isinstance(comparison_after_request_seconds, bool)
+        or comparison_after_request_seconds
+        != comparison_reserve_seconds - comparison_release_seconds
+        or not isinstance(max_attempts, int)
+        or isinstance(max_attempts, bool)
+        or not isinstance(request_reservation_seconds, int)
+        or isinstance(request_reservation_seconds, bool)
+    ):
+        raise GpuApprovalError("GPU campaign budget fields are invalid")
+    expected_attempts = 2 if approval_payload["retry_allowed"] else 1
+    if max_attempts != expected_attempts:
+        raise GpuApprovalError("GPU campaign attempt count differs from the approval retry scope")
+    if request_reservation_seconds != max_attempts * resources.wall_time_minutes * 60:
+        raise GpuApprovalError("GPU campaign reservation does not match the approved wall time")
+    remaining_before = campaign.get("remaining_hours_before_request")
+    remaining_after = campaign.get("remaining_hours_after_request_and_comparison_reserve")
+    if (
+        not isinstance(remaining_before, (int, float))
+        or isinstance(remaining_before, bool)
+        or not isinstance(remaining_after, (int, float))
+        or isinstance(remaining_after, bool)
+        or remaining_after < 0
+    ):
+        raise GpuApprovalError("GPU request has invalid remaining campaign hours")
+    expected_remaining_after = (
+        float(remaining_before)
+        - request_reservation_seconds / 3600.0
+        - (comparison_reserve_seconds - comparison_release_seconds) / 3600.0
+    )
+    if abs(float(remaining_after) - expected_remaining_after) > 1e-9:
+        raise GpuApprovalError("GPU request remaining hours do not match its reserve release")
     return GpuExperimentRequest(request_path.parent, request_path, checksum, payload)
 
 
@@ -501,6 +649,52 @@ def load_gpu_approval(path: str | Path, request: GpuExperimentRequest) -> GpuApp
         datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
     except ValueError as exc:
         raise GpuApprovalError("GPU approval timestamp is not ISO-8601") from exc
+    if request.training_config.model_id == RESNET18_MODEL_ID:
+        resource = _ticket33_pretrained_resource(request.payload.get("execution"))
+        expected_resource_values = {
+            "artifact_id": resource["artifact_id"],
+            "source_revision": resource["source_revision"],
+            "download_url": resource["download_url"],
+            "sha256": resource["sha256"],
+            "expected_bytes": resource["expected_bytes"],
+            "external_spend": resource["external_spend"],
+            "scope": resource["scope"],
+            "decision": "approved",
+            "rights_status": "eligible",
+            "rights_status_scope": resource["scope"],
+        }
+        resource_approval_path = Path(
+            _nonempty(
+                resource.get("resource_approval_path"),
+                "pretrained resource approval path",
+            )
+        )
+        if resource_approval_path.is_symlink() or not resource_approval_path.is_file():
+            raise GpuApprovalError(
+                "Ticket 33 pretrained artifact authorization requires a regular non-symlink resource approval file"
+            )
+        resource_approval_path = resource_approval_path.resolve()
+        try:
+            resource_approval = load_resource_approval(resource_approval_path)
+        except PretrainedResourceError as exc:
+            raise GpuApprovalError(
+                f"Ticket 33 pretrained artifact authorization is invalid: {exc}"
+            ) from exc
+        if any(
+            resource_approval.get(name) != value
+            for name, value in expected_resource_values.items()
+        ):
+            raise GpuApprovalError(
+                "pretrained artifact authorization does not match the requested artifact or resource scope"
+            )
+        if not isinstance(resource_approval.get("expected_bytes"), int) or isinstance(
+            resource_approval.get("expected_bytes"), bool
+        ):
+            raise GpuApprovalError("pretrained artifact authorization byte count is invalid")
+        if not isinstance(resource_approval.get("external_spend"), int) or isinstance(
+            resource_approval.get("external_spend"), bool
+        ):
+            raise GpuApprovalError("pretrained artifact authorization spend is invalid")
     return GpuApproval(approval_path, _sha256_file(approval_path), payload)
 
 
@@ -1104,6 +1298,58 @@ def _job_id(stdout: str) -> str | None:
     return match.group(1) if match is not None else None
 
 
+def _query_active_gpu_jobs() -> tuple[Mapping[str, str], ...]:
+    """Read this account's active GPU jobs; fail closed when Slurm cannot answer."""
+
+    user = os.environ.get("USER", "").strip() or getpass.getuser()
+    command = [
+        "squeue",
+        "--noheader",
+        "--user",
+        user,
+        "--partition",
+        ",".join(GPU_ALLOWED_PARTITIONS),
+        "--states",
+        "PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED",
+        "--format=%i|%P|%j|%T",
+    ]
+    try:
+        result = subprocess.run(command, check=False, capture_output=True, text=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise GpuApprovalError("could not verify that this account has no active GPU request") from exc
+    if result.returncode != 0:
+        raise GpuApprovalError("Slurm could not confirm that this account has no active GPU request")
+    jobs: list[Mapping[str, str]] = []
+    for line in str(result.stdout or "").splitlines():
+        fields = line.strip().split("|", 3)
+        if len(fields) != 4:
+            raise GpuApprovalError("Slurm returned an unreadable active GPU job row")
+        jobs.append(
+            {
+                "job_id": fields[0],
+                "partition": fields[1],
+                "job_name": fields[2],
+                "state": fields[3],
+            }
+        )
+    return tuple(jobs)
+
+
+def _require_idle_gpu_account(
+    scheduler_query: Callable[[], Sequence[Mapping[str, object]]],
+) -> None:
+    active_states = {"PENDING", "RUNNING", "CONFIGURING", "COMPLETING", "SUSPENDED"}
+    jobs = scheduler_query()
+    for job in jobs:
+        partition = job.get("partition")
+        state = job.get("state")
+        if partition in GPU_ALLOWED_PARTITIONS and state in active_states:
+            raise GpuCampaignActiveRequestError(
+                "this account already has an active or pending GPU request "
+                f"(job {job.get('job_id', 'unknown')}, state={state})"
+            )
+
+
 def _recorded_gpu_failure(
     environment: Mapping[str, str],
     *,
@@ -1365,14 +1611,16 @@ def submit_gpu_experiment(
     sbatch_binary: str = "sbatch",
     wait: bool = True,
     runner: Callable[..., Any] | None = None,
+    scheduler_query: Callable[[], Sequence[Mapping[str, object]]] | None = None,
 ) -> GpuSubmissionResult:
     """Submit the exact approved resource request through ``sbatch``.
 
     Validation happens before the scheduler command is built.  With
     ``wait=True`` a single unchanged submission is permitted after a clearly
     transient failure, provided the owner approval covers that retry.  The
-    function never invokes ``srun`` and never changes resources or scientific
-    configuration on retry.
+    function checks the shared campaign ledger and this account's active Slurm
+    jobs before submission. It never invokes ``srun`` and never changes
+    resources or scientific configuration on retry.
     """
 
     request = load_gpu_experiment_request(request_path)
@@ -1384,6 +1632,11 @@ def submit_gpu_experiment(
     if not isinstance(sbatch_binary, str) or not sbatch_binary.strip():
         raise GpuConfigurationError("sbatch_binary must be non-empty")
     resource = request.resources
+    campaign = cast(Mapping[str, object], request.payload["campaign"])
+    ledger_path = Path(_nonempty(campaign["ledger_path"], "campaign ledger path"))
+    if scheduler_query is None:
+        scheduler_query = _query_active_gpu_jobs if runner is None else (lambda: ())
+    _require_idle_gpu_account(scheduler_query)
     submission_environment = dict(os.environ)
     for key, value in dict(environment or {}).items():
         if not key.startswith("RSNA_TICKET13_"):
@@ -1486,6 +1739,24 @@ def submit_gpu_experiment(
                 )
             retry_count = recorded_retry_count + 1
             last_failure = recorded_classification.to_dict()
+    reserve_gpu_campaign_request(
+        ledger_path,
+        request_checksum=request.request_checksum,
+        experiment_id=str(request.payload["experiment_id"]),
+        wall_time_minutes=resource.wall_time_minutes,
+        retry_allowed=bool(approval.payload.get("retry_allowed")),
+        remaining_attempts=cast(int, campaign["max_attempts"]) - retry_count,
+        comparison_reserve_release_seconds=cast(
+            int, campaign["comparison_reserve_release_seconds"]
+        ),
+    )
+    submission_environment.update(
+        {
+            "RSNA_TICKET13_CAMPAIGN_LEDGER": str(ledger_path),
+            "RSNA_TICKET13_REQUEST_CHECKSUM": request.request_checksum,
+            "RSNA_TICKET13_SUBMISSION_WAIT": "1" if wait else "0",
+        }
+    )
     submission_environment["RSNA_TICKET13_PREVIOUS_RETRIES"] = str(retry_count)
     _write_gpu_submission_record(
         submission_record_path,
@@ -1513,6 +1784,16 @@ def submit_gpu_experiment(
     command.append(str(script))
     execute = runner or subprocess.run
     while True:
+        attempt_number = len(attempts) + 1
+        submitted_epoch = int(time.time())
+        begin_gpu_submission_attempt(
+            ledger_path,
+            request_checksum=request.request_checksum,
+            attempt_number=attempt_number,
+            submitted_epoch=submitted_epoch,
+        )
+        submission_environment["RSNA_TICKET13_SUBMITTED_EPOCH"] = str(submitted_epoch)
+        submission_environment["RSNA_TICKET13_ATTEMPT_NUMBER"] = str(attempt_number)
         try:
             completed = execute(
                 command,
@@ -1530,8 +1811,16 @@ def submit_gpu_experiment(
         if returncode == 0 and submitted_job_id is None:
             returncode = 1
             stderr = "sbatch exited successfully without a parseable job ID"
-        if submitted_job_id is not None and returncode == 0:
+        if submitted_job_id is not None:
             job_ids.append(submitted_job_id)
+        record_gpu_submission_result(
+            ledger_path,
+            request_checksum=request.request_checksum,
+            attempt_number=attempt_number,
+            job_id=submitted_job_id,
+            exit_code=returncode,
+            submission_wait=wait,
+        )
         attempts.append(
             {
                 "attempt": len(attempts) + 1,
@@ -1552,6 +1841,12 @@ def submit_gpu_experiment(
                 job_ids=job_ids,
                 last_failure=last_failure,
             )
+            if wait:
+                finish_gpu_campaign_request(
+                    ledger_path,
+                    request_checksum=request.request_checksum,
+                    status="completed",
+                )
             return GpuSubmissionResult(
                 status="completed" if wait else "submitted",
                 job_ids=tuple(job_ids),
@@ -1588,6 +1883,11 @@ def submit_gpu_experiment(
             or not classification.retryable
             or retry_count >= GPU_RETRY_LIMIT
         ):
+            finish_gpu_campaign_request(
+                ledger_path,
+                request_checksum=request.request_checksum,
+                status="failed",
+            )
             return GpuSubmissionResult(
                 status="failed",
                 job_ids=tuple(job_ids),
@@ -1793,6 +2093,21 @@ def run_approved_gpu_experiment(
             str,
             integration_manifest_checksum,
         )
+        pretrained_weights_path: Path | None = None
+        resource_approval_path: Path | None = None
+        if config.model_id == RESNET18_MODEL_ID:
+            pretrained_resource = _ticket33_pretrained_resource(
+                request.payload.get("execution")
+            )
+            pretrained_weights_path = Path(
+                _nonempty(pretrained_resource.get("weights_path"), "pretrained weights path")
+            ).resolve()
+            resource_approval_path = Path(
+                _nonempty(
+                    pretrained_resource.get("resource_approval_path"),
+                    "pretrained resource approval path",
+                )
+            ).resolve()
     allocation_environment = dict(os.environ if slurm_environment is None else slurm_environment)
     attempts: list[Mapping[str, object]] = []
     retry_count = previous_retries
@@ -1938,16 +2253,25 @@ def run_approved_gpu_experiment(
                 device=config.device,
                 resume_from=resume_from,
                 requested_resources=resource.to_dict(),
+                pretrained_weights_path=pretrained_weights_path,
+                resource_approval_path=resource_approval_path,
             )
         runner = production_training_runner
     while True:
         try:
+            cuda_timing = config.device.startswith("cuda") and torch.cuda.is_available()
+            if cuda_timing:
+                torch.cuda.synchronize()
+            training_started = time.perf_counter()
             training = runner(
                 training_destination / "checkpoints" / "latest.pt"
                 if (training_destination / "checkpoints" / "latest.pt").is_file()
                 and retry_count > 0
                 else None
             )
+            if cuda_timing:
+                torch.cuda.synchronize()
+            training_elapsed_seconds = max(time.perf_counter() - training_started, 1e-9)
             if training.config.to_dict() != config.to_dict():
                 raise GpuConfigurationError("GPU training changed the approved scientific configuration")
             final_checkpoint = training.final_checkpoint_path
@@ -2017,6 +2341,30 @@ def run_approved_gpu_experiment(
                     "nominal_device_memory_used": False,
                 },
                 "training": training.to_public_dict(),
+                "training_performance": {
+                    "end_to_end_training_elapsed_seconds": training_elapsed_seconds,
+                    "optimizer_step_compute_seconds": training.optimizer_step_compute_seconds,
+                    "measured_optimizer_steps": training.measured_optimizer_steps,
+                    "forward_backward_steps_per_second": (
+                        training.measured_optimizer_steps / training.optimizer_step_compute_seconds
+                        if training.optimizer_step_compute_seconds is not None
+                        and training.optimizer_step_compute_seconds > 0
+                        else None
+                    ),
+                    "training_study_examples_per_second": (
+                        training.measured_optimizer_steps
+                        * config.batch_size
+                        / training.optimizer_step_compute_seconds
+                        if training.optimizer_step_compute_seconds is not None
+                        and training.optimizer_step_compute_seconds > 0
+                        else None
+                    ),
+                    "measurement_scope": (
+                        "CUDA event time around successful forward, backward, optimizer, and "
+                        "scheduler work; excludes per-batch host input construction, checkpoint "
+                        "I/O, feature materialization, and evaluation"
+                    ),
+                },
                 "checkpoint": {
                     "final_present": True,
                     "final_sha256": final_sha256,
@@ -2132,6 +2480,10 @@ def run_gpu_smoke_test(
     if not examples:
         raise GpuExecutionError("GPU smoke execution requires at least one example")
     config = request.training_config
+    if config.model_id == RESNET18_MODEL_ID:
+        raise GpuExecutionError(
+            "pretrained ResNet smoke runs must use the approved real-fold GPU adapter"
+        )
     approval = load_gpu_approval(approval_path, request)
     preflight_reference = cast(Mapping[str, object], request.payload["cpu_preflight"])
     referenced_preflight = Path(
@@ -2189,6 +2541,9 @@ def prepare_gpu_experiment(
     *,
     preflight_path: str | Path,
     resource: GpuResourceRequest = GpuResourceRequest(),
+    campaign_ledger_path: str | Path | None = None,
+    reserved_comparison_hours: float = 0.0,
+    comparison_reserve_release_minutes: int = 0,
     training_config: TrainingConfig | None = None,
     experiment_id: str | None = None,
     experiment_identity: Mapping[str, object] | None = None,
@@ -2208,6 +2563,20 @@ def prepare_gpu_experiment(
     config = training_config or TrainingConfig(device="cuda")
     if config.device != "cuda" and not config.device.startswith("cuda:"):
         raise GpuConfigurationError("GPU experiment training_config must use a CUDA device")
+    execution_payload = dict(execution or {})
+    if config.model_id == RESNET18_MODEL_ID:
+        if (
+            config.encoder_id != RESNET18_ENCODER_ID
+            or config.encoder_weights_sha256 != RESNET18_SHA256
+        ):
+            raise GpuConfigurationError("GPU ResNet execution requires the admitted ImageNet encoder")
+        _ticket33_pretrained_resource(execution_payload)
+    elif execution_payload.get("pretrained_resource") is not None:
+        raise GpuConfigurationError("pretrained GPU resource metadata requires the ResNet-18 model")
+    try:
+        _canonical_json(execution_payload)
+    except (TypeError, ValueError) as exc:
+        raise GpuConfigurationError("execution metadata must be JSON-serializable") from exc
     if resource.smoke_test and config.successful_optimizer_steps > 2:
         raise GpuConfigurationError("GPU smoke requests must use at most two optimizer steps")
     if not isinstance(retry_allowed, bool):
@@ -2236,18 +2605,51 @@ def prepare_gpu_experiment(
     except (TypeError, ValueError) as exc:
         raise GpuConfigurationError("experiment_identity must be JSON-serializable") from exc
     request_id = _safe_identifier(
-        experiment_id or f"ticket13-gpu-{config.config_fingerprint[:12]}",
+        experiment_id or f"gpu-{config.config_fingerprint[:12]}",
         "experiment_id",
     )
     root = Path(output_root).resolve()
     if root.exists() and (not root.is_dir() or any(root.iterdir())):
         raise FileExistsError(f"refusing to overwrite existing GPU request directory {root}")
+    ledger_path = (
+        Path(campaign_ledger_path).resolve()
+        if campaign_ledger_path is not None
+        else (root.parent / ".gpu-campaign-ledger.json").resolve()
+    )
+    ledger = initialize_gpu_campaign_ledger(
+        ledger_path,
+        reserved_comparison_hours=reserved_comparison_hours,
+    )
+    retry_limit = GPU_RETRY_LIMIT if retry_allowed else 0
+    request_reservation_seconds = (retry_limit + 1) * resource.wall_time_minutes * 60
+    if (
+        not isinstance(comparison_reserve_release_minutes, int)
+        or isinstance(comparison_reserve_release_minutes, bool)
+        or comparison_reserve_release_minutes < 0
+    ):
+        raise GpuConfigurationError(
+            "comparison_reserve_release_minutes must be a non-negative integer"
+        )
+    comparison_reserve_release_seconds = comparison_reserve_release_minutes * 60
+    if comparison_reserve_release_seconds > resource.wall_time_minutes * 60:
+        raise GpuConfigurationError(
+            "comparison reserve release cannot exceed one fold's request limit"
+        )
+    capacity = check_gpu_campaign_capacity(
+        ledger_path,
+        request_reserved_seconds=request_reservation_seconds,
+        comparison_reserve_release_seconds=comparison_reserve_release_seconds,
+    )
+    comparison_reserve_seconds = int(cast(int, ledger["reserved_comparison_seconds"]))
+    remaining_after_request_and_reserve = (
+        capacity["remaining_seconds"]
+        - request_reservation_seconds
+        - comparison_reserve_seconds
+        + comparison_reserve_release_seconds
+    )
+    if remaining_after_request_and_reserve < 0:
+        raise GpuCampaignBudgetError("GPU request would consume the protected comparison reserve")
     root.mkdir(parents=True, exist_ok=True)
-    execution_payload = dict(execution or {})
-    try:
-        _canonical_json(execution_payload)
-    except (TypeError, ValueError) as exc:
-        raise GpuConfigurationError("execution metadata must be JSON-serializable") from exc
     evidence_payload: dict[str, object] = {
         "schema_version": GPU_EXECUTION_SCHEMA_VERSION,
         "execution_file": "gpu-execution.json",
@@ -2289,6 +2691,22 @@ def prepare_gpu_experiment(
             "retry_limit": GPU_RETRY_LIMIT,
         },
         "evidence": evidence_payload,
+        "campaign": {
+            "ledger_path": str(ledger_path),
+            "budget_seconds": int(cast(int, ledger["budget_seconds"])),
+            "reserved_comparison_seconds": comparison_reserve_seconds,
+            "comparison_reserve_release_seconds": comparison_reserve_release_seconds,
+            "comparison_reserve_after_request_seconds": (
+                comparison_reserve_seconds - comparison_reserve_release_seconds
+            ),
+            "remaining_hours_before_request": capacity["remaining_seconds"] / 3600.0,
+            "request_reservation_seconds": request_reservation_seconds,
+            "max_attempts": retry_limit + 1,
+            "remaining_hours_after_request_and_comparison_reserve": (
+                remaining_after_request_and_reserve / 3600.0
+            ),
+            "accounting": "Slurm queue wait and allocated wall time are recorded separately per attempt.",
+        },
         "execution": execution_payload,
     }
     payload["request_checksum"] = _json_sha256(payload)

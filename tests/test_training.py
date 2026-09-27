@@ -193,6 +193,10 @@ def test_fixed_budget_makes_learning_progress_and_records_each_step(tmp_path) ->
 
     assert result.successful_optimizer_steps == 12
     assert result.scheduler_steps == 12
+    assert result.optimizer_step_compute_seconds is None
+    assert result.measured_optimizer_steps == 0
+    assert result.to_public_dict()["counts"]["optimizer_step_compute_seconds"] is None
+    assert result.to_public_dict()["counts"]["measured_optimizer_steps"] == 0
     assert len(result.loss_history) == 12
     assert result.loss_history[-1] < result.loss_history[0]
     assert result.final_checkpoint_path is not None

@@ -1,0 +1,305 @@
+"""Frozen slice-level ResNet-18 features with deterministic study pooling."""
+
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+import torch
+from torch import nn
+
+from .preprocessing import SERIES_DESCRIPTOR_COLUMNS
+
+
+RESNET18_MODEL_ID = "resnet18-frozen-slice-features-v1"
+RESNET18_ENCODER_ID = "torchvision-resnet18-imagenet1k-v1"
+RESNET18_FIXTURE_ENCODER_ID = "ticket31-random-fixture-resnet18-v1"
+ANATOMICAL_POOLING_ID = "plane-stratified-series-mean-v1"
+SIMPLE_POOLING_ID = "flat-series-mean-v1"
+RESNET18_FEATURE_DIM = 512
+RESNET18_FEATURE_BATCH_SIZE = 16
+
+
+def _conv3x3(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
+    return nn.Conv2d(
+        in_channels,
+        out_channels,
+        kernel_size=3,
+        stride=stride,
+        padding=1,
+        bias=False,
+    )
+
+
+def _conv1x1(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
+    return nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)
+
+
+class _BasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, in_channels: int, channels: int, stride: int = 1) -> None:
+        super().__init__()
+        self.conv1 = _conv3x3(in_channels, channels, stride)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = _conv3x3(channels, channels)
+        self.bn2 = nn.BatchNorm2d(channels)
+        self.downsample: nn.Module | None = None
+        if stride != 1 or in_channels != channels:
+            self.downsample = nn.Sequential(
+                _conv1x1(in_channels, channels, stride),
+                nn.BatchNorm2d(channels),
+            )
+
+    def forward(self, value: torch.Tensor) -> torch.Tensor:
+        identity = value
+        result = self.conv1(value)
+        result = self.bn1(result)
+        result = self.relu(result)
+        result = self.conv2(result)
+        result = self.bn2(result)
+        if self.downsample is not None:
+            identity = self.downsample(value)
+        return self.relu(result + identity)
+
+
+class _ResNet18Backbone(nn.Module):
+    """TorchVision-compatible ResNet-18 feature trunk without its ImageNet head."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_channels = 64
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.layer1 = self._make_layer(64, blocks=2)
+        self.layer2 = self._make_layer(128, blocks=2, stride=2)
+        self.layer3 = self._make_layer(256, blocks=2, stride=2)
+        self.layer4 = self._make_layer(512, blocks=2, stride=2)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
+            elif isinstance(module, nn.BatchNorm2d):
+                nn.init.ones_(module.weight)
+                nn.init.zeros_(module.bias)
+
+    def _make_layer(self, channels: int, *, blocks: int, stride: int = 1) -> nn.Sequential:
+        layers: list[nn.Module] = [_BasicBlock(self.in_channels, channels, stride)]
+        self.in_channels = channels
+        layers.extend(_BasicBlock(self.in_channels, channels) for _ in range(blocks - 1))
+        return nn.Sequential(*layers)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        result = self.conv1(images)
+        result = self.bn1(result)
+        result = self.relu(result)
+        result = self.maxpool(result)
+        result = self.layer1(result)
+        result = self.layer2(result)
+        result = self.layer3(result)
+        result = self.layer4(result)
+        return torch.flatten(self.avgpool(result), start_dim=1)
+
+
+class ResNet18StudyModel(nn.Module):
+    """Frozen ResNet-18 slice features and a fold-specific trainable study head."""
+
+    imagenet_mean: torch.Tensor
+    imagenet_std: torch.Tensor
+
+    def __init__(self, config: Any) -> None:
+        super().__init__()
+        self.config = config
+        if config.input_channels != 1:
+            raise ValueError("the ResNet-18 knee representation expects grayscale slices")
+        if len(config.image_size) != 2 or min(config.image_size) < 32:
+            raise ValueError("ResNet-18 images must be at least 32 pixels in each dimension")
+        if config.encoder_id not in {RESNET18_ENCODER_ID, RESNET18_FIXTURE_ENCODER_ID}:
+            raise ValueError(f"unsupported ResNet-18 encoder identity {config.encoder_id!r}")
+        if config.pooling_id not in {ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID}:
+            raise ValueError(f"unsupported ResNet-18 pooling identity {config.pooling_id!r}")
+        self.encoder = _ResNet18Backbone()
+        for parameter in self.encoder.parameters():
+            parameter.requires_grad_(False)
+        self.encoder.eval()
+        if config.pooling_id == ANATOMICAL_POOLING_ID:
+            pooled_width = 4 * (RESNET18_FEATURE_DIM + 6 + 1)
+        else:
+            pooled_width = RESNET18_FEATURE_DIM + len(SERIES_DESCRIPTOR_COLUMNS) + 1
+        self.head = nn.Sequential(
+            nn.Linear(pooled_width, config.head_hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(config.head_hidden_size, config.num_targets),
+        )
+        self.register_buffer(
+            "imagenet_mean",
+            torch.tensor((0.485, 0.456, 0.406), dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=True,
+        )
+        self.register_buffer(
+            "imagenet_std",
+            torch.tensor((0.229, 0.224, 0.225), dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=True,
+        )
+
+    def train(self, mode: bool = True) -> ResNet18StudyModel:
+        super().train(mode)
+        self.encoder.eval()
+        return self
+
+    def load_pretrained_state(self, state: Mapping[str, torch.Tensor]) -> None:
+        """Load the torchvision state mapping after its artifact has been admitted."""
+
+        source = dict(state)
+        source.pop("fc.weight", None)
+        source.pop("fc.bias", None)
+        try:
+            self.encoder.load_state_dict(source, strict=True)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise ValueError("pretrained checkpoint is not compatible with ResNet-18") from exc
+
+    def encode_packed(
+        self,
+        images: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Encode only valid slices, returning zero features for padded slots."""
+
+        if images.ndim != 6:
+            raise ValueError("images must have shape (batch, series, slices, channels, height, width)")
+        batch, series, slices, channels, height, width = images.shape
+        if (height, width) != tuple(self.config.image_size) or channels != 1:
+            raise ValueError("image shape does not match the ResNet-18 configuration")
+        if slice_mask.shape != (batch, series, slices) or series_mask.shape != (batch, series):
+            raise ValueError("slice and series masks do not match the packed images")
+        valid = slice_mask.to(dtype=torch.bool) & series_mask.to(dtype=torch.bool).unsqueeze(-1)
+        flat = images.to(dtype=torch.float32).reshape(-1, 1, height, width)
+        valid_indices = torch.nonzero(valid.reshape(-1), as_tuple=False).flatten()
+        features = flat.new_zeros((flat.shape[0], RESNET18_FEATURE_DIM))
+        if valid_indices.numel():
+            with torch.no_grad():
+                for start in range(0, valid_indices.numel(), RESNET18_FEATURE_BATCH_SIZE):
+                    indices = valid_indices[start : start + RESNET18_FEATURE_BATCH_SIZE]
+                    grayscale = flat.index_select(0, indices)
+                    rgb = grayscale.expand(-1, 3, -1, -1)
+                    normalized = (rgb - self.imagenet_mean) / self.imagenet_std
+                    encoded = self.encoder(normalized)
+                    features.index_copy_(0, indices, encoded)
+        return features.reshape(batch, series, slices, RESNET18_FEATURE_DIM)
+
+    def _pool_features(
+        self,
+        features: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+        series_descriptors: torch.Tensor,
+    ) -> torch.Tensor:
+        if features.ndim != 4 or features.shape[-1] != RESNET18_FEATURE_DIM:
+            raise ValueError("features must have shape (batch, series, slices, 512)")
+        batch, series, slices, _ = features.shape
+        if slice_mask.shape != (batch, series, slices):
+            raise ValueError("slice_mask must match the feature dimensions")
+        if series_mask.shape != (batch, series):
+            raise ValueError("series_mask must match the feature dimensions")
+        if series_descriptors.shape != (batch, series, len(SERIES_DESCRIPTOR_COLUMNS)):
+            raise ValueError("series descriptors must preserve the ten declared metadata states")
+        valid_slices = slice_mask.to(device=features.device, dtype=torch.bool)
+        valid_series = series_mask.to(device=features.device, dtype=torch.bool)
+        valid = valid_slices & valid_series.unsqueeze(-1)
+        weights = valid.to(dtype=features.dtype).unsqueeze(-1)
+        series_features = (features * weights).sum(dim=2) / weights.sum(dim=2).clamp_min(1.0)
+        admitted_series = valid.any(dim=2)
+        descriptors = series_descriptors.to(device=features.device, dtype=features.dtype)
+        descriptor_mask = admitted_series.to(dtype=features.dtype).unsqueeze(-1)
+
+        if self.config.pooling_id == SIMPLE_POOLING_ID:
+            series_weights = descriptor_mask
+            pooled_features = (series_features * series_weights).sum(dim=1)
+            pooled_features = pooled_features / series_weights.sum(dim=1).clamp_min(1.0)
+            pooled_descriptors = (descriptors * series_weights).sum(dim=1)
+            pooled_descriptors = pooled_descriptors / series_weights.sum(dim=1).clamp_min(1.0)
+            present = series_weights.sum(dim=1).clamp_max(1.0)
+            return torch.cat((pooled_features, pooled_descriptors, present), dim=1)
+
+        plane_groups: list[torch.Tensor] = []
+        for plane_index in range(4):
+            group_weights = (
+                admitted_series & (descriptors[:, :, plane_index] > 0.5)
+            ).to(dtype=features.dtype)
+            expanded = group_weights.unsqueeze(-1)
+            count = group_weights.sum(dim=1, keepdim=True)
+            pooled_features = (series_features * expanded).sum(dim=1) / count.clamp_min(1.0)
+            pooled_metadata = (
+                descriptors[:, :, 4:] * expanded
+            ).sum(dim=1) / count.clamp_min(1.0)
+            present = (count > 0).to(dtype=features.dtype)
+            plane_groups.append(torch.cat((pooled_features, pooled_metadata, present), dim=1))
+        return torch.cat(plane_groups, dim=1)
+
+    def forward_from_features(
+        self,
+        features: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+        series_descriptors: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.head(self._pool_features(features, slice_mask, series_mask, series_descriptors))
+
+    def forward(
+        self,
+        images: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+        series_descriptors: torch.Tensor,
+    ) -> torch.Tensor:
+        features = self.encode_packed(images, slice_mask, series_mask)
+        return self.forward_from_features(features, slice_mask, series_mask, series_descriptors)
+
+    def predict_proba(
+        self,
+        images: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+        series_descriptors: torch.Tensor,
+    ) -> torch.Tensor:
+        return torch.sigmoid(self(images, slice_mask, series_mask, series_descriptors)).clamp(0.0, 1.0)
+
+    def predict_proba_from_features(
+        self,
+        features: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+        series_descriptors: torch.Tensor,
+    ) -> torch.Tensor:
+        return torch.sigmoid(
+            self.forward_from_features(features, slice_mask, series_mask, series_descriptors)
+        ).clamp(0.0, 1.0)
+
+    def encode_one_study(
+        self,
+        images: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Encode one packed study for the immutable feature cache."""
+
+        if images.ndim != 5 or slice_mask.ndim != 2 or series_mask.ndim != 1:
+            raise ValueError("one-study feature extraction requires unbatched packed inputs")
+        encoded = self.encode_packed(
+            images.unsqueeze(0), slice_mask.unsqueeze(0), series_mask.unsqueeze(0)
+        )
+        return encoded.squeeze(0)
+
+
+__all__ = [
+    "ANATOMICAL_POOLING_ID",
+    "RESNET18_ENCODER_ID",
+    "RESNET18_FEATURE_DIM",
+    "RESNET18_FIXTURE_ENCODER_ID",
+    "RESNET18_MODEL_ID",
+    "ResNet18StudyModel",
+    "SIMPLE_POOLING_ID",
+]

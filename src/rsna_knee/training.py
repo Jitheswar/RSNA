@@ -36,12 +36,28 @@ from .archive import atomic_json_write
 from .domain import StudyRecord
 from .folds import FOLD_IDS, FoldManifest
 from .model import (
-    HierarchicalStudyModel,
+    ANATOMICAL_POOLING_ID,
+    COMPACT_MODEL_ID,
+    COMPACT_POOLING_ID,
+    RESNET18_MODEL_ID,
+    SIMPLE_POOLING_ID,
     ModelConfig,
     ModelConfigurationError,
+    StudyModel,
     build_study_model,
     restore_study_model,
 )
+from .resnet18 import RESNET18_ENCODER_ID, RESNET18_FEATURE_DIM, RESNET18_FIXTURE_ENCODER_ID, ResNet18StudyModel
+from .pretrained import (
+    RESNET18_ARTIFACT_BYTES,
+    RESNET18_DOWNLOAD_URL,
+    RESNET18_SHA256,
+    TICKET33_RESOURCE_SCOPE,
+    PretrainedResourceError,
+    load_resnet18_weights,
+    load_resource_approval,
+)
+from .feature_cache import FrozenFeatureCache
 from .pseudo_labels import AdmittedFoldPseudoLabels
 from .preprocessing import (
     PackedStudy,
@@ -53,6 +69,11 @@ from .preprocessing import (
 )
 from .series_cache import SeriesCache
 from .supervision import AdmittedFoldSupervision
+from .ticket34 import (
+    TICKET34_ADDITIVE_DESIGN,
+    TICKET34_WEAK_BATCH_SEED_OFFSET,
+    TICKET34_WEAK_SAMPLING_POLICY,
+)
 from .targets import NUM_TARGETS
 
 if TYPE_CHECKING:
@@ -229,6 +250,18 @@ class _GpuExecutionAuthorization:
     allocation_fingerprint: str
 
 
+@dataclass(frozen=True)
+class _KaggleGpuExecutionAuthorization:
+    """Private proof binding training to one approved Kaggle kernel run."""
+
+    request_checksum: str
+    approval_checksum: str
+    preflight_checksum: str
+    approval_scope: str
+    kernel_id: str
+    runtime_fingerprint: str
+
+
 def _new_gpu_execution_authorization(
     *,
     request_checksum: str,
@@ -253,10 +286,36 @@ def _new_gpu_execution_authorization(
     return _GpuExecutionAuthorization(*values)
 
 
-def _validate_gpu_execution_authorization_shape(value: object) -> _GpuExecutionAuthorization:
+def _new_kaggle_gpu_execution_authorization(
+    *,
+    request_checksum: str,
+    approval_checksum: str,
+    preflight_checksum: str,
+    approval_scope: str,
+    kernel_id: str,
+    runtime_fingerprint: str,
+) -> object:
+    """Create the private proof used only by the Ticket 33 Kaggle adapter."""
+
+    values = (
+        request_checksum,
+        approval_checksum,
+        preflight_checksum,
+        approval_scope,
+        kernel_id,
+        runtime_fingerprint,
+    )
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise TrainingConfigurationError("Kaggle GPU execution authorization is incomplete")
+    return _KaggleGpuExecutionAuthorization(*values)
+
+
+def _validate_gpu_execution_authorization_shape(
+    value: object,
+) -> _GpuExecutionAuthorization | _KaggleGpuExecutionAuthorization:
     """Validate the private proof's shape before the full adapter recheck."""
 
-    if not isinstance(value, _GpuExecutionAuthorization):
+    if not isinstance(value, (_GpuExecutionAuthorization, _KaggleGpuExecutionAuthorization)):
         raise TrainingConfigurationError(
             "CUDA training requires the approval-gated GPU execution authorization"
         )
@@ -264,20 +323,25 @@ def _validate_gpu_execution_authorization_shape(value: object) -> _GpuExecutionA
         "request_checksum",
         "approval_checksum",
         "preflight_checksum",
-        "allocation_fingerprint",
+        "allocation_fingerprint"
+        if isinstance(value, _GpuExecutionAuthorization)
+        else "runtime_fingerprint",
     ):
         field_value = getattr(value, field_name)
         if re.fullmatch(r"[0-9a-f]{64}", field_value) is None:
             raise TrainingConfigurationError(
                 f"GPU execution authorization has an invalid {field_name}"
             )
-    if value.approval_scope != "ticket-13-approved-gpu-experiment":
-        raise TrainingConfigurationError("GPU execution authorization has an invalid approval scope")
-    active_job_id = os.environ.get("SLURM_JOB_ID", "").strip()
-    if not active_job_id or active_job_id != value.slurm_job_id:
-        raise TrainingConfigurationError(
-            "CUDA training requires the approved GPU Slurm job to remain active"
-        )
+    if isinstance(value, _GpuExecutionAuthorization):
+        if value.approval_scope != "ticket-13-approved-gpu-experiment":
+            raise TrainingConfigurationError("GPU execution authorization has an invalid approval scope")
+        active_job_id = os.environ.get("SLURM_JOB_ID", "").strip()
+        if not active_job_id or active_job_id != value.slurm_job_id:
+            raise TrainingConfigurationError(
+                "CUDA training requires the approved GPU Slurm job to remain active"
+            )
+    elif value.approval_scope != "ticket33-kaggle-free-t4-validation":
+        raise TrainingConfigurationError("Kaggle GPU execution authorization has an invalid scope")
     return value
 
 
@@ -290,8 +354,19 @@ def _validate_gpu_execution_authorization(
     resource: Mapping[str, object],
     allocation_environment: Mapping[str, str],
     preflight: CpuPreflightResult,
-) -> _GpuExecutionAuthorization:
+) -> _GpuExecutionAuthorization | _KaggleGpuExecutionAuthorization:
     value = _validate_gpu_execution_authorization_shape(value)
+    if isinstance(value, _KaggleGpuExecutionAuthorization):
+        from .kaggle_gpu import validate_kaggle_training_authorization
+
+        return validate_kaggle_training_authorization(
+            value,
+            request_path=request_path,
+            approval_path=approval_path,
+            preflight_path=preflight_path,
+            resource=resource,
+            preflight=preflight,
+        )
     from .gpu import (
         _json_sha256,
         _sha256_file,
@@ -451,6 +526,11 @@ class TrainingConfig:
     device: str = "cpu"
     selection_policy: str = "final_checkpoint"
     preprocessing_config: PreprocessConfig | None = None
+    model_id: str = COMPACT_MODEL_ID
+    pooling_id: str = COMPACT_POOLING_ID
+    encoder_id: str | None = None
+    encoder_weights_sha256: str | None = None
+    head_hidden_size: int = 32
 
     def __post_init__(self) -> None:
         if len(self.image_size) != 2 or any(size <= 0 for size in self.image_size):
@@ -458,7 +538,7 @@ class TrainingConfig:
         if len(self.channels) != 3 or any(channel <= 0 for channel in self.channels):
             raise TrainingConfigurationError("channels must contain three positive widths")
         if self.input_channels != 1:
-            raise TrainingConfigurationError("the mechanics baseline uses one grayscale channel")
+            raise TrainingConfigurationError("image models use one grayscale channel")
         if self.max_slices <= 0 or self.max_series <= 0:
             raise TrainingConfigurationError("max_slices and max_series must be positive")
         if self.batch_size != 2:
@@ -502,12 +582,33 @@ class TrainingConfig:
                 raise TrainingConfigurationError(
                     "preprocessing and packing max_series must agree"
                 )
+        try:
+            self.model_config()
+        except (TypeError, ValueError, ModelConfigurationError) as exc:
+            raise TrainingConfigurationError("training model configuration is invalid") from exc
+        if self.model_id == RESNET18_MODEL_ID:
+            if self.image_size != (224, 224):
+                raise TrainingConfigurationError("Ticket 31 ResNet-18 requires the 224-pixel representation")
+            if self.pooling_id not in {ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID}:
+                raise TrainingConfigurationError("Ticket 31 pooling identity is unsupported")
+            if self.preprocessing_config is not None and (
+                self.preprocessing_config.representation_id
+                != "ticket31-resnet18-224-whole-field-v1"
+            ):
+                raise TrainingConfigurationError("Ticket 31 requires its versioned 224-pixel preprocessing")
+        elif self.model_id != COMPACT_MODEL_ID or self.pooling_id != COMPACT_POOLING_ID:
+            raise TrainingConfigurationError("training model variant is unsupported")
 
     def model_config(self) -> ModelConfig:
         return ModelConfig(
             image_size=self.image_size,
             channels=self.channels,
             input_channels=self.input_channels,
+            model_id=self.model_id,
+            pooling_id=self.pooling_id,
+            encoder_id=self.encoder_id,
+            encoder_weights_sha256=self.encoder_weights_sha256,
+            head_hidden_size=self.head_hidden_size,
         )
 
     def preprocess_config(self) -> PreprocessConfig:
@@ -517,6 +618,11 @@ class TrainingConfig:
             image_size=self.image_size,
             max_slices=self.max_slices,
             max_series=self.max_series,
+            representation_id=(
+                "ticket31-resnet18-224-whole-field-v1"
+                if self.model_id == RESNET18_MODEL_ID
+                else None
+            ),
         )
 
     def packing_config(self) -> PackingConfig:
@@ -739,7 +845,7 @@ class TrainingExample:
     """One fixed-shape packed study with hard labels or admitted soft targets."""
 
     study_instance_uid: str
-    images: np.ndarray
+    images: np.ndarray | None
     slice_mask: np.ndarray
     series_mask: np.ndarray
     targets: np.ndarray
@@ -747,29 +853,54 @@ class TrainingExample:
     provenance: SupervisionProvenance = SupervisionProvenance()
     rejected_series: tuple[SeriesFailure, ...] = ()
     target_kind: str = "hard_label"
+    series_descriptors: np.ndarray | None = None
+    features: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         if not self.study_instance_uid.strip():
             raise TrainingDataError("training examples require a study identifier")
-        images = np.asarray(self.images)
         slice_mask = np.asarray(self.slice_mask)
         series_mask = np.asarray(self.series_mask)
         targets = np.asarray(self.targets)
         supervision_mask = np.asarray(self.supervision_mask)
-        if images.ndim != 5 or images.shape[2] != 1:
-            raise TrainingDataError(
-                "training images must have shape (series, slices, 1, height, width)"
-            )
-        if slice_mask.shape != images.shape[:2] or series_mask.shape != (images.shape[0],):
+        if slice_mask.ndim != 2 or series_mask.shape != (slice_mask.shape[0],):
             raise TrainingDataError("training image and mask shapes do not agree")
+        if self.images is None:
+            if self.features is None:
+                raise TrainingDataError("feature-only training examples require frozen features")
+            image_shape = (*slice_mask.shape, 1, 0, 0)
+        else:
+            images = np.asarray(self.images)
+            if images.ndim != 5 or images.shape[2] != 1:
+                raise TrainingDataError(
+                    "training images must have shape (series, slices, 1, height, width)"
+                )
+            if slice_mask.shape != images.shape[:2] or series_mask.shape != (images.shape[0],):
+                raise TrainingDataError("training image and mask shapes do not agree")
+            if images.dtype.kind not in "fiu" or not np.isfinite(images).all():
+                raise TrainingDataError("training images must be finite numeric arrays")
+            image_shape = images.shape
+        if self.series_descriptors is not None:
+            descriptors = np.asarray(self.series_descriptors)
+            expected_series_count = (
+                images.shape[0] if self.images is not None else slice_mask.shape[0]
+            )
+            if descriptors.ndim != 2 or descriptors.shape[0] != expected_series_count:
+                raise TrainingDataError("training series descriptors do not match packed series")
+            if descriptors.dtype.kind not in "fiu" or not np.isfinite(descriptors).all():
+                raise TrainingDataError("training series descriptors must be finite numeric arrays")
+        if self.features is not None:
+            features = np.asarray(self.features)
+            if features.shape != (*image_shape[:2], RESNET18_FEATURE_DIM):
+                raise TrainingDataError("frozen features must have shape (series, slices, 512)")
+            if features.dtype.kind not in "fiu" or not np.isfinite(features).all():
+                raise TrainingDataError("frozen features must be finite numeric arrays")
         if targets.shape != (NUM_TARGETS,) or supervision_mask.shape != (NUM_TARGETS,):
             raise TrainingDataError(f"training targets must have shape ({NUM_TARGETS},)")
         if self.target_kind not in {"hard_label", "teacher_probability"}:
             raise TrainingDataError("training target_kind must be hard_label or teacher_probability")
         if self.target_kind == "teacher_probability" and self.provenance.source_kind != "pseudo":
             raise TrainingDataError("teacher probability targets require teacher-derived provenance")
-        if images.dtype.kind not in "fiu" or not np.isfinite(images).all():
-            raise TrainingDataError("training images must be finite numeric arrays")
         if not np.asarray(slice_mask, dtype=bool).any() or not np.asarray(series_mask, dtype=bool).any():
             raise TrainingDataError("training examples must contain at least one valid slice and series")
         supervised = np.asarray(supervision_mask, dtype=bool)
@@ -792,6 +923,7 @@ class TrainingExample:
         *,
         provenance: SupervisionProvenance = SupervisionProvenance(),
         rejected_series: Sequence[SeriesFailure] = (),
+        include_series_descriptors: bool = False,
     ) -> "TrainingExample":
         if len(targets) != NUM_TARGETS:
             raise TrainingDataError(f"targets must contain {NUM_TARGETS} entries")
@@ -800,6 +932,8 @@ class TrainingExample:
             dtype=np.float32,
         )
         mask = np.asarray([value is not None for value in targets], dtype=bool)
+        if include_series_descriptors and packed.series_descriptors is None:
+            raise TrainingDataError("packed study is missing required series descriptors")
         return cls(
             study_instance_uid=packed.study_instance_uid,
             images=np.asarray(packed.images, dtype=np.float32),
@@ -809,6 +943,44 @@ class TrainingExample:
             supervision_mask=mask,
             provenance=provenance,
             rejected_series=tuple(rejected_series),
+            series_descriptors=(
+                np.asarray(cast(np.ndarray, packed.series_descriptors), dtype=np.float32)
+                if include_series_descriptors
+                else None
+            ),
+        )
+
+    @classmethod
+    def from_features(
+        cls,
+        study_instance_uid: str,
+        features: np.ndarray,
+        slice_mask: np.ndarray,
+        series_mask: np.ndarray,
+        series_descriptors: np.ndarray,
+        targets: Sequence[float | int | None],
+        *,
+        provenance: SupervisionProvenance = SupervisionProvenance(),
+    ) -> "TrainingExample":
+        """Create a head-training example without retaining source pixels."""
+
+        if len(targets) != NUM_TARGETS:
+            raise TrainingDataError(f"targets must contain {NUM_TARGETS} entries")
+        target_array = np.asarray(
+            [0.0 if value is None else float(value) for value in targets],
+            dtype=np.float32,
+        )
+        mask = np.asarray([value is not None for value in targets], dtype=bool)
+        return cls(
+            study_instance_uid=study_instance_uid,
+            images=None,
+            slice_mask=np.asarray(slice_mask, dtype=bool),
+            series_mask=np.asarray(series_mask, dtype=bool),
+            targets=target_array,
+            supervision_mask=mask,
+            provenance=provenance,
+            series_descriptors=np.asarray(series_descriptors, dtype=np.float32),
+            features=np.asarray(features, dtype=np.float32),
         )
 
 
@@ -835,7 +1007,7 @@ class CpuPreflightResult:
 class TrainingResult:
     """Fixed-budget outcome and, when requested, held-out evaluation."""
 
-    model: HierarchicalStudyModel
+    model: StudyModel
     config: TrainingConfig
     successful_optimizer_steps: int
     scheduler_steps: int
@@ -873,6 +1045,8 @@ class TrainingResult:
     weak_sampling_seed: int | None = None
     additional_sampling_policy: str | None = None
     additional_sampling_seed: int | None = None
+    optimizer_step_compute_seconds: float | None = None
+    measured_optimizer_steps: int = 0
 
     @property
     def final_loss(self) -> float | None:
@@ -909,6 +1083,8 @@ class TrainingResult:
         counts["additional_sampling_policy"] = self.additional_sampling_policy
         counts["additional_sampling_seed"] = self.additional_sampling_seed
         counts["heldout_model_inference_seconds"] = self.heldout_model_inference_seconds
+        counts["optimizer_step_compute_seconds"] = self.optimizer_step_compute_seconds
+        counts["measured_optimizer_steps"] = self.measured_optimizer_steps
         return {
             "schema_version": TRAINING_SCHEMA_VERSION,
             "status": "completed_fixed_budget_training",
@@ -1003,20 +1179,28 @@ def fingerprint_training_examples(examples: Sequence[TrainingExample]) -> str:
 
     rows: list[dict[str, object]] = []
     for example in sorted(examples, key=lambda item: item.study_instance_uid):
-        rows.append(
-            {
-                "study_instance_uid": example.study_instance_uid,
-                "images": _array_sha256(example.images),
-                "slice_mask": _array_sha256(np.asarray(example.slice_mask, dtype=np.uint8)),
-                "series_mask": _array_sha256(np.asarray(example.series_mask, dtype=np.uint8)),
-                "targets": _array_sha256(np.asarray(example.targets, dtype=np.float32)),
-                "target_kind": example.target_kind,
-                "supervision_mask": _array_sha256(
-                    np.asarray(example.supervision_mask, dtype=np.uint8)
-                ),
-                "provenance": example.provenance.to_dict(),
-            }
-        )
+        row: dict[str, object] = {
+            "study_instance_uid": example.study_instance_uid,
+            "slice_mask": _array_sha256(np.asarray(example.slice_mask, dtype=np.uint8)),
+            "series_mask": _array_sha256(np.asarray(example.series_mask, dtype=np.uint8)),
+            "targets": _array_sha256(np.asarray(example.targets, dtype=np.float32)),
+            "target_kind": example.target_kind,
+            "supervision_mask": _array_sha256(
+                np.asarray(example.supervision_mask, dtype=np.uint8)
+            ),
+            "provenance": example.provenance.to_dict(),
+        }
+        if example.images is not None:
+            row["images"] = _array_sha256(example.images)
+        if example.series_descriptors is not None:
+            row["series_descriptors"] = _array_sha256(
+                np.asarray(example.series_descriptors, dtype=np.float32)
+            )
+        if example.features is not None:
+            row["frozen_features"] = _array_sha256(
+                np.asarray(example.features, dtype=np.float32)
+            )
+        rows.append(row)
     return _json_sha256(rows)
 
 
@@ -1241,9 +1425,71 @@ def build_fold_examples(
                 targets,
                 provenance=provenance,
                 rejected_series=prepared.failures,
+                include_series_descriptors=preprocess_config.representation_id is not None,
             )
         )
     return tuple(examples)
+
+
+def _attach_cached_resnet_features(
+    examples: Sequence[TrainingExample],
+    *,
+    model: ResNet18StudyModel,
+    cache: FrozenFeatureCache,
+    device: torch.device,
+    fallback_cache: FrozenFeatureCache | None = None,
+) -> tuple[TrainingExample, ...]:
+    """Materialize fixed encoder features without fitting on study labels."""
+
+    model.eval()
+    result: list[TrainingExample] = []
+    for example in examples:
+        if example.images is None:
+            if example.features is None or example.series_descriptors is None:
+                raise TrainingDataError("feature-only examples require features and series descriptors")
+            result.append(example)
+            continue
+        if example.series_descriptors is None:
+            raise TrainingDataError("ResNet-18 training requires declared series descriptors")
+        images = torch.from_numpy(np.asarray(example.images, dtype=np.float32)).unsqueeze(0).to(device)
+        slice_mask = torch.from_numpy(np.asarray(example.slice_mask, dtype=bool)).unsqueeze(0).to(device)
+        series_mask = torch.from_numpy(np.asarray(example.series_mask, dtype=bool)).unsqueeze(0).to(device)
+
+        def compute() -> np.ndarray:
+            if fallback_cache is not None:
+                def unexpected_fallback_recompute() -> np.ndarray:
+                    raise TrainingDataError(
+                        "the read-only Ticket 32 feature cache is missing an expected fold-0 study"
+                    )
+
+                features, _ = fallback_cache.get_or_compute(
+                    example.study_instance_uid,
+                    example.images,
+                    example.slice_mask,
+                    example.series_mask,
+                    example.series_descriptors,
+                    unexpected_fallback_recompute,
+                )
+                cache.fallback_imports += 1
+                return features
+            with torch.inference_mode():
+                return (
+                    model.encode_one_study(images.squeeze(0), slice_mask.squeeze(0), series_mask.squeeze(0))
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+
+        features, _ = cache.get_or_compute(
+            example.study_instance_uid,
+            example.images,
+            example.slice_mask,
+            example.series_mask,
+            example.series_descriptors,
+            compute,
+        )
+        result.append(replace(example, features=features))
+    return tuple(result)
 
 
 def build_fold_training_examples(
@@ -1339,9 +1585,23 @@ def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConf
         if example.study_instance_uid in seen:
             raise TrainingDataError(f"duplicate training study {example.study_instance_uid}")
         seen.add(example.study_instance_uid)
-        if tuple(example.images.shape) != expected_shape:
+        if config.model_id == RESNET18_MODEL_ID:
+            if example.series_descriptors is None or example.features is None:
+                raise TrainingDataError(
+                    f"study {example.study_instance_uid} is missing frozen features or series descriptors"
+                )
+            if example.images is not None and tuple(example.images.shape) != expected_shape:
+                raise TrainingDataError(
+                    f"study {example.study_instance_uid} has shape {example.images.shape}; expected {expected_shape}"
+                )
+            if tuple(example.features.shape) != (*expected_shape[:2], RESNET18_FEATURE_DIM):
+                raise TrainingDataError(
+                    f"study {example.study_instance_uid} has invalid frozen feature dimensions"
+                )
+        elif example.images is None or tuple(example.images.shape) != expected_shape:
+            observed = None if example.images is None else example.images.shape
             raise TrainingDataError(
-                f"study {example.study_instance_uid} has shape {example.images.shape}; expected {expected_shape}"
+                f"study {example.study_instance_uid} has shape {observed}; expected {expected_shape}"
             )
         if example.provenance.source_kind not in {"reference", "weak", "mixed", "pseudo"}:
             raise TrainingDataError("training example has an unsupported supervision source")
@@ -1431,7 +1691,7 @@ def checkpoint_sha256(path: str | Path) -> str:
 
 def save_training_checkpoint(
     path: str | Path,
-    model: HierarchicalStudyModel,
+    model: StudyModel,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     config: TrainingConfig,
@@ -1761,7 +2021,7 @@ def _migrate_legacy_checkpoint(
 def load_training_checkpoint(
     path: str | Path,
     *,
-    model: HierarchicalStudyModel | None = None,
+    model: StudyModel | None = None,
     optimizer: torch.optim.Optimizer | None = None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     scaler: Any | None = None,
@@ -2023,9 +2283,41 @@ def _checkpoint_identity(
         if supervision.get("kind") in (None, "reference")
         else "admitted-fold-supervision"
     )
+    model_config = config.model_config()
+    resnet_model = config.model_id == RESNET18_MODEL_ID
+    compact_architecture = {
+        "image_size": model_config.image_size,
+        "channels": model_config.channels,
+        "input_channels": model_config.input_channels,
+        "num_targets": model_config.num_targets,
+    }
+    architecture: Mapping[str, object] = (
+        model_config.to_dict() if resnet_model else compact_architecture
+    )
+    encoder_initialization: object = (
+        {
+            "kind": "frozen-external-weights",
+            "encoder_id": config.encoder_id,
+            "sha256": config.encoder_weights_sha256,
+            "source_revision": "pytorch/vision@v0.22.1",
+        }
+        if resnet_model and config.encoder_id == RESNET18_ENCODER_ID
+        else {
+            "kind": "deterministic-random-fixture",
+            "encoder_id": config.encoder_id,
+        }
+        if resnet_model
+        else "deterministic-initialization"
+    )
     return {
         "training_schema_version": TRAINING_SCHEMA_VERSION,
-        "model_source": "local:HierarchicalStudyModel;weights=deterministic-initialization",
+        "model_source": (
+            f"external:{config.encoder_id};sha256={config.encoder_weights_sha256};frozen"
+            if resnet_model and config.encoder_id == RESNET18_ENCODER_ID
+            else "synthetic:random-resnet18-fixture;frozen"
+            if resnet_model
+            else "local:HierarchicalStudyModel;weights=deterministic-initialization"
+        ),
         "data": {
             "source_version": source_version,
             "source_fingerprint": source_fingerprint,
@@ -2052,8 +2344,8 @@ def _checkpoint_identity(
         "supervision": supervision,
         "preprocessing": config.preprocess_config().cache_config(),
         "packing": config.packing_config().to_dict(),
-        "architecture": config.model_config().__dict__,
-        "initialization": "deterministic-initialization",
+        "architecture": dict(architecture),
+        "initialization": encoder_initialization,
         "optimization": {
             "optimizer": config.optimizer,
             "learning_rate": config.learning_rate,
@@ -2228,13 +2520,59 @@ def _default_requested_resources() -> dict[str, object]:
     }
 
 
+def acquire_resnet18_weights(
+    approval_path: str | Path,
+    destination: str | Path,
+    *,
+    timeout_seconds: float = 60.0,
+) -> Path:
+    """Download the exact pretrained artifact only after its signed-off gate."""
+
+    load_resource_approval(approval_path)
+    target = Path(destination)
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f"refusing to overwrite pretrained weights {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.partial-", dir=target.parent
+    )
+    temporary = Path(temporary_name)
+    digest = hashlib.sha256()
+    total_bytes = 0
+    try:
+        from urllib.request import urlopen
+
+        with os.fdopen(descriptor, "wb") as output, urlopen(
+            RESNET18_DOWNLOAD_URL, timeout=timeout_seconds
+        ) as response:
+            while chunk := response.read(1024 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > RESNET18_ARTIFACT_BYTES:
+                    raise PretrainedResourceError(
+                        "pretrained artifact exceeded its admitted size"
+                    )
+                digest.update(chunk)
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+        if total_bytes != RESNET18_ARTIFACT_BYTES or digest.hexdigest() != RESNET18_SHA256:
+            raise PretrainedResourceError(
+                "pretrained artifact size or SHA-256 does not match admission"
+            )
+        os.replace(temporary, target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    return target
+
+
 def train_fixed_budget(
     examples: Sequence[TrainingExample],
     config: TrainingConfig = TrainingConfig(),
     *,
     additional_examples: Sequence[TrainingExample] = (),
     additional_batch_order_seed: int | None = None,
-    model: HierarchicalStudyModel | None = None,
+    model: StudyModel | None = None,
     artifact_dir: str | Path | None = None,
     fold: int | None = None,
     run_id: str | None = None,
@@ -2287,7 +2625,7 @@ def _train_fixed_budget_impl(
     *,
     additional_examples: Sequence[TrainingExample] = (),
     additional_batch_order_seed: int | None = None,
-    model: HierarchicalStudyModel | None = None,
+    model: StudyModel | None = None,
     artifact_dir: str | Path | None = None,
     fold: int | None = None,
     run_id: str | None = None,
@@ -2396,7 +2734,12 @@ def _train_fixed_budget_impl(
         raise TrainingConfigurationError("provided model configuration does not match TrainingConfig")
     initial_model_state_sha256 = _model_state_sha256(model)
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    trainable_parameters = tuple(
+        parameter for parameter in model.parameters() if parameter.requires_grad
+    )
+    if not trainable_parameters:
+        raise TrainingConfigurationError("the selected model has no trainable head parameters")
+    optimizer = torch.optim.Adam(trainable_parameters, lr=config.learning_rate)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
 
     output_dir = Path(artifact_dir) if artifact_dir is not None else None
@@ -2502,6 +2845,8 @@ def _train_fixed_budget_impl(
     epoch = 0
     checkpoint_events: list[Mapping[str, object]] = []
     replayed_batches = 0
+    cuda_step_events: list[tuple[Any, Any]] = []
+    measure_cuda_steps = device.type == "cuda" and torch.cuda.is_available()
     if resume_payload is not None:
         load_training_checkpoint(
             resume_path if resume_path is not None else "",
@@ -2785,9 +3130,6 @@ def _train_fixed_budget_impl(
                         f"{consecutive_no_progress} consecutive all-masked batches"
                     )
             else:
-                images = torch.from_numpy(
-                    np.stack([example.images for example in batch_examples])
-                ).to(device)
                 slice_mask = torch.from_numpy(
                     np.stack([example.slice_mask for example in batch_examples])
                 ).to(device)
@@ -2799,7 +3141,40 @@ def _train_fixed_budget_impl(
                 ).to(device)
                 supervision_mask = torch.from_numpy(batch_mask).to(device)
                 optimizer.zero_grad(set_to_none=True)
-                logits = model(images, slice_mask, series_mask)
+                cuda_step_start = (
+                    torch.cuda.Event(enable_timing=True) if measure_cuda_steps else None
+                )
+                cuda_step_end = (
+                    torch.cuda.Event(enable_timing=True) if measure_cuda_steps else None
+                )
+                if cuda_step_start is not None:
+                    cuda_step_start.record()
+                if isinstance(model, ResNet18StudyModel):
+                    if any(
+                        example.features is None or example.series_descriptors is None
+                        for example in batch_examples
+                    ):
+                        raise TrainingDataError(
+                            "ResNet-18 training requires cached frozen features and series descriptors"
+                        )
+                    features = torch.from_numpy(
+                        np.stack(
+                            [cast(np.ndarray, example.features) for example in batch_examples]
+                        )
+                    ).to(device)
+                    descriptors = torch.from_numpy(
+                        np.stack(
+                            [cast(np.ndarray, example.series_descriptors) for example in batch_examples]
+                        )
+                    ).to(device)
+                    logits = model.forward_from_features(
+                        features, slice_mask, series_mask, descriptors
+                    )
+                else:
+                    images = torch.from_numpy(
+                        np.stack([example.images for example in batch_examples])
+                    ).to(device)
+                    logits = cast(Any, model)(images, slice_mask, series_mask)
                 loss = masked_bce_loss(logits, targets, supervision_mask)
                 if loss is None:
                     skipped_batches += 1
@@ -2832,6 +3207,9 @@ def _train_fixed_budget_impl(
                         scaler_step(optimizer)
                         scaler_update()
                     scheduler.step()
+                    if cuda_step_start is not None and cuda_step_end is not None:
+                        cuda_step_end.record()
+                        cuda_step_events.append((cuda_step_start, cuda_step_end))
                     successful_steps += 1
                     scheduler_steps += 1
                     consecutive_no_progress = 0
@@ -2947,6 +3325,13 @@ def _train_fixed_budget_impl(
     finally:
         if log_handle is not None:
             log_handle.close()
+    optimizer_step_compute_seconds: float | None = None
+    if cuda_step_events:
+        torch.cuda.synchronize(device)
+        optimizer_step_compute_seconds = sum(
+            started.elapsed_time(ended) / 1000.0
+            for started, ended in cuda_step_events
+        )
     return TrainingResult(
         model=model,
         config=config,
@@ -2986,6 +3371,8 @@ def _train_fixed_budget_impl(
             else None
         ),
         initial_model_state_sha256=initial_model_state_sha256,
+        optimizer_step_compute_seconds=optimizer_step_compute_seconds,
+        measured_optimizer_steps=len(cuda_step_events),
     )
 
 
@@ -3001,7 +3388,7 @@ def _train_fixed_budget_gpu(
     approval_path: str | Path,
     allocation_environment: Mapping[str, str],
     resource: Mapping[str, object],
-    model: HierarchicalStudyModel | None = None,
+    model: StudyModel | None = None,
     artifact_dir: str | Path | None = None,
     fold: int | None = None,
     run_id: str | None = None,
@@ -3031,7 +3418,15 @@ def _train_fixed_budget_gpu(
     )
     if validated_authorization.preflight_checksum != preflight_checksum:
         raise PreflightError("GPU authorization does not name the supplied CPU preflight")
-    require_cpu_preflight(preflight, require_slurm=True, require_isolated_python=True)
+    is_slurm_authorization = isinstance(validated_authorization, _GpuExecutionAuthorization)
+    require_cpu_preflight(
+        preflight,
+        require_slurm=is_slurm_authorization,
+        require_isolated_python=is_slurm_authorization,
+        allow_ticket33_kaggle_python_312=isinstance(
+            validated_authorization, _KaggleGpuExecutionAuthorization
+        ),
+    )
     return _train_fixed_budget_impl(
         examples,
         config,
@@ -3190,6 +3585,12 @@ def _inference_import_check() -> tuple[bool, str]:
         "import sys; from rsna_knee.inference import InferenceEngine; "
         "raise SystemExit(1 if 'rsna_knee.training' in sys.modules else 0)"
     )
+    environment = os.environ.copy()
+    source_root = str(Path(__file__).resolve().parent.parent)
+    python_path = environment.get("PYTHONPATH", "")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        value for value in (source_root, python_path) if value
+    )
     try:
         completed = subprocess.run(
             [sys.executable, "-c", code],
@@ -3197,6 +3598,7 @@ def _inference_import_check() -> tuple[bool, str]:
             capture_output=True,
             text=True,
             timeout=30,
+            env=environment,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, str(exc)
@@ -3354,11 +3756,11 @@ def require_cpu_preflight(
     *,
     require_slurm: bool = True,
     require_isolated_python: bool = True,
+    allow_ticket33_kaggle_python_312: bool = False,
 ) -> None:
     """Gate real training on a complete preflight result."""
 
     required_checks = {
-        "python_311",
         "user_environment_python",
         "cluster1_cpu_slurm",
         "core_dependencies_import",
@@ -3370,6 +3772,16 @@ def require_cpu_preflight(
     failed = sorted(
         name for name in required_checks if result.checks.get(name) is not True
     )
+    python_311_passed = result.checks.get("python_311") is True
+    kaggle_python_312_passed = (
+        allow_ticket33_kaggle_python_312
+        and result.checks.get("python_312_compatible") is True
+        and result.details.get("python_version_policy")
+        == "ticket33-kaggle-python-3.12-compatibility-v1"
+        and str(result.environment.get("python_version", "")).startswith("3.12.")
+    )
+    if not python_311_passed and not kaggle_python_312_passed:
+        failed.append("python_311")
     if require_isolated_python and result.details.get("required_isolated_python") is not True:
         failed.append("required_isolated_python")
     if require_slurm and result.details.get("required_slurm") is not True:
@@ -3412,6 +3824,7 @@ def _train_one_fold_impl(
     series_cache: SeriesCache | None = None,
     supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
     ticket18_additive_design: bool = False,
+    ticket34_additive_design: bool = False,
     ticket21_pseudolabel_design: bool = False,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
@@ -3426,6 +3839,15 @@ def _train_one_fold_impl(
     resume_from: str | Path | None = None,
     execution_attempt_id: str | None = None,
     interrupt_after_steps: int | None = None,
+    pretrained_weights_path: str | Path | None = None,
+    resource_approval_path: str | Path | None = None,
+    feature_cache_root: str | Path | None = None,
+    read_only_feature_cache: bool = False,
+    fallback_feature_cache_root: str | Path | None = None,
+    precomputed_feature_examples: tuple[
+        Sequence[TrainingExample], Sequence[TrainingExample], Sequence[TrainingExample]
+    ] | None = None,
+    precomputed_feature_evidence: Mapping[str, object] | None = None,
 ) -> TrainingResult:
     """Train one admitted image fold and evaluate its reloaded final checkpoint."""
 
@@ -3433,6 +3855,29 @@ def _train_one_fold_impl(
         raise TrainingDataError(f"fold must be one of {FOLD_IDS}")
     if not source_version.strip():
         raise TrainingConfigurationError("source_version must be non-empty")
+    pretrained_resource_evidence: Mapping[str, object] | None = None
+    if config.model_id == RESNET18_MODEL_ID and config.encoder_id == RESNET18_ENCODER_ID:
+        if pretrained_weights_path is None or resource_approval_path is None:
+            raise TrainingConfigurationError(
+                "ImageNet ResNet-18 requires its exact weights and resource approval"
+            )
+        approval = load_resource_approval(resource_approval_path)
+        approval_bytes = Path(resource_approval_path).read_bytes()
+        pretrained_resource_evidence = {
+            "approval_sha256": hashlib.sha256(approval_bytes).hexdigest(),
+            "artifact_id": approval["artifact_id"],
+            "source_revision": approval["source_revision"],
+            "download_url": approval["download_url"],
+            "expected_bytes": approval["expected_bytes"],
+            "sha256": approval["sha256"],
+            "scope": approval["scope"],
+            "decision": approval["decision"],
+            "rights_status": approval["rights_status"],
+            "rights_basis": approval["rights_basis"],
+            "approved_by": approval["approved_by"],
+            "approved_at": approval["approved_at"],
+            "external_spend": approval["external_spend"],
+        }
     if require_preflight and not (source_fingerprint or "").strip():
         raise TrainingConfigurationError(
             "real training requires a checksum-backed source fingerprint"
@@ -3498,8 +3943,31 @@ def _train_one_fold_impl(
             )
     additional_examples: tuple[TrainingExample, ...] = ()
     additional_batch_order_seed: int | None = None
-    if ticket18_additive_design and ticket21_pseudolabel_design:
-        raise TrainingConfigurationError("Ticket 18 and Ticket 21 training designs are exclusive")
+    if ticket18_additive_design and ticket34_additive_design:
+        raise TrainingConfigurationError("Ticket 18 and Ticket 34 additive designs are exclusive")
+    additive_report_design = ticket18_additive_design or ticket34_additive_design
+    if additive_report_design and ticket21_pseudolabel_design:
+        raise TrainingConfigurationError("report and Ticket 21 pseudo-label designs are exclusive")
+    additive_design_id = (
+        TICKET34_ADDITIVE_DESIGN
+        if ticket34_additive_design
+        else TICKET18_ADDITIVE_DESIGN
+    )
+    weak_sampling_policy = (
+        TICKET34_WEAK_SAMPLING_POLICY
+        if ticket34_additive_design
+        else TICKET18_WEAK_SAMPLING_POLICY
+    )
+    weak_sampling_seed_offset = (
+        TICKET34_WEAK_BATCH_SEED_OFFSET
+        if ticket34_additive_design
+        else TICKET18_WEAK_BATCH_SEED_OFFSET
+    )
+    weak_sampling_source = (
+        "Ticket 30 admitted report-only pool sorted by study identity"
+        if ticket34_additive_design
+        else "Ticket 15 report-only pool sorted by study identity"
+    )
     if ticket21_pseudolabel_design and not isinstance(supervision, AdmittedFoldPseudoLabels):
         raise TrainingConfigurationError(
             "Ticket 21 student training requires admitted fold pseudo-labels"
@@ -3508,7 +3976,80 @@ def _train_one_fold_impl(
         raise TrainingConfigurationError(
             "pseudo-labels can enter training only through the Ticket 21 additive design"
         )
-    if ticket18_additive_design:
+    requested_output = Path(output_dir)
+    if resume_from is None and requested_output.exists() and any(requested_output.iterdir()):
+        raise FileExistsError(
+            f"refusing to overwrite existing experiment directory {requested_output}"
+        )
+    if precomputed_feature_examples is not None:
+        if config.model_id != RESNET18_MODEL_ID or not ticket34_additive_design:
+            raise TrainingConfigurationError(
+                "precomputed feature examples are reserved for Ticket 36 ResNet-18 runs"
+            )
+        if precomputed_feature_evidence is None:
+            raise TrainingConfigurationError(
+                "precomputed feature runs require their frozen feature-manifest evidence"
+            )
+        if len(precomputed_feature_examples) != 3:
+            raise TrainingDataError(
+                "precomputed fold data must contain reference, held-out and weak partitions"
+            )
+        reference_values, heldout_values, weak_values = precomputed_feature_examples
+        training_examples = tuple(reference_values)
+        held_out_examples = tuple(heldout_values)
+        additional_examples = tuple(weak_values)
+        if any(
+            item.images is not None or item.features is None or item.series_descriptors is None
+            for item in (*training_examples, *held_out_examples, *additional_examples)
+        ):
+            raise TrainingDataError(
+                "Ticket 36 precomputed examples must contain frozen features and no source pixels"
+            )
+        if not training_examples or not held_out_examples:
+            raise TrainingDataError("Ticket 36 reference and held-out feature partitions must be non-empty")
+        expected_reference_training = {
+            item.study_instance_uid
+            for item in fold_manifest.gold_memberships
+            if item.fold != fold
+        }
+        expected_held_out = {
+            item.study_instance_uid
+            for item in fold_manifest.gold_memberships
+            if item.fold == fold
+        }
+        if {item.study_instance_uid for item in training_examples} != expected_reference_training:
+            raise TrainingDataError("Ticket 36 reference features do not cover the gold training fold")
+        if {item.study_instance_uid for item in held_out_examples} != expected_held_out:
+            raise TrainingDataError("Ticket 36 held-out features do not cover the gold evaluation fold")
+        if supervision is None:
+            if additional_examples:
+                raise TrainingDataError("Ticket 36 reference-only arm cannot contain weak features")
+        elif isinstance(supervision, AdmittedFoldSupervision):
+            if supervision.fold != fold or supervision.fold_manifest_checksum != fold_manifest.manifest_checksum:
+                raise TrainingDataError("Ticket 36 precomputed labels do not match the requested fold")
+            if {item.study_instance_uid for item in training_examples} != set(
+                supervision.reference_study_uids
+            ):
+                raise TrainingDataError("Ticket 36 supervision changed the gold training cohort")
+            if {item.study_instance_uid for item in additional_examples} != set(
+                supervision.admitted_report_only_study_uids
+            ):
+                raise TrainingDataError(
+                    "Ticket 36 weak features do not match the image-scoped admitted report cohort"
+                )
+        else:
+            raise TrainingConfigurationError(
+                "Ticket 36 treatment requires the fold-scoped admitted report supervision"
+            )
+        if supervision is not None and not additional_examples:
+            raise TrainingDataError("Ticket 36 treatment must contain admitted report features")
+        if supervision is not None:
+            if any(item.provenance.source_kind != "weak" for item in additional_examples):
+                raise TrainingDataError("Ticket 36 additional examples must remain report-only")
+            additional_batch_order_seed = (
+                config.batch_order_seed + TICKET34_WEAK_BATCH_SEED_OFFSET
+            )
+    elif additive_report_design:
         if supervision is None:
             training_examples = build_fold_training_examples(
                 studies,
@@ -3519,7 +4060,7 @@ def _train_one_fold_impl(
                 series_cache=series_cache,
             )
             if any(example.provenance.source_kind != "reference" for example in training_examples):
-                raise TrainingDataError("additive Ticket 18 control must contain reference examples only")
+                raise TrainingDataError("additive report-supervision control must contain reference examples only")
         else:
             training_examples = build_fold_training_examples(
                 studies,
@@ -3550,16 +4091,16 @@ def _train_one_fold_impl(
             )
             if not additional_examples:
                 raise TrainingDataError(
-                    "additive Ticket 18 treatment requires image-backed report-only examples"
+                    "additive report-supervision treatment requires image-backed report-only examples"
                 )
             if any(example.provenance.source_kind != "reference" for example in training_examples):
-                raise TrainingDataError("additive Ticket 18 gold path must contain reference examples only")
+                raise TrainingDataError("additive report-supervision gold path must contain reference examples only")
             if {item.study_instance_uid for item in training_examples}.intersection(
                 item.study_instance_uid for item in additional_examples
             ):
-                raise TrainingDataError("additive Ticket 18 gold and report-only pools overlap")
+                raise TrainingDataError("additive report-supervision gold and report-only pools overlap")
             additional_batch_order_seed = (
-                config.batch_order_seed + TICKET18_WEAK_BATCH_SEED_OFFSET
+                config.batch_order_seed + weak_sampling_seed_offset
             )
     elif ticket21_pseudolabel_design:
         assert isinstance(supervision, AdmittedFoldPseudoLabels)
@@ -3610,14 +4151,15 @@ def _train_one_fold_impl(
             series_cache=series_cache,
             admitted_supervision=supervision,
         )
-    held_out_examples = build_fold_held_out_examples(
-        studies,
-        fold_manifest,
-        fold,
-        preprocess_config=config.preprocess_config(),
-        packing_config=config.packing_config(),
-        series_cache=series_cache,
-    )
+    if precomputed_feature_examples is None:
+        held_out_examples = build_fold_held_out_examples(
+            studies,
+            fold_manifest,
+            fold,
+            preprocess_config=config.preprocess_config(),
+            packing_config=config.packing_config(),
+            series_cache=series_cache,
+        )
     held_out_uids = tuple(example.study_instance_uid for example in held_out_examples)
     training_uids = tuple(example.study_instance_uid for example in training_examples)
     additional_uids = tuple(example.study_instance_uid for example in additional_examples)
@@ -3626,6 +4168,241 @@ def _train_one_fold_impl(
         raise TrainingDataError("base and additional training partitions contain duplicate studies")
     if set(all_training_uids).intersection(held_out_uids):
         raise TrainingDataError("training and held-out study partitions overlap")
+    model_for_run: StudyModel | None = None
+    feature_cache_evidence: Mapping[str, object] | None = None
+    feature_cache_identity_evidence: Mapping[str, object] | None = None
+    held_out_feature_materialization_seconds = 0.0
+    if config.model_id == RESNET18_MODEL_ID:
+        if allow_gpu:
+            if config.encoder_id != RESNET18_ENCODER_ID:
+                raise TrainingConfigurationError(
+                    "Ticket 33 GPU execution requires the admitted ImageNet ResNet-18 encoder"
+                )
+            if resource_approval_path is None:
+                raise TrainingConfigurationError(
+                    "Ticket 33 GPU execution requires its exact pretrained resource approval"
+                )
+            gpu_resource_approval = load_resource_approval(resource_approval_path)
+            if gpu_resource_approval.get("scope") != TICKET33_RESOURCE_SCOPE:
+                raise TrainingConfigurationError(
+                    "GPU ResNet-18 weights are not approved for the Ticket 33 execution scope"
+                )
+        elif config.device != "cpu":
+            raise TrainingConfigurationError(
+                "Ticket 31 ResNet-18 CUDA execution requires the Ticket 33 approval-gated GPU path"
+            )
+        elif (
+            pretrained_resource_evidence is not None
+            and pretrained_resource_evidence.get("scope") == TICKET33_RESOURCE_SCOPE
+        ):
+            raise TrainingConfigurationError(
+                "Ticket 33 GPU resource approval cannot authorize CPU ResNet-18 execution"
+            )
+        if config.encoder_id == RESNET18_ENCODER_ID:
+            if pretrained_weights_path is None or resource_approval_path is None:
+                raise TrainingConfigurationError(
+                    "ImageNet ResNet-18 requires its exact weights and resource approval"
+                )
+            state = load_resnet18_weights(pretrained_weights_path, resource_approval_path)
+        elif config.encoder_id == RESNET18_FIXTURE_ENCODER_ID:
+            if not allow_local_smoke or not source_version.startswith("synthetic-"):
+                raise TrainingConfigurationError(
+                    "random ResNet-18 fixture encoders are limited to synthetic local smoke runs"
+                )
+            if pretrained_weights_path is not None or resource_approval_path is not None:
+                raise TrainingConfigurationError(
+                    "fixture encoder runs cannot consume external pretrained resources"
+                )
+            state = None
+        else:
+            raise TrainingConfigurationError("ResNet-18 encoder identity is unsupported")
+        seed_everything(config.seed)
+        built_model = build_study_model(config.model_config())
+        if not isinstance(built_model, ResNet18StudyModel):
+            raise TrainingConfigurationError("Ticket 31 model construction returned the wrong model")
+        if state is not None:
+            built_model.load_pretrained_state(state)
+        built_model.to(torch.device(config.device))
+        membership = tuple(
+            sorted(
+                {
+                    item.study_instance_uid
+                    for item in (*training_examples, *held_out_examples, *additional_examples)
+                }
+            )
+        )
+        feature_identity: dict[str, object] = {
+            "source_version": source_version,
+            "source_fingerprint": source_fingerprint,
+            "integration_manifest_checksum": integration_manifest_checksum,
+            "fold_manifest_checksum": fold_manifest.manifest_checksum,
+            "source_membership_sha256": _json_sha256(membership),
+            "encoder_id": config.encoder_id,
+            "encoder_weights_sha256": config.encoder_weights_sha256,
+            "fixture_encoder_state_sha256": (
+                _model_state_sha256(built_model.encoder)
+                if config.encoder_id == RESNET18_FIXTURE_ENCODER_ID
+                else None
+            ),
+            "preprocessing": config.preprocess_config().cache_config(),
+            "packing": config.packing_config().to_dict(),
+            "sampling_policy": "geometry-ordered-rounded-uniform-v1",
+            "output_representation": "resnet18-adaptive-average-pool-512-float32-v1",
+            "dtype": "float32",
+        }
+        feature_root = (
+            Path(feature_cache_root)
+            if feature_cache_root is not None
+            else Path(output_dir).with_name(f"{Path(output_dir).name}-feature-cache")
+        )
+        feature_cache = FrozenFeatureCache(
+            feature_root,
+            feature_identity,
+            feature_width=RESNET18_FEATURE_DIM,
+            read_only=read_only_feature_cache,
+        )
+        fallback_feature_cache: FrozenFeatureCache | None = None
+        if fallback_feature_cache_root is not None:
+            if not additional_examples:
+                raise TrainingConfigurationError(
+                    "a fallback frozen-feature cache is reserved for additive-supervision treatment runs"
+                )
+            reference_membership = tuple(
+                sorted(
+                    {
+                        item.study_instance_uid
+                        for item in (*training_examples, *held_out_examples)
+                    }
+                )
+            )
+            fallback_identity = dict(feature_identity)
+            fallback_identity["source_membership_sha256"] = _json_sha256(reference_membership)
+            fallback_feature_cache = FrozenFeatureCache(
+                fallback_feature_cache_root,
+                fallback_identity,
+                feature_width=RESNET18_FEATURE_DIM,
+                read_only=True,
+            )
+        training_cache_hits_before = feature_cache.hits
+        training_cache_misses_before = feature_cache.misses
+        training_fallback_imports_before = feature_cache.fallback_imports
+        training_features_started = time.perf_counter()
+        training_examples = _attach_cached_resnet_features(
+            training_examples,
+            model=built_model,
+            cache=feature_cache,
+            device=torch.device(config.device),
+            fallback_cache=fallback_feature_cache,
+        )
+        training_cache_hits = feature_cache.hits - training_cache_hits_before
+        training_cache_misses = feature_cache.misses - training_cache_misses_before
+        training_fallback_imports = feature_cache.fallback_imports - training_fallback_imports_before
+        training_feature_materialization_seconds = time.perf_counter() - training_features_started
+        heldout_cache_hits_before = feature_cache.hits
+        heldout_cache_misses_before = feature_cache.misses
+        heldout_fallback_imports_before = feature_cache.fallback_imports
+        heldout_features_started = time.perf_counter()
+        held_out_examples = _attach_cached_resnet_features(
+            held_out_examples,
+            model=built_model,
+            cache=feature_cache,
+            device=torch.device(config.device),
+            fallback_cache=fallback_feature_cache,
+        )
+        heldout_fallback_imports = feature_cache.fallback_imports - heldout_fallback_imports_before
+        held_out_feature_materialization_seconds = time.perf_counter() - heldout_features_started
+        heldout_cache_hits = feature_cache.hits - heldout_cache_hits_before
+        heldout_cache_misses = feature_cache.misses - heldout_cache_misses_before
+        additional_feature_materialization_seconds = 0.0
+        additional_cache_hits = 0
+        additional_cache_misses = 0
+        additional_fallback_imports = 0
+        if additional_examples:
+            additional_cache_hits_before = feature_cache.hits
+            additional_cache_misses_before = feature_cache.misses
+            additional_features_started = time.perf_counter()
+            additional_examples = _attach_cached_resnet_features(
+                additional_examples,
+                model=built_model,
+                cache=feature_cache,
+                device=torch.device(config.device),
+            )
+            additional_feature_materialization_seconds = (
+                time.perf_counter() - additional_features_started
+            )
+            additional_cache_hits = feature_cache.hits - additional_cache_hits_before
+            additional_cache_misses = feature_cache.misses - additional_cache_misses_before
+        feature_cache_identity_evidence = {
+            "identity": feature_identity,
+            "identity_fingerprint": feature_cache.identity_fingerprint,
+        }
+        feature_cache_evidence = {
+            **feature_cache_identity_evidence,
+            "read_only": feature_cache.read_only,
+            "entries": feature_cache.hits + feature_cache.misses,
+            "cache_hits": feature_cache.hits,
+            "fallback_cache_imports": feature_cache.fallback_imports,
+            "materialized_entries": feature_cache.misses - feature_cache.fallback_imports,
+            "partitions": {
+                "training": {
+                    "cache_hits": training_cache_hits,
+                    "fallback_cache_imports": training_fallback_imports,
+                    "materialized_entries": training_cache_misses - training_fallback_imports,
+                    "elapsed_seconds": training_feature_materialization_seconds,
+                },
+                "held_out": {
+                    "cache_hits": heldout_cache_hits,
+                    "fallback_cache_imports": heldout_fallback_imports,
+                    "materialized_entries": heldout_cache_misses - heldout_fallback_imports,
+                    "elapsed_seconds": held_out_feature_materialization_seconds,
+                },
+                "additional_training": {
+                    "cache_hits": additional_cache_hits,
+                    "fallback_cache_imports": additional_fallback_imports,
+                    "materialized_entries": additional_cache_misses - additional_fallback_imports,
+                    "elapsed_seconds": additional_feature_materialization_seconds,
+                },
+            },
+            "held_out_features_used_for_prediction_only": True,
+            "encoder_adapted_on_held_out_data": False,
+        }
+        if precomputed_feature_examples is not None:
+            assert precomputed_feature_evidence is not None
+            identity_fingerprint = precomputed_feature_evidence.get("identity_fingerprint")
+            identity_value = precomputed_feature_evidence.get("identity")
+            if (
+                not isinstance(identity_fingerprint, str)
+                or len(identity_fingerprint) != 64
+                or not isinstance(identity_value, Mapping)
+                or identity_value.get("source_version") != source_version
+                or identity_value.get("source_fingerprint") != source_fingerprint
+                or identity_value.get("integration_manifest_checksum")
+                != integration_manifest_checksum
+                or identity_value.get("fold_manifest_checksum")
+                != fold_manifest.manifest_checksum
+                or identity_value.get("encoder_weights_sha256") != config.encoder_weights_sha256
+            ):
+                raise TrainingConfigurationError(
+                    "precomputed feature identity does not match the frozen training inputs"
+                )
+            feature_cache_identity_evidence = {
+                "identity": dict(identity_value),
+                "identity_fingerprint": identity_fingerprint,
+                "feature_manifest_sha256": precomputed_feature_evidence.get(
+                    "feature_manifest_sha256"
+                ),
+            }
+            feature_cache_evidence = {
+                **dict(precomputed_feature_evidence),
+                "read_only": True,
+                "held_out_features_used_for_prediction_only": True,
+                "encoder_adapted_on_held_out_data": False,
+            }
+        model_for_run = built_model
+    elif pretrained_weights_path is not None or resource_approval_path is not None:
+        raise TrainingConfigurationError(
+            "pretrained resource arguments are valid only for the Ticket 31 ResNet-18 variant"
+        )
     supervision_public: dict[str, object]
     supervision_private: Mapping[str, object] | None
     if supervision is None:
@@ -3643,6 +4420,7 @@ def _train_one_fold_impl(
                 "source_disagreements": 0,
             },
             "held_out_inputs_excluded": True,
+            "reports_used": False,
         }
         supervision_identity: Mapping[str, object] = supervision_public
         supervision_private = None
@@ -3650,7 +4428,10 @@ def _train_one_fold_impl(
         supervision_kind = "pseudo" if isinstance(supervision, AdmittedFoldPseudoLabels) else "weak"
         supervision_public = {"kind": supervision_kind, **supervision.to_public_dict()}
         supervision_identity = supervision.to_private_dict()
-        supervision_private = supervision.to_private_dict()
+        supervision_private = {
+            "kind": supervision_kind,
+            **supervision.to_private_dict(),
+        }
     identity = _checkpoint_identity(
         config,
         training_examples,
@@ -3669,8 +4450,12 @@ def _train_one_fold_impl(
         fold=fold,
         supervision_identity=supervision_identity,
     )
-    if ticket18_additive_design:
-        identity["training_design"] = TICKET18_ADDITIVE_DESIGN
+    if pretrained_resource_evidence is not None:
+        identity["pretrained_resource_approval"] = dict(pretrained_resource_evidence)
+    if feature_cache_identity_evidence is not None:
+        identity["frozen_feature_cache"] = dict(feature_cache_identity_evidence)
+    if additive_report_design:
+        identity["training_design"] = additive_design_id
         identity["additional_training_data_fingerprint"] = (
             fingerprint_training_examples(additional_examples)
             if additional_examples
@@ -3678,10 +4463,10 @@ def _train_one_fold_impl(
         )
         identity["weak_sampling"] = (
             {
-                "policy": TICKET18_WEAK_SAMPLING_POLICY,
+                "policy": weak_sampling_policy,
                 "microbatch_size": config.batch_size,
                 "seed": additional_batch_order_seed,
-                "source": "Ticket 15 report-only pool sorted by study identity",
+                "source": weak_sampling_source,
             }
             if additional_examples
             else None
@@ -3727,7 +4512,14 @@ def _train_one_fold_impl(
                     "slurm_attempt_id": os.environ.get("SLURM_JOB_ID"),
                 },
                 "supervision": (
-                    supervision.to_private_dict()
+                    {
+                        "kind": (
+                            "pseudo"
+                            if isinstance(supervision, AdmittedFoldPseudoLabels)
+                            else "weak"
+                        ),
+                        **supervision.to_private_dict(),
+                    }
                     if supervision is not None
                     else {
                         "kind": "reference",
@@ -3739,16 +4531,12 @@ def _train_one_fold_impl(
                     }
                 ),
                 "inference_configuration": {
-                    "model": {
-                        "image_size": list(model_config.image_size),
-                        "channels": list(model_config.channels),
-                        "input_channels": model_config.input_channels,
-                        "num_targets": model_config.num_targets,
-                    },
+                    "model": model_config.to_dict(),
                     "preprocessing": config.preprocess_config().cache_config(),
                     "packing": config.packing_config().to_dict(),
                     "checkpoint_selection": "final_checkpoint",
                 },
+            "feature_cache_execution": dict(feature_cache_evidence or {}),
                 "preflight": preflight.to_dict() if preflight is not None else None,
             },
         )
@@ -3788,6 +4576,7 @@ def _train_one_fold_impl(
         config,
         additional_examples=additional_examples,
         additional_batch_order_seed=additional_batch_order_seed,
+        model=model_for_run,
         artifact_dir=destination,
         fold=fold,
         run_id=run_id,
@@ -3800,6 +4589,14 @@ def _train_one_fold_impl(
     )
     if result.final_checkpoint_path is None:
         raise CheckpointError("fixed-budget run did not produce a final checkpoint")
+    if feature_cache_evidence is not None and result.execution_attempt_id is not None:
+        atomic_json_write(
+            destination
+            / "attempts"
+            / result.execution_attempt_id
+            / "frozen-feature-cache.json",
+            dict(feature_cache_evidence),
+        )
     load_training_checkpoint(
         result.final_checkpoint_path,
         model=result.model,
@@ -3808,11 +4605,56 @@ def _train_one_fold_impl(
         expected_identity=identity,
         expected_checkpoint_kind="final_selected",
     )
+    if config.model_id == RESNET18_MODEL_ID:
+        from .inference import InferenceEngine, infer_studies
+
+        source_studies = _study_mapping(studies)
+        offline_study_uid = min(held_out_uids)
+        offline_study = source_studies[offline_study_uid]
+        offline_attempt_dir = (
+            destination / "attempts" / cast(str, result.execution_attempt_id)
+        )
+        offline_output = offline_attempt_dir / "offline-study-submission.csv"
+        offline_evidence_path = offline_attempt_dir / "offline-study-evidence.json"
+        offline_started = time.perf_counter()
+        offline_engine = InferenceEngine(
+            result.model,
+            config.preprocess_config(),
+            device=config.device,
+            packing_config=config.packing_config(),
+            series_cache=series_cache,
+        )
+        offline_batch = infer_studies(offline_engine, (offline_study,), offline_output)
+        offline_result = offline_batch.results[0]
+        atomic_json_write(
+            offline_evidence_path,
+            {
+                "schema_version": "rsna-ticket31-one-fold-offline-study-v1",
+                "scope": "one-held-out-study-from-one-fold;not-full-oof",
+                "fold": fold,
+                "run_id": run_id,
+                "checkpoint_sha256": checkpoint_sha256(result.final_checkpoint_path),
+                "study_instance_uid": offline_study_uid,
+                "prediction_count": 1,
+                "used_fallback": offline_result.used_fallback,
+                "valid_series_count": offline_result.valid_series_count,
+                "rejected_series_count": len(offline_result.rejected_series),
+                "scores": np.asarray(offline_result.scores, dtype=float).tolist(),
+                "preprocessing": config.preprocess_config().cache_config(),
+                "packing": config.packing_config().to_dict(),
+                "runtime_network_download": False,
+                "inference_seconds": time.perf_counter() - offline_started,
+                "submission_sha256": hashlib.sha256(offline_output.read_bytes()).hexdigest(),
+            },
+        )
     from .evaluation import evaluate_fold_predictions, predict_training_examples
 
     inference_started = time.perf_counter()
     predictions = predict_training_examples(result.model, held_out_examples, device=config.device)
-    heldout_model_inference_seconds = time.perf_counter() - inference_started
+    heldout_model_inference_seconds = (
+        time.perf_counter() - inference_started
+        + held_out_feature_materialization_seconds
+    )
     evaluation = evaluate_fold_predictions(
         cast(Mapping[str, Sequence[float]], predictions), fold_manifest, fold
     )
@@ -3843,23 +4685,29 @@ def _train_one_fold_impl(
         semantic_fingerprint_value=scientific_identity,
         sample_exposures=result.sample_exposures,
         supervised_entry_exposures=result.supervised_entry_exposures,
+        optimizer_step_compute_seconds=result.optimizer_step_compute_seconds,
+        measured_optimizer_steps=result.measured_optimizer_steps,
         exposures_by_source=result.exposures_by_source,
         gold_exposure_sequence_sha256=result.gold_exposure_sequence_sha256,
         weak_exposure_sequence_sha256=(
-            result.weak_exposure_sequence_sha256 if ticket18_additive_design else None
+            result.weak_exposure_sequence_sha256 if additive_report_design else None
         ),
         initial_model_state_sha256=result.initial_model_state_sha256,
         training_design=(
-            TICKET18_ADDITIVE_DESIGN
-            if ticket18_additive_design
+            additive_design_id
+            if additive_report_design
             else TICKET21_PSEUDO_LABEL_DESIGN
             if ticket21_pseudolabel_design
             else None
         ),
         weak_sampling_policy=(
-            TICKET18_WEAK_SAMPLING_POLICY if ticket18_additive_design else None
+            weak_sampling_policy if additive_report_design else None
         ),
-        weak_sampling_seed=(additional_batch_order_seed if ticket18_additive_design else None),
+        weak_sampling_seed=(
+            additional_batch_order_seed
+            if additive_report_design
+            else None
+        ),
         additional_sampling_policy=(
             TICKET21_PSEUDO_SAMPLING_POLICY if ticket21_pseudolabel_design else None
         ),
@@ -3891,6 +4739,7 @@ def train_one_fold(
     series_cache: SeriesCache | None = None,
     supervision: AdmittedFoldSupervision | AdmittedFoldPseudoLabels | None = None,
     ticket18_additive_design: bool = False,
+    ticket34_additive_design: bool = False,
     ticket21_pseudolabel_design: bool = False,
     preprocess_config: PreprocessConfig | None = None,
     packing_config: PackingConfig | None = None,
@@ -3902,6 +4751,15 @@ def train_one_fold(
     resume_from: str | Path | None = None,
     execution_attempt_id: str | None = None,
     interrupt_after_steps: int | None = None,
+    pretrained_weights_path: str | Path | None = None,
+    resource_approval_path: str | Path | None = None,
+    feature_cache_root: str | Path | None = None,
+    read_only_feature_cache: bool = False,
+    fallback_feature_cache_root: str | Path | None = None,
+    precomputed_feature_examples: tuple[
+        Sequence[TrainingExample], Sequence[TrainingExample], Sequence[TrainingExample]
+    ] | None = None,
+    precomputed_feature_evidence: Mapping[str, object] | None = None,
 ) -> TrainingResult:
     """Train one reference fold on CPU.
 
@@ -3927,6 +4785,7 @@ def train_one_fold(
         series_cache=series_cache,
         supervision=supervision,
         ticket18_additive_design=ticket18_additive_design,
+        ticket34_additive_design=ticket34_additive_design,
         ticket21_pseudolabel_design=ticket21_pseudolabel_design,
         preprocess_config=preprocess_config,
         packing_config=packing_config,
@@ -3940,6 +4799,13 @@ def train_one_fold(
         resume_from=resume_from,
         execution_attempt_id=execution_attempt_id,
         interrupt_after_steps=interrupt_after_steps,
+        pretrained_weights_path=pretrained_weights_path,
+        resource_approval_path=resource_approval_path,
+        feature_cache_root=feature_cache_root,
+        read_only_feature_cache=read_only_feature_cache,
+        fallback_feature_cache_root=fallback_feature_cache_root,
+        precomputed_feature_examples=precomputed_feature_examples,
+        precomputed_feature_evidence=precomputed_feature_evidence,
     )
 
 
@@ -3971,6 +4837,8 @@ def _train_one_fold_gpu(
     resume_from: str | Path | None = None,
     execution_attempt_id: str | None = None,
     interrupt_after_steps: int | None = None,
+    pretrained_weights_path: str | Path | None = None,
+    resource_approval_path: str | Path | None = None,
 ) -> TrainingResult:
     """Private CUDA fold seam entered after request, approval, and preflight checks."""
 
@@ -4012,6 +4880,8 @@ def _train_one_fold_gpu(
         resume_from=resume_from,
         execution_attempt_id=execution_attempt_id,
         interrupt_after_steps=interrupt_after_steps,
+        pretrained_weights_path=pretrained_weights_path,
+        resource_approval_path=resource_approval_path,
     )
 
 
@@ -4026,10 +4896,33 @@ def _parser() -> Any:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--image-variant",
-        choices=("mechanics-baseline", "ticket19-wider-slice-encoder-v1"),
+        choices=(
+            "mechanics-baseline",
+            "ticket19-wider-slice-encoder-v1",
+            "ticket31-resnet18-imagenet1k-v1",
+        ),
         default="mechanics-baseline",
         help="select a named image architecture whose values enter the scientific fingerprint",
     )
+    parser.add_argument(
+        "--pooling-id",
+        choices=(ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID),
+        default=ANATOMICAL_POOLING_ID,
+        help="freeze the ResNet-18 study-pooling comparator before held-out prediction",
+    )
+    parser.add_argument(
+        "--pretrained-weights",
+        type=Path,
+        default=None,
+        help="previously admitted exact ResNet-18 weights artifact; never downloaded implicitly",
+    )
+    parser.add_argument(
+        "--resource-approval",
+        type=Path,
+        default=None,
+        help="exact resource and rights approval required before ResNet-18 weights are read",
+    )
+    parser.add_argument("--feature-cache-root", type=Path, default=None)
     parser.add_argument("--cache-root", type=Path, default=None)
     parser.add_argument("--source-version", required=True)
     parser.add_argument("--source-fingerprint", default=None)
@@ -4092,7 +4985,10 @@ def main(argv: list[str] | None = None) -> int:
         training_config = image_model_training_config(
             args.image_variant,
             preprocessing_config=integration_manifest.preprocess_config,
+            packing_config=integration_manifest.packing_config,
+            pooling_id=args.pooling_id,
         )
+        effective_preprocess = training_config.preprocess_config()
         source = args.source
         if not source.exists():
             raise TrainingDataError(f"real-DICOM source does not exist: {source}")
@@ -4146,12 +5042,15 @@ def main(argv: list[str] | None = None) -> int:
             integration_manifest_checksum=integration_manifest.manifest_checksum,
             series_cache=cache,
             ticket18_additive_design=args.ticket18_additive_design,
-            preprocess_config=integration_manifest.preprocess_config,
+            preprocess_config=effective_preprocess,
             packing_config=integration_manifest.packing_config,
             preflight=preflight,
             allow_local_smoke=args.allow_local_smoke,
             resume_from=args.resume_from,
             execution_attempt_id=args.execution_attempt_id,
+            pretrained_weights_path=args.pretrained_weights,
+            resource_approval_path=args.resource_approval,
+            feature_cache_root=args.feature_cache_root,
         )
         if args.evidence is not None:
             atomic_json_write(
@@ -4197,6 +5096,7 @@ __all__ = [
     "TrainingProgressError",
     "TrainingResult",
     "atomic_torch_save",
+    "acquire_resnet18_weights",
     "build_fold_examples",
     "build_fold_held_out_examples",
     "build_fold_pseudo_candidate_examples",

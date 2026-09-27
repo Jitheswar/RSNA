@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import sys
 import time
 import zipfile
@@ -43,7 +44,7 @@ from .folds import (
 )
 from .geometry import GeometryPolicy
 from .inference import InferenceEngine, StudyPrediction
-from .model import HierarchicalStudyModel, ModelConfig, build_study_model
+from .model import ModelConfig, StudyModel, build_study_model
 from .preprocessing import (
     PREPROCESS_SCHEMA_VERSION,
     PackingConfig,
@@ -81,6 +82,24 @@ class RealIntegrationError(ValueError):
 
 class RealInferenceError(RuntimeError):
     """Raised for a global integration or model failure."""
+
+
+@dataclass(frozen=True)
+class KaggleCompetitionSource:
+    """Attested official Kaggle competition input mounted read-only for a private run."""
+
+    root: Path
+    competition_slug: str
+    kernel_id: str
+    request_checksum: str
+
+    def __post_init__(self) -> None:
+        if self.competition_slug != "rsna-knee-abnormality-detection":
+            raise RealIntegrationError("Kaggle source is not the approved RSNA competition")
+        if not self.kernel_id.strip():
+            raise RealIntegrationError("Kaggle source attestation requires a kernel identity")
+        if re.fullmatch(r"[0-9a-f]{64}", self.request_checksum) is None:
+            raise RealIntegrationError("Kaggle source attestation has an invalid request checksum")
 
 
 class UnsupportedSourceEntryError(DicomDecodeError):
@@ -363,6 +382,11 @@ def _preprocess_from_cache_config(value: object, geometry_policy: GeometryPolicy
         interpolation=str(payload.get("interpolation", "nearest")),
         padding_fill_value=float(str(payload.get("padding_fill_value", 0.0))),
         output_dtype=str(payload.get("output_dtype", "float32")),
+        representation_id=(
+            str(payload["representation_id"])
+            if payload.get("representation_id") is not None
+            else None
+        ),
     )
 
 
@@ -699,20 +723,33 @@ def build_integration_manifest(
 
 
 class _SourceReader:
-    """Read manifest entries from one verified ZIP or an explicit local fixture."""
+    """Read entries from a verified archive, local fixture, or attested Kaggle input."""
 
-    def __init__(self, source: Path, *, allow_unverified_directory: bool = False) -> None:
+    def __init__(
+        self,
+        source: Path,
+        *,
+        allow_unverified_directory: bool = False,
+        kaggle_source: KaggleCompetitionSource | None = None,
+    ) -> None:
         self.source = source
         self.allow_unverified_directory = allow_unverified_directory
+        self.kaggle_source = kaggle_source
         self.archive: zipfile.ZipFile | None = None
         self.root: Path | None = None
 
     def __enter__(self) -> "_SourceReader":
+        if self.kaggle_source is not None and not self.source.is_dir():
+            raise RealIntegrationError("Kaggle source attestation requires the mounted source directory")
         if self.source.is_dir():
+            if self.kaggle_source is not None:
+                _validate_kaggle_source_root(self.source, self.kaggle_source)
+                self.root = self.source.resolve()
+                return self
             if not self.allow_unverified_directory:
                 raise RealIntegrationError(
                     "real integration requires a source ZIP with archive identity; "
-                    "unverified directories are allowed only for local fixture smoke tests"
+                    "directories require an explicit local fixture or Kaggle source attestation"
                 )
             self.root = self.source.resolve()
             return self
@@ -765,11 +802,16 @@ class _SourceReader:
                 raise DamagedDicomError(f"archive integrity failed for {entry_name}") from exc
         if self.root is None:
             raise RealIntegrationError("source reader was used outside its context")
-        target = (self.root / Path(*safe.parts)).resolve()
+        candidate = self.root / Path(*safe.parts)
+        if candidate.is_symlink():
+            raise DamagedDicomError(f"source entry is not a regular file: {entry_name}")
+        target = candidate.resolve()
         try:
             target.relative_to(self.root)
         except ValueError as exc:
             raise RealIntegrationError(f"source entry escapes the source root: {entry_name}") from exc
+        if target.is_symlink() or not target.is_file():
+            raise DamagedDicomError(f"source entry is not a regular file: {entry_name}")
         try:
             with target.open("rb") as hash_stream:
                 source_content_sha256 = self._hash_stream(hash_stream)
@@ -987,8 +1029,9 @@ def load_real_study(
     *,
     require_complete_series: bool = True,
     allow_unverified_directory: bool = False,
+    kaggle_source: KaggleCompetitionSource | None = None,
 ) -> LoadedStudy:
-    """Load one manifest study; directories are reserved for local fixtures."""
+    """Load one manifest study from its checksum-bound source."""
 
     canonical = next(
         (item for item in manifest.studies if item.study_instance_uid == study_manifest.study_instance_uid),
@@ -1000,7 +1043,11 @@ def load_real_study(
         raise RealIntegrationError("study does not match the checksum-covered integration manifest")
     if allow_unverified_directory:
         _validate_local_smoke_scope(manifest, Path(source))
-    with _SourceReader(Path(source), allow_unverified_directory=allow_unverified_directory) as reader:
+    with _SourceReader(
+        Path(source),
+        allow_unverified_directory=allow_unverified_directory,
+        kaggle_source=kaggle_source,
+    ) as reader:
         return _load_real_study_with_reader(
             manifest,
             canonical,
@@ -1016,6 +1063,7 @@ def iter_real_studies(
     require_complete_series: bool = True,
     allow_unverified_directory: bool = False,
     study_uids: Sequence[str] | None = None,
+    kaggle_source: KaggleCompetitionSource | None = None,
 ) -> Iterator[LoadedStudy]:
     """Yield canonical manifest studies while keeping a ZIP handle open once.
 
@@ -1026,6 +1074,8 @@ def iter_real_studies(
 
     if allow_unverified_directory:
         _validate_local_smoke_scope(manifest, Path(source))
+    if kaggle_source is not None and allow_unverified_directory:
+        raise RealIntegrationError("Kaggle source attestation cannot use local fixture mode")
     selected: set[str] | None = None
     if study_uids is not None:
         selected = set(study_uids)
@@ -1036,7 +1086,11 @@ def iter_real_studies(
         unknown = selected.difference(manifest.study_uids)
         if unknown:
             raise RealIntegrationError("selected study is absent from the integration manifest")
-    with _SourceReader(Path(source), allow_unverified_directory=allow_unverified_directory) as reader:
+    with _SourceReader(
+        Path(source),
+        allow_unverified_directory=allow_unverified_directory,
+        kaggle_source=kaggle_source,
+    ) as reader:
         for study_manifest in manifest.studies:
             if selected is not None and study_manifest.study_instance_uid not in selected:
                 continue
@@ -1046,6 +1100,27 @@ def iter_real_studies(
                 reader,
                 require_complete_series=require_complete_series,
             )
+
+
+def _validate_kaggle_source_root(
+    source: Path,
+    attestation: KaggleCompetitionSource,
+) -> None:
+    """Require the source to be the read-only competition mount in Kaggle."""
+
+    resolved_source = source.resolve()
+    resolved_root = attestation.root.resolve()
+    kaggle_input = Path("/kaggle/input").resolve()
+    if resolved_source != resolved_root:
+        raise RealIntegrationError("Kaggle source path differs from its runtime attestation")
+    try:
+        resolved_root.relative_to(kaggle_input)
+    except ValueError as exc:
+        raise RealIntegrationError("Kaggle competition inputs must come from /kaggle/input") from exc
+    if not resolved_root.is_dir() or source.is_symlink():
+        raise RealIntegrationError("Kaggle competition source is not a regular mounted directory")
+    if not Path("/kaggle/working").is_dir():
+        raise RealIntegrationError("Kaggle working directory is unavailable")
 
 
 def _check_execution_context(*, require_slurm: bool, allow_local_smoke: bool) -> None:
@@ -1364,7 +1439,7 @@ def run_real_inference(
     *,
     evidence_path: str | Path | None = None,
     private_evidence_path: str | Path | None = None,
-    model: HierarchicalStudyModel | None = None,
+    model: StudyModel | None = None,
     model_seed: int = 20260911,
     device: str | torch.device = "cpu",
     cache_root: str | Path | None = None,
@@ -1827,6 +1902,7 @@ __all__ = [
     "DEFAULT_REAL_PREPROCESS_CONFIG",
     "RealIntegrationError",
     "RealInferenceError",
+    "KaggleCompetitionSource",
     "IntegrationSeries",
     "IntegrationStudy",
     "IntegrationManifest",

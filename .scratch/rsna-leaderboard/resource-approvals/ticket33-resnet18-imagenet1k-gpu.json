@@ -1,0 +1,72 @@
+{
+  "acquisition_verification": {
+    "expected_bytes": 46830571,
+    "expected_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+    "observed_bytes": 46830571,
+    "observed_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+    "status": "verified_for_ticket33_before_gpu_submission",
+    "verification_requirement": "The existing exact artifact was independently rechecked by SHA-256 and byte count for Ticket 33. The admitted loader rechecks the digest and byte count before exposing tensors; abort on mismatch.",
+    "verification_tool": "sha256sum and stat; the admitted training loader independently rechecks the full digest and byte count.",
+    "verified_at": "2026-09-25T19:47:01Z"
+  },
+  "approved_at": "2026-09-25T19:47:01Z",
+  "approved_by": "RSNA project owner (explicit approval in conversation on 2026-09-25 UTC)",
+  "artifact_id": "torchvision.ResNet18_Weights.IMAGENET1K_V1",
+  "authorization_context": {
+    "gpu_allocation_boundary": "This resource decision does not replace request-specific GPU approval. The smoke allocation is separately approved by a request-checksum-bound GPU approval file; any later allocation must also use its own exact request record.",
+    "owner_approval": "Explicit conversation approval to record the bounded Ticket 33 pretrained-resource scope and exact smoke request, followed by instruction to continue autonomously through completion."
+  },
+  "decision": "approved",
+  "download_url": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+  "expected_bytes": 46830571,
+  "external_spend": 0,
+  "proposed_rights_status": "eligible_for_this_bounded_competition_experiment_only",
+  "provenance": {
+    "architecture_and_training_data": "ResNet-18 pretrained for ImageNet-1K classification; the ImageNet-1K dataset is the stated training-data source.",
+    "checkpoint_license": "The reviewed TorchVision weight entry does not state a separate checkpoint-specific license. TorchVision guidance warns that terms may derive from training data and assigns use-case permission responsibility to the user.",
+    "competition_basis": "The official competition overview permits freely/publicly available external data including pretrained models. Host Po-Hao Howard Chen's 2026-08-27 official response in topic 733965/comment 3517696 says competition research-only use is non-commercial, prize money alone does not make it commercial, and NC restrictions alone do not disqualify a resource. This is not a checkpoint-specific host ruling and does not grant source-side rights.",
+    "publisher_and_project": "TorchVision / pytorch/vision",
+    "source_identity": "The project pins pytorch/vision@v0.22.1. The tagged source defines this enum and URL. The weight metadata does not pin an immutable training-recipe revision; its recipe link points to a mutable branch.",
+    "source_links": [
+      "https://github.com/pytorch/vision/blob/v0.22.1/torchvision/models/resnet.py",
+      "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+      "https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.resnet18.html",
+      "https://docs.pytorch.org/vision/stable/models.html",
+      "https://image-net.org/download-images",
+      "https://www.kaggle.com/competitions/rsna-knee-abnormality-detection/overview",
+      "https://www.kaggle.com/competitions/rsna-knee-abnormality-detection/discussion/733965#3517696"
+    ],
+    "upstream_dataset_terms": "ImageNet's official access terms offer images for non-commercial research/education and state ImageNet does not own image copyrights. Those terms do not expressly resolve whether they govern this already-trained checkpoint or resulting fine-tuned weights.",
+    "weight_enum": "torchvision.ResNet18_Weights.IMAGENET1K_V1 (do not substitute DEFAULT)",
+    "winner_release_provenance": "The 2026-09-11 captured Rules text records an exception to granting the winner license to incompatible-license pretrained models and a separate public Kaggle model-weight delivery duty; the overview requests public code/weights and model availability. The capture records conflicting winner-license wording. The exact application to this checkpoint and redistribution of any fine-tuned weights remain unresolved."
+  },
+  "release_eligibility": {
+    "final_candidate_freeze": "blocked",
+    "redistribution_or_release": "blocked",
+    "release_gate": "Require a separate documented resolution of checkpoint and derivative redistribution rights and the competition winner-license/public-weight obligations, followed by separate owner approval. This experimental-use record cannot clear or waive that gate.",
+    "winner_publication": "blocked"
+  },
+  "requested_owner_decision": "Approved in conversation: admit the exact already-acquired ImageNet-1K V1 ResNet-18 checkpoint for the bounded Ticket 33 fold-0 experiment, starting with the request-checksum-bound two-step smoke. No other artifact, use, spend, source images, or release rights are included.",
+  "rights_basis": "APPROVED FOR THE BOUNDED TICKET 33 FOLD-0 RESNET-18 GPU EXPERIMENT ONLY. The owner explicitly authorized this exact pretrained-resource scope and the two-step smoke, with continuation to completion under the ticket constraints. The recorded competition-use basis is that the official competition overview permits freely/publicly available pretrained models and the documented host interpretation treats research-only competition use as non-commercial. This is a project-scoped use decision, not a third-party rights grant, not a determination that ImageNet terms govern or do not govern this checkpoint or its derivatives, and not a legal guarantee. The encoder remains frozen; no ImageNet source images, new download, runtime network, or external spend are authorized. Candidate freeze, publication, redistribution, and release remain blocked pending a separate rights decision.",
+  "rights_status": "eligible",
+  "rights_status_scope": "ticket33-fold0-resnet18-gpu-experiment",
+  "rights_status_semantics": "rights_status=eligible records only the project decision for scope ticket33-fold0-resnet18-gpu-experiment. Any GPU allocation is separately bound to an exact approved request. This does not resolve upstream ImageNet terms or authorize use outside Ticket 33, candidate freeze, publication, redistribution, or release.",
+  "schema_version": "rsna-resnet18-resource-approval-v1",
+  "scope": "ticket33-fold0-resnet18-gpu-experiment",
+  "scope_details": {
+    "acquisition": "No new checkpoint download is needed. Reuse only the previously acquired exact public artifact after the recorded digest/size recheck; zero cost.",
+    "experiment": "Ticket 33 only: fold 0 reference-only ResNet-18 experiment using the exact ImageNet-1K V1 checkpoint, frozen encoder, and the selected Ticket 32 scientific configuration. Smoke metrics are hardware/throughput evidence only and are not candidate evidence.",
+    "follow_up": "The owner instructed continuation through Ticket 33 completion. After inspecting smoke evidence, any full-training or recovery allocation must be represented by a new exact request with its own request-bound approval, within one GPU, 16 CPUs, 64 GB, six hours per allocation, the 20-hour campaign ledger, and protected comparison reserve.",
+    "held_out_data": "Held-out inputs and outcomes are for prediction/evaluation only; no fitting, adaptation, calibration, or selection may use them.",
+    "image_data": "Do not download, access, or use ImageNet source images.",
+    "model_use": "Keep the pretrained encoder frozen. Fit only the fold-specific head on the fold training partition.",
+    "processing": "Run only through the exact request-approved Slurm GPU allocation. No runtime network and no external spend.",
+    "reuse_and_sharing": "No reuse outside Ticket 33, candidate promotion, external sharing, mirroring, publication, redistribution, or release.",
+    "rights_review": "The owner explicitly approved this bounded Ticket 33 experiment based on the recorded competition-use basis. Upstream ImageNet/checkpoint and derivative rights remain unresolved; this approval does not resolve them.",
+    "smoke": "Begin with exact request checksum 91dee4c457ea1684009b4821c9dd17162099172d330c4c0372ce83cf060ff86d: two optimizer steps on the real fold 0 input path, at most 30 allocated minutes, for hardware compatibility and throughput measurement only."
+  },
+  "sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+  "sha256_role": "expected and independently reverified exact artifact digest; loader rechecks before model loading",
+  "source_revision": "pytorch/vision@v0.22.1",
+  "ticket31_approval_record": ".scratch/rsna-leaderboard/resource-approvals/ticket31-resnet18-imagenet1k-v1.json (unchanged; one-fold scope only)"
+}

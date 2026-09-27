@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -35,6 +36,17 @@ from rsna_knee.training import (
     TrainingResult,
     save_training_checkpoint,
     train_fixed_budget,
+)
+from rsna_knee.image_variant import TICKET31_RESNET18_VARIANT, image_model_training_config
+from rsna_knee.pretrained import (
+    RESNET18_ARTIFACT_BYTES,
+    RESNET18_ARTIFACT_ID,
+    RESNET18_DOWNLOAD_URL,
+    RESNET18_APPROVAL_SCHEMA,
+    RESNET18_SHA256,
+    RESNET18_SOURCE_REVISION,
+    TICKET33_RESOURCE_SCOPE,
+    load_resource_approval,
 )
 
 
@@ -76,6 +88,49 @@ def _config() -> TrainingConfig:
         successful_optimizer_steps=1,
         device="cuda",
     )
+
+
+def _ticket33_execution(
+    weights_path: Path,
+    resource_approval_path: Path,
+) -> dict[str, object]:
+    return {
+        "pretrained_resource": {
+            "artifact_id": RESNET18_ARTIFACT_ID,
+            "source_revision": RESNET18_SOURCE_REVISION,
+            "download_url": RESNET18_DOWNLOAD_URL,
+            "sha256": RESNET18_SHA256,
+            "expected_bytes": RESNET18_ARTIFACT_BYTES,
+            "weights_path": str(weights_path.resolve()),
+            "resource_approval_path": str(resource_approval_path.resolve()),
+            "scope": TICKET33_RESOURCE_SCOPE,
+            "encoder_frozen": True,
+            "runtime_network": False,
+            "external_spend": 0,
+        }
+    }
+
+
+def _ticket33_resource_approval_fields(
+    *,
+    scope: str = TICKET33_RESOURCE_SCOPE,
+) -> dict[str, object]:
+    return {
+        "schema_version": RESNET18_APPROVAL_SCHEMA,
+        "artifact_id": RESNET18_ARTIFACT_ID,
+        "source_revision": RESNET18_SOURCE_REVISION,
+        "download_url": RESNET18_DOWNLOAD_URL,
+        "sha256": RESNET18_SHA256,
+        "expected_bytes": RESNET18_ARTIFACT_BYTES,
+        "decision": "approved",
+        "rights_status": "eligible",
+        "rights_status_scope": scope,
+        "external_spend": 0,
+        "scope": scope,
+        "approved_by": "owner",
+        "approved_at": "2026-09-25T00:00:00Z",
+        "rights_basis": "Synthetic test scope only.",
+    }
 
 
 def _slurm_environment(resource: GpuResourceRequest) -> dict[str, str]:
@@ -187,10 +242,307 @@ def test_gpu_resource_request_is_one_explicit_noninteractive_gpu() -> None:
 
     with pytest.raises(ValueError, match="one GPU"):
         GpuResourceRequest(gres="gpu:2")
-    with pytest.raises(ValueError, match="at most 60 minutes"):
+    with pytest.raises(ValueError, match="at most 30 minutes"):
         GpuResourceRequest(smoke_test=True)
+    with pytest.raises(ValueError, match="at most 30 minutes"):
+        GpuResourceRequest(wall_time_minutes=31, smoke_test=True)
+    with pytest.raises(ValueError, match="six hours"):
+        GpuResourceRequest(wall_time_minutes=361)
     with pytest.raises(ValueError, match="reserved for an approved"):
         GpuResourceRequest(partition="cluster1-gpu-add")
+
+
+def test_approved_request_round_trips_the_selected_resnet_training_identity(
+    tmp_path: Path,
+) -> None:
+    preflight = _write_preflight(tmp_path / "cpu-preflight.json")
+    config = replace(
+        image_model_training_config(TICKET31_RESNET18_VARIANT),
+        successful_optimizer_steps=1,
+        device="cuda",
+    )
+
+    request = prepare_gpu_experiment(
+        tmp_path / "resnet-request",
+        preflight_path=preflight,
+        resource=GpuResourceRequest(
+            partition="cluster1-gpu-add",
+            wall_time_minutes=30,
+            smoke_test=True,
+        ),
+        training_config=config,
+        experiment_id="ticket33-resnet18-smoke",
+        experiment_identity={"fold": 0, "scope": "training-only-smoke"},
+        fold=0,
+        source_version="fixture-source-v1",
+        source_fingerprint="fixture-source-sha256",
+        fold_manifest_checksum="fixture-fold-sha256",
+        integration_manifest_checksum="fixture-integration-sha256",
+        execution=_ticket33_execution(
+            tmp_path / "weights.pth",
+            tmp_path / "resource-approval.json",
+        ),
+    )
+
+    loaded = load_gpu_experiment_request(request.root)
+    assert loaded.training_config.to_dict() == config.to_dict()
+    assert loaded.payload["experiment"]["scientific_identity"] == {
+        "config_fingerprint": config.config_fingerprint,
+        "inputs": {
+            "fold": 0,
+            "source_version": "fixture-source-v1",
+            "source_fingerprint": "fixture-source-sha256",
+            "fold_manifest_checksum": "fixture-fold-sha256",
+            "integration_manifest_checksum": "fixture-integration-sha256",
+        },
+    }
+
+
+def test_resnet_gpu_approval_requires_artifact_specific_ticket33_owner_scope(
+    tmp_path: Path,
+) -> None:
+    preflight = _write_preflight(tmp_path / "cpu-preflight.json")
+    config = replace(
+        image_model_training_config(TICKET31_RESNET18_VARIANT),
+        successful_optimizer_steps=2,
+        device="cuda",
+    )
+    request = prepare_gpu_experiment(
+        tmp_path / "resnet-request",
+        preflight_path=preflight,
+        resource=GpuResourceRequest(
+            partition="cluster1-gpu-add",
+            wall_time_minutes=30,
+            smoke_test=True,
+        ),
+        training_config=config,
+        experiment_id="ticket33-resnet18-smoke",
+        fold=0,
+        source_version="fixture-source-v1",
+        source_fingerprint="fixture-source-sha256",
+        fold_manifest_checksum="fixture-fold-sha256",
+        integration_manifest_checksum="fixture-integration-sha256",
+        execution=_ticket33_execution(
+            tmp_path / "weights.pth",
+            tmp_path / "resource-approval.json",
+        ),
+    )
+    approval_path = tmp_path / "gpu-owner-approval.json"
+    approval_path.write_text(
+        json.dumps(
+            {
+                "schema_version": GPU_APPROVAL_SCHEMA_VERSION,
+                "request_checksum": request.request_checksum,
+                "approval_scope": GPU_APPROVAL_SCOPE,
+                "approved": True,
+                "retry_allowed": True,
+                "approver": "owner",
+                "approved_at_utc": "2026-09-25T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    calls = 0
+
+    def should_not_train(resume_from: Path | None) -> TrainingResult:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("unapproved pretrained weights must be rejected before training")
+
+    with pytest.raises(GpuApprovalError, match="pretrained artifact authorization"):
+        run_approved_gpu_experiment(
+            request.root,
+            approval_path,
+            output_dir=tmp_path / "gpu-run",
+            training_runner=should_not_train,
+        )
+    assert calls == 0
+
+
+def test_resnet_gpu_approval_rejects_a_different_pretrained_digest_or_scope(
+    tmp_path: Path,
+) -> None:
+    preflight = _write_preflight(tmp_path / "cpu-preflight.json")
+    config = replace(
+        image_model_training_config(TICKET31_RESNET18_VARIANT),
+        successful_optimizer_steps=2,
+        device="cuda",
+    )
+    request = prepare_gpu_experiment(
+        tmp_path / "resnet-request",
+        preflight_path=preflight,
+        resource=GpuResourceRequest(
+            partition="cluster1-gpu-add",
+            wall_time_minutes=30,
+            smoke_test=True,
+        ),
+        training_config=config,
+        experiment_id="ticket33-resnet18-smoke",
+        fold=0,
+        source_version="fixture-source-v1",
+        source_fingerprint="fixture-source-sha256",
+        fold_manifest_checksum="fixture-fold-sha256",
+        integration_manifest_checksum="fixture-integration-sha256",
+        execution=_ticket33_execution(
+            tmp_path / "weights.pth",
+            tmp_path / "resource-approval.json",
+        ),
+    )
+    approval_path = tmp_path / "gpu-owner-approval.json"
+    approval_path.write_text(
+        json.dumps(
+            {
+                "schema_version": GPU_APPROVAL_SCHEMA_VERSION,
+                "request_checksum": request.request_checksum,
+                "approval_scope": GPU_APPROVAL_SCOPE,
+                "approved": True,
+                "retry_allowed": True,
+                "approver": "owner",
+                "approved_at_utc": "2026-09-25T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "resource-approval.json").write_text(
+        json.dumps(
+            _ticket33_resource_approval_fields(
+                scope="ticket32-three-fold-reference-oof-cpu"
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GpuApprovalError, match="does not match the requested artifact"):
+        load_gpu_approval(approval_path, request)
+
+
+def test_ticket33_gpu_owner_approval_can_admit_only_the_exact_weights_artifact(
+    tmp_path: Path,
+) -> None:
+    approval_path = tmp_path / "gpu-owner-approval.json"
+    approval_path.write_text(
+        json.dumps(
+            {
+                **_ticket33_resource_approval_fields(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    admitted = load_resource_approval(approval_path)
+
+    assert admitted["scope"] == TICKET33_RESOURCE_SCOPE
+    assert admitted["sha256"] == RESNET18_SHA256
+
+
+def test_ticket33_gpu_training_receives_request_bound_weights_and_owner_approval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rsna_knee.model import build_study_model
+
+    preflight = _write_preflight(tmp_path / "cpu-preflight.json")
+    weights_path = tmp_path / "weights.pth"
+    resource_approval_path = tmp_path / "resource-approval.json"
+    resource_approval_path.write_text(
+        json.dumps(_ticket33_resource_approval_fields()),
+        encoding="utf-8",
+    )
+    config = replace(
+        image_model_training_config(TICKET31_RESNET18_VARIANT),
+        successful_optimizer_steps=2,
+        device="cuda",
+    )
+    request = prepare_gpu_experiment(
+        tmp_path / "resnet-request",
+        preflight_path=preflight,
+        resource=GpuResourceRequest(
+            partition="cluster1-gpu-add",
+            wall_time_minutes=30,
+            smoke_test=True,
+        ),
+        training_config=config,
+        experiment_id="ticket33-resnet18-smoke",
+        fold=0,
+        source_version="fixture-source-v1",
+        source_fingerprint="fixture-source-sha256",
+        fold_manifest_checksum="fixture-fold-sha256",
+        integration_manifest_checksum="fixture-integration-sha256",
+        execution=_ticket33_execution(weights_path, resource_approval_path),
+    )
+    approval_path = tmp_path / "gpu-owner-approval.json"
+    approval_path.write_text(
+        json.dumps(
+            {
+                "schema_version": GPU_APPROVAL_SCHEMA_VERSION,
+                "request_checksum": request.request_checksum,
+                "approval_scope": GPU_APPROVAL_SCOPE,
+                "approved": True,
+                "retry_allowed": True,
+                "approver": "owner",
+                "approved_at_utc": "2026-09-25T00:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    received: list[tuple[Path, Path]] = []
+    model = build_study_model(config.model_config())
+    checkpoint = tmp_path / "final.pt"
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    save_training_checkpoint(
+        checkpoint,
+        model,
+        optimizer,
+        scheduler,
+        config,
+        successful_optimizer_steps=2,
+        attempted_batches=2,
+        skipped_batches=0,
+        loss_history=(0.5, 0.4),
+        checkpoint_kind="final_selected",
+        fold=0,
+        overwrite=False,
+    )
+    training_result = TrainingResult(
+        model=model,
+        config=config,
+        successful_optimizer_steps=2,
+        scheduler_steps=2,
+        attempted_batches=2,
+        skipped_batches=0,
+        loss_history=(0.5, 0.4),
+        final_checkpoint_path=checkpoint,
+        fold=0,
+        optimizer_step_compute_seconds=0.05,
+        measured_optimizer_steps=2,
+    )
+
+    def fake_train(*args: object, **kwargs: object) -> TrainingResult:
+        del args
+        pretrained_weights = Path(str(kwargs["pretrained_weights_path"]))
+        resource_approval = Path(str(kwargs["resource_approval_path"]))
+        received.append((pretrained_weights, resource_approval))
+        return training_result
+
+    monkeypatch.setattr("rsna_knee.gpu._train_one_fold_gpu", fake_train)
+    run_approved_gpu_experiment(
+        request.root,
+        approval_path,
+        output_dir=tmp_path / "gpu-run",
+        slurm_environment=_slurm_environment(request.resources),
+        gpu_probe=_gpu_snapshot,
+        studies=(),
+        fold_manifest=SimpleNamespace(manifest_checksum="fixture-fold-sha256"),
+        fold=0,
+        source_version="fixture-source-v1",
+        source_fingerprint="fixture-source-sha256",
+        fold_manifest_checksum="fixture-fold-sha256",
+        integration_manifest_checksum="fixture-integration-sha256",
+    )
+
+    assert received == [(weights_path.resolve(), resource_approval_path.resolve())]
 
 
 def test_prepare_gpu_experiment_binds_passed_cpu_preflight_and_exact_config(tmp_path: Path) -> None:
@@ -828,6 +1180,8 @@ def _training_result_with_reloadable_checkpoint(
         loss_history=(0.5,),
         final_checkpoint_path=checkpoint,
         fold=fold,
+        optimizer_step_compute_seconds=0.02,
+        measured_optimizer_steps=1,
     )
 
 
@@ -862,6 +1216,10 @@ def test_approved_gpu_execution_records_hardware_checkpoint_and_one_retry(tmp_pa
     assert result.evidence["status"] == "completed"
     assert result.evidence["checkpoint"]["final_reload_passed"] is True
     assert result.evidence["hardware"]["peak_vram_bytes"] == 3_000_000
+    performance = result.evidence["training_performance"]
+    assert performance["forward_backward_steps_per_second"] > 0.0
+    assert performance["optimizer_step_compute_seconds"] == 0.02
+    assert performance["end_to_end_training_elapsed_seconds"] > 0.0
     assert result.evidence["scientific_identity"]["config_fingerprint"] == request.payload[
         "experiment"
     ]["scientific_identity"]["config_fingerprint"]

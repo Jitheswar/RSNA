@@ -12,6 +12,18 @@ from .geometry import GeometryError, GeometryPolicy, order_slices
 
 
 PREPROCESS_SCHEMA_VERSION = "rsna-knee-preprocess-v1"
+SERIES_DESCRIPTOR_COLUMNS = (
+    "plane_axial",
+    "plane_coronal",
+    "plane_sagittal",
+    "plane_unknown",
+    "fluid_sensitive_true",
+    "fluid_sensitive_false",
+    "fluid_sensitive_unknown",
+    "fat_suppression_true",
+    "fat_suppression_false",
+    "fat_suppression_unknown",
+)
 
 
 class PreprocessingError(ValueError):
@@ -59,6 +71,7 @@ class PreprocessConfig:
     interpolation: str = "nearest"
     padding_fill_value: float = 0.0
     output_dtype: str = "float32"
+    representation_id: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.image_size) != 2 or any(size <= 0 for size in self.image_size):
@@ -84,6 +97,8 @@ class PreprocessConfig:
             raise ValueError("padding_fill_value must be finite")
         if self.output_dtype != "float32":
             raise ValueError("the preprocessing output dtype must be float32")
+        if self.representation_id is not None and not self.representation_id.strip():
+            raise ValueError("representation_id must be non-empty")
 
     def packing_config(self) -> PackingConfig:
         return PackingConfig(max_slices=self.max_slices, max_series=self.max_series)
@@ -91,7 +106,7 @@ class PreprocessConfig:
     def cache_config(self) -> dict[str, object]:
         """Return only choices that affect materialized series pixels."""
 
-        return {
+        payload: dict[str, object] = {
             "schema_version": PREPROCESS_SCHEMA_VERSION,
             "image_size": list(self.image_size),
             "geometry_policy": self.geometry_policy.to_dict(),
@@ -102,6 +117,9 @@ class PreprocessConfig:
             "padding_fill_value": self.padding_fill_value,
             "output_dtype": self.output_dtype,
         }
+        if self.representation_id is not None:
+            payload["representation_id"] = self.representation_id
+        return payload
 
 
 @dataclass(frozen=True)
@@ -142,6 +160,19 @@ class PackedStudy:
     slice_mask: np.ndarray
     series_mask: np.ndarray
     sampled_source_indices: tuple[tuple[int, ...], ...]
+    series_descriptors: np.ndarray | None = None
+
+
+def _series_descriptor(series: SeriesRecord) -> np.ndarray:
+    """Encode declared anatomy and uncertainty without inventing missing values."""
+
+    descriptor = np.zeros(len(SERIES_DESCRIPTOR_COLUMNS), dtype=np.float32)
+    plane = (series.anatomical_plane or "").strip().casefold()
+    plane_index = {"axial": 0, "coronal": 1, "sagittal": 2}.get(plane, 3)
+    descriptor[plane_index] = 1.0
+    descriptor[4 + (0 if series.fluid_sensitive is True else 1 if series.fluid_sensitive is False else 2)] = 1.0
+    descriptor[7 + (0 if series.fat_suppression is True else 1 if series.fat_suppression is False else 2)] = 1.0
+    return descriptor
 
 
 def _resize_aspect_preserving(
@@ -323,6 +354,12 @@ def pack_study(
         images.fill(materialization_config.padding_fill_value)
     slice_mask = np.zeros((packing.max_series, packing.max_slices), dtype=bool)
     series_mask = np.zeros(packing.max_series, dtype=bool)
+    series_descriptors = np.zeros(
+        (packing.max_series, len(SERIES_DESCRIPTOR_COLUMNS)), dtype=np.float32
+    )
+    descriptors_by_series = {
+        item.series_instance_uid: _series_descriptor(item) for item in study.series
+    }
     sampled_source_indices: list[tuple[int, ...]] = []
 
     for series_index, item in enumerate(ordered_series):
@@ -334,6 +371,7 @@ def pack_study(
             slice_mask[series_index, : len(indices)] = True
             series_mask[series_index] = True
         sampled_source_indices.append(indices)
+        series_descriptors[series_index] = descriptors_by_series[item.series_instance_uid]
 
     while len(sampled_source_indices) < packing.max_series:
         sampled_source_indices.append(())
@@ -343,4 +381,5 @@ def pack_study(
         slice_mask=slice_mask,
         series_mask=series_mask,
         sampled_source_indices=tuple(sampled_source_indices),
+        series_descriptors=series_descriptors,
     )
