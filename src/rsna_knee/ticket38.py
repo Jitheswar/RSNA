@@ -318,7 +318,7 @@ def analyze_ticket38(
     }
     if set(studies) != set(gold_uids):
         raise Ticket38AnalysisError("DINOv2 offline replay did not load exactly the 58 gold studies")
-    series_cache = SeriesCache(series_cache_root)
+    series_cache = SeriesCache(series_cache_root, read_only=True)
     training_config = image_model_training_config(
         TICKET38_DINOV2_VARIANT,
         preprocessing_config=integration.preprocess_config,

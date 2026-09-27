@@ -257,23 +257,34 @@ class SeriesCache:
     candidate directory.
     """
 
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, *, read_only: bool = False) -> None:
         self.root = Path(root)
         self.entries_root = self.root / "entries"
         self.locks_root = self.root / "locks"
+        self.read_only = read_only
         if self.root.is_symlink():
             raise SeriesCacheError("series cache root must not be a symlink")
         root_preexisted = self.root.exists()
         if root_preexisted and not self.root.is_dir():
             raise SeriesCacheError("series cache root must be a directory")
-        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if root_preexisted:
+        if self.read_only:
+            if not root_preexisted:
+                raise SeriesCacheError("read-only series cache root does not exist")
             self._require_private_directory(self.root)
-        self._ensure_disposable_root()
+            self._ensure_disposable_root(create=False)
+        else:
+            self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if root_preexisted:
+                self._require_private_directory(self.root)
+            self._ensure_disposable_root()
         for control_path in (self.entries_root, self.locks_root):
             if control_path.exists() and control_path.is_symlink():
                 raise SeriesCacheError("series cache control directories must not be symlinks")
-            control_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if self.read_only:
+                if not control_path.is_dir():
+                    raise SeriesCacheError("read-only series cache control directory is missing")
+            else:
+                control_path.mkdir(parents=True, exist_ok=True, mode=0o700)
             self._require_private_directory(control_path)
 
     def cache_key(
@@ -308,6 +319,21 @@ class SeriesCache:
         source = _source_payload(series, source_content_hashes)
         cache_key = self._cache_key_for(source, config)
         source_fingerprint = _json_sha256(source)
+        if self.read_only:
+            try:
+                prepared, bytes_read = self._load(series, config, source, cache_key)
+            except (_CacheMiss, SeriesCacheIntegrityError) as exc:
+                raise SeriesCacheError(
+                    "read-only series cache has no exact valid entry for this source series"
+                ) from exc
+            return SeriesCacheResult(
+                prepared=prepared,
+                cache_key=cache_key,
+                hit=True,
+                reason="hit",
+                source_fingerprint=source_fingerprint,
+                bytes_read=bytes_read,
+            )
         with self._key_lock(cache_key):
             invalid_entry = False
             try:
@@ -631,7 +657,7 @@ class SeriesCache:
             }
         )
 
-    def _ensure_disposable_root(self) -> None:
+    def _ensure_disposable_root(self, *, create: bool = True) -> None:
         marker = self.root / _ROOT_MARKER_FILENAME
         if marker.exists() or marker.is_symlink():
             if marker.is_symlink() or not marker.is_file():
@@ -646,6 +672,8 @@ class SeriesCache:
             }:
                 raise SeriesCacheError("series cache root marker is invalid")
             return
+        if not create:
+            raise SeriesCacheError("read-only series cache root marker is missing")
         if any(self.root.iterdir()):
             raise SeriesCacheError(
                 "series cache root must be new, empty, or previously marked disposable"
