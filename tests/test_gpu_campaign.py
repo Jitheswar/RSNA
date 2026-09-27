@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -29,6 +30,7 @@ from rsna_knee.gpu_campaign import (
     record_gpu_allocation,
     reserve_gpu_campaign_request,
     reconcile_gpu_unallocated_attempt,
+    reconcile_gpu_unallocated_from_scontrol,
 )
 from rsna_knee.training import PREFLIGHT_SCHEMA_VERSION
 from rsna_knee.pretrained import (
@@ -426,6 +428,145 @@ def test_unallocated_comparison_request_restores_its_reserve(tmp_path: Path) -> 
     )
 
     assert read_gpu_campaign_ledger(ledger_path)["reserved_comparison_seconds"] == 18 * 3600
+
+
+def test_scontrol_reconciliation_closes_cancelled_pending_job_when_sacct_is_down(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "campaign-ledger.json"
+    request_checksum = "b" * 64
+    initialize_gpu_campaign_ledger(ledger_path, reserved_comparison_hours=18.0)
+    reserve_gpu_campaign_request(
+        ledger_path,
+        request_checksum=request_checksum,
+        experiment_id="comparison-fold-pending-cancel-scontrol",
+        wall_time_minutes=30,
+        retry_allowed=False,
+        remaining_attempts=1,
+        comparison_reserve_release_seconds=30 * 60,
+    )
+    begin_gpu_submission_attempt(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        submitted_epoch=100,
+    )
+    record_gpu_submission_result(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        job_id="54320",
+        exit_code=0,
+        submission_wait=False,
+    )
+    controller_path = tmp_path / "scontrol.txt"
+    controller_text = (
+        "JobId=54320 JobName=test\n"
+        "   JobState=CANCELLED Reason=cancelled\n"
+        "   RunTime=00:00:00 TimeLimit=00:30:00\n"
+        "   SubmitTime=1970-01-01T00:01:40Z EndTime=1970-01-01T00:03:40Z\n"
+        "   NodeList=(null)\n"
+    )
+    controller_path.write_text(controller_text, encoding="utf-8")
+    evidence_path = tmp_path / "scontrol.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "rsna-slurm-scontrol-unallocated-v1",
+                "request_checksum": request_checksum,
+                "job_id": "54320",
+                "job_state": "CANCELLED",
+                "elapsed_seconds": 0,
+                "node_list": None,
+                "held_pending_before_cancel": True,
+                "submitted_epoch": 100,
+                "ended_epoch": 220,
+                "controller_submit_time": "1970-01-01T00:01:40Z",
+                "controller_end_time": "1970-01-01T00:03:40Z",
+                "controller_record_path": str(controller_path),
+                "controller_record_sha256": hashlib.sha256(
+                    controller_path.read_bytes()
+                ).hexdigest(),
+                "cancel_command_exit_code": 0,
+                "absent_from_queue_after_cancel": True,
+                "sacct_status": "unavailable_connection_refused",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    entry = reconcile_gpu_unallocated_from_scontrol(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        job_id="54320",
+        scheduler_evidence_path=evidence_path,
+    )
+
+    ledger = read_gpu_campaign_ledger(ledger_path)
+    assert entry["status"] == "failed"
+    assert entry["actual_allocated_seconds"] == 0
+    assert entry["queue_wait_seconds"] == 120
+    assert entry["attempts"][0]["scheduler_evidence_source"] == "scontrol"
+    assert ledger["reserved_comparison_seconds"] == 18 * 3600
+
+
+def test_scontrol_reconciliation_rejects_started_or_unrelated_gpu_job(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "campaign-ledger.json"
+    request_checksum = "e" * 64
+    initialize_gpu_campaign_ledger(ledger_path, reserved_comparison_hours=18.0)
+    reserve_gpu_campaign_request(
+        ledger_path,
+        request_checksum=request_checksum,
+        experiment_id="comparison-fold-invalid-scontrol",
+        wall_time_minutes=30,
+        retry_allowed=False,
+        remaining_attempts=1,
+    )
+    begin_gpu_submission_attempt(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        submitted_epoch=100,
+    )
+    record_gpu_submission_result(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        job_id="54319",
+        exit_code=0,
+        submission_wait=False,
+    )
+    evidence_path = tmp_path / "scontrol-invalid.json"
+    evidence = {
+        "schema_version": "rsna-slurm-scontrol-unallocated-v1",
+        "request_checksum": request_checksum,
+        "job_id": "54319",
+        "job_state": "CANCELLED",
+        "elapsed_seconds": 1,
+        "node_list": "gpu-node-1",
+        "held_pending_before_cancel": True,
+        "submitted_epoch": 100,
+        "ended_epoch": 220,
+        "controller_submit_time": "1970-01-01T00:01:40Z",
+        "controller_end_time": "1970-01-01T00:03:40Z",
+        "controller_record_path": str(tmp_path / "missing-scontrol.txt"),
+        "controller_record_sha256": "0" * 64,
+        "cancel_command_exit_code": 0,
+        "absent_from_queue_after_cancel": True,
+        "sacct_status": "unavailable_connection_refused",
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    with pytest.raises(GpuCampaignLedgerError, match="does not prove"):
+        reconcile_gpu_unallocated_from_scontrol(
+            ledger_path,
+            request_checksum=request_checksum,
+            attempt_number=1,
+            job_id="54319",
+            scheduler_evidence_path=evidence_path,
+        )
 
 
 def test_transient_no_job_retry_keeps_and_then_restores_one_fold_reserve(tmp_path: Path) -> None:

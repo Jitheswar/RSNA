@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Mapping, Sequence, cast
+from typing import TYPE_CHECKING, Any, Mapping, Sequence, cast
 
 import numpy as np
 import torch
@@ -1171,9 +1171,13 @@ def predict_training_examples(
             series_mask = torch.from_numpy(
                 np.stack([item.series_mask for item in batch])
             ).to(target_device)
-            from .dinov2 import Dinov2StudyModel
+            from .dinov2 import DINOV2_MODEL_ID
+            from .resnet18 import (
+                RESNET18_FINETUNE_MODEL_ID,
+                RESNET18_MODEL_ID,
+            )
 
-            if isinstance(model, Dinov2StudyModel):
+            if model.config.model_id in {RESNET18_MODEL_ID, DINOV2_MODEL_ID}:
                 if any(item.features is None or item.series_descriptors is None for item in batch):
                     raise EvaluationError(
                         "frozen encoder held-out prediction requires cached features and series descriptors"
@@ -1184,14 +1188,28 @@ def predict_training_examples(
                 descriptors = torch.from_numpy(
                     np.stack([cast(np.ndarray, item.series_descriptors) for item in batch])
                 ).to(target_device)
-                scores = model.predict_proba_from_features(
+                scores = cast(Any, model).predict_proba_from_features(
                     features, slice_mask, series_mask, descriptors
+                ).cpu().numpy()
+            elif model.config.model_id == RESNET18_FINETUNE_MODEL_ID:
+                if any(item.images is None or item.series_descriptors is None for item in batch):
+                    raise EvaluationError(
+                        "Ticket 39 prediction requires pixels and series descriptors"
+                    )
+                images = torch.from_numpy(
+                    np.stack([cast(np.ndarray, item.images) for item in batch])
+                ).to(target_device)
+                descriptors = torch.from_numpy(
+                    np.stack([cast(np.ndarray, item.series_descriptors) for item in batch])
+                ).to(target_device)
+                scores = cast(Any, model).predict_proba(
+                    images, slice_mask, series_mask, descriptors
                 ).cpu().numpy()
             else:
                 images = torch.from_numpy(
-                    np.stack([item.images for item in batch])
+                    np.stack([cast(np.ndarray, item.images) for item in batch])
                 ).to(target_device)
-                scores = model.predict_proba(images, slice_mask, series_mask).cpu().numpy()
+                scores = cast(Any, model).predict_proba(images, slice_mask, series_mask).cpu().numpy()
             for item, row in zip(batch, scores, strict=True):
                 values = _validate_prediction_vector(item.study_instance_uid, row)
                 predictions[item.study_instance_uid] = values

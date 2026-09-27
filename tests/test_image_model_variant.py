@@ -4,9 +4,12 @@ import torch
 
 from rsna_knee.image_variant import (
     TICKET19_VARIANT,
+    TICKET39_ENCODER_LEARNING_RATE,
+    TICKET39_RESNET18_FINETUNE_VARIANT,
     image_model_training_config,
 )
-from rsna_knee.model import HierarchicalStudyModel
+from rsna_knee.model import ANATOMICAL_POOLING_ID, HierarchicalStudyModel
+from rsna_knee.resnet18 import RESNET18_FINETUNE_MODEL_ID
 from rsna_knee.training import TrainingConfig
 
 
@@ -48,3 +51,18 @@ def test_ticket19_encoder_keeps_the_masked_twelve_score_model_contract() -> None
     assert torch.isfinite(original).all()
     assert ((original >= 0.0) & (original <= 1.0)).all()
     assert torch.allclose(original, updated, atol=1e-6)
+
+
+def test_ticket39_variant_freezes_the_partial_finetuning_comparison_settings() -> None:
+    config = image_model_training_config(TICKET39_RESNET18_FINETUNE_VARIANT)
+
+    assert config.model_id == RESNET18_FINETUNE_MODEL_ID
+    assert config.image_size == (224, 224)
+    assert config.pooling_id == ANATOMICAL_POOLING_ID
+    assert config.learning_rate == 1e-3
+    assert config.encoder_learning_rate == TICKET39_ENCODER_LEARNING_RATE
+    assert config.successful_optimizer_steps == 100
+    assert config.batch_size == 2
+    assert config.optimizer == "Adam"
+    assert config.schedule == "constant"
+    assert config.augmentation == "none"

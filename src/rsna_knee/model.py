@@ -22,9 +22,11 @@ from .dinov2 import (
 from .resnet18 import (
     ANATOMICAL_POOLING_ID,
     RESNET18_ENCODER_ID,
+    RESNET18_FINETUNE_MODEL_ID,
     RESNET18_FIXTURE_ENCODER_ID,
     RESNET18_MODEL_ID,
     SIMPLE_POOLING_ID,
+    ResNet18FineTunedStudyModel,
     ResNet18StudyModel,
 )
 
@@ -78,7 +80,7 @@ class ModelConfig:
                 or self.encoder_source_revision is not None
             ):
                 raise ValueError("compact model configuration cannot name an external encoder")
-        elif self.model_id == RESNET18_MODEL_ID:
+        elif self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
             if self.input_channels != 1 or min(self.image_size) < 32:
                 raise ValueError("ResNet-18 configuration requires grayscale images of at least 32 pixels")
             if self.encoder_id not in {RESNET18_ENCODER_ID, RESNET18_FIXTURE_ENCODER_ID}:
@@ -122,7 +124,7 @@ class ModelConfig:
             "input_channels": self.input_channels,
             "num_targets": self.num_targets,
         }
-        if self.model_id == RESNET18_MODEL_ID:
+        if self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
             payload.update(
                 {
                     "encoder_id": self.encoder_id,
@@ -162,14 +164,19 @@ class ModelConfig:
             pooling_id = payload.get("pooling_id")
             if model_id == COMPACT_MODEL_ID and pooling_id != COMPACT_POOLING_ID:
                 raise ModelConfigurationError(f"unsupported pooling identity {pooling_id!r}")
-            if model_id == RESNET18_MODEL_ID and pooling_id not in {
+            if model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID} and pooling_id not in {
                 ANATOMICAL_POOLING_ID,
                 SIMPLE_POOLING_ID,
             }:
                 raise ModelConfigurationError(f"unsupported pooling identity {pooling_id!r}")
             if model_id == DINOV2_MODEL_ID and pooling_id != DINOV2_POOLING_ID:
                 raise ModelConfigurationError(f"unsupported pooling identity {pooling_id!r}")
-            if model_id not in {COMPACT_MODEL_ID, RESNET18_MODEL_ID, DINOV2_MODEL_ID}:
+            if model_id not in {
+                COMPACT_MODEL_ID,
+                RESNET18_MODEL_ID,
+                RESNET18_FINETUNE_MODEL_ID,
+                DINOV2_MODEL_ID,
+            }:
                 raise ModelConfigurationError(f"unsupported model identity {model_id!r}")
             allowed = {
                 "schema_version",
@@ -180,7 +187,7 @@ class ModelConfig:
                 "input_channels",
                 "num_targets",
             }
-            if model_id == RESNET18_MODEL_ID:
+            if model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
                 allowed.update({"encoder_id", "encoder_weights_sha256", "head_hidden_size"})
             if model_id == DINOV2_MODEL_ID:
                 allowed.update(
@@ -319,7 +326,12 @@ class HierarchicalStudyModel(nn.Module):
         return torch.sigmoid(self(images, slice_mask, series_mask)).clamp(0.0, 1.0)
 
 
-StudyModel = HierarchicalStudyModel | ResNet18StudyModel | Dinov2StudyModel
+StudyModel = (
+    HierarchicalStudyModel
+    | ResNet18StudyModel
+    | ResNet18FineTunedStudyModel
+    | Dinov2StudyModel
+)
 
 
 def build_study_model(config: ModelConfig) -> StudyModel:
@@ -334,6 +346,13 @@ def build_study_model(config: ModelConfig) -> StudyModel:
             return ResNet18StudyModel(config)
         except (TypeError, ValueError) as exc:
             raise ModelConfigurationError("model configuration selects an invalid ResNet-18 implementation") from exc
+    if config.model_id == RESNET18_FINETUNE_MODEL_ID:
+        try:
+            return ResNet18FineTunedStudyModel(config)
+        except (TypeError, ValueError) as exc:
+            raise ModelConfigurationError(
+                "model configuration selects an invalid limited fine-tuning implementation"
+            ) from exc
     if config.model_id == DINOV2_MODEL_ID:
         try:
             return Dinov2StudyModel(config)
@@ -364,6 +383,7 @@ __all__ = [
     "COMPACT_MODEL_ID",
     "COMPACT_POOLING_ID",
     "RESNET18_MODEL_ID",
+    "RESNET18_FINETUNE_MODEL_ID",
     "DINOV2_MODEL_ID",
     "ANATOMICAL_POOLING_ID",
     "SIMPLE_POOLING_ID",

@@ -309,6 +309,73 @@
       "status": "completed",
       "unverified_allocation_charge_seconds": 0,
       "wall_time_seconds": 600
+    },
+    {
+      "actual_allocated_seconds": 0,
+      "actual_allocation_known": true,
+      "attempts": [
+        {
+          "allocated_seconds": 0,
+          "allocation_confirmed": false,
+          "allocation_timing_missing": false,
+          "attempt_number": 1,
+          "exit_code": null,
+          "job_id": "7786",
+          "queue_wait_seconds": 302,
+          "reconciled_at_utc": "2026-09-27T03:11:18Z",
+          "scheduler_end_epoch": 1790478419,
+          "scheduler_evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/ticket39-resnet18/slurm-7786-unallocated-evidence.json",
+          "scheduler_evidence_sha256": "a498a54adef58886c29821d989d8a546fc479acc8c1e6030740420df3adf2057",
+          "scheduler_evidence_source": "scontrol",
+          "scheduler_submit_epoch": 1790478117,
+          "scheduler_terminal_state": "CANCELLED",
+          "status": "not_allocated",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790478117
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-09-27T03:01:57Z",
+      "experiment_id": "ticket39-fold0-two-step-smoke-20260927",
+      "gpu_count": 1,
+      "max_attempts": 1,
+      "queue_wait_seconds": 302,
+      "request_checksum": "ca9ad472b65c811e54376dec2e1de8eaef994d4d3cf772172d33cbb54e304223",
+      "reserved_seconds": 0,
+      "retry_allowed": false,
+      "status": "failed",
+      "unverified_allocation_charge_seconds": 0,
+      "wall_time_seconds": 1800
+    },
+    {
+      "actual_allocated_seconds": 0,
+      "actual_allocation_known": true,
+      "attempts": [
+        {
+          "allocated_seconds": null,
+          "attempt_number": 1,
+          "exit_code": null,
+          "job_id": "7787",
+          "queue_wait_seconds": null,
+          "status": "submitted",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790478789
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-09-27T03:13:09Z",
+      "experiment_id": "ticket39-fold0-two-step-smoke-v2-20260927",
+      "gpu_count": 1,
+      "max_attempts": 1,
+      "queue_wait_seconds": 0,
+      "request_checksum": "5ff3d7c408e601730d6a11e499ebd47416224c3004c186e9181fcced79a02be1",
+      "reserved_seconds": 1800,
+      "retry_allowed": false,
+      "status": "submitting",
+      "unverified_allocation_charge_seconds": 0,
+      "wall_time_seconds": 1800
     }
   ],
   "reserved_comparison_seconds": 64800,

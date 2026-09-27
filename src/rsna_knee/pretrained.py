@@ -23,6 +23,7 @@ TICKET32_RESOURCE_SCOPE = "ticket32-three-fold-reference-oof-cpu"
 TICKET34_RESOURCE_SCOPE = "ticket34-fold0-report-supervision-cpu"
 TICKET36_RESOURCE_SCOPE = "ticket36-expanded-three-fold-report-supervision-cpu"
 TICKET33_RESOURCE_SCOPE = "ticket33-fold0-resnet18-gpu-experiment"
+TICKET39_RESOURCE_SCOPE = "ticket39-layer4-resnet18-finetune-experiment"
 _PRETRAINED_APPROVAL_SCHEMAS = frozenset(
     {
         PRETRAINED_APPROVAL_SCHEMA,
@@ -37,6 +38,7 @@ _RESNET18_RESOURCE_SCOPES = frozenset(
         TICKET34_RESOURCE_SCOPE,
         TICKET36_RESOURCE_SCOPE,
         TICKET33_RESOURCE_SCOPE,
+        TICKET39_RESOURCE_SCOPE,
     }
 )
 
@@ -90,6 +92,13 @@ def load_resource_approval(path: str | Path) -> Mapping[str, object]:
         "rights_status_scope"
     ) != TICKET33_RESOURCE_SCOPE:
         raise PretrainedResourceError("Ticket 33 rights status is not scope-limited")
+    if payload.get("scope") == TICKET39_RESOURCE_SCOPE:
+        if payload.get("rights_status_scope") != TICKET39_RESOURCE_SCOPE:
+            raise PretrainedResourceError("Ticket 39 rights status is not scope-limited")
+        if payload.get("encoder_frozen") is not False:
+            raise PretrainedResourceError("Ticket 39 approval must disclose encoder fine-tuning")
+        if payload.get("trainable_encoder_portion") != "layer4":
+            raise PretrainedResourceError("Ticket 39 approval must limit training to layer4")
     approved_by = payload.get("approved_by")
     approved_at = payload.get("approved_at")
     if not isinstance(approved_by, str) or not approved_by.strip():
@@ -142,6 +151,7 @@ __all__ = [
     "RESNET18_SHA256",
     "RESNET18_SOURCE_REVISION",
     "TICKET33_RESOURCE_SCOPE",
+    "TICKET39_RESOURCE_SCOPE",
     "PretrainedResourceError",
     "load_resnet18_weights",
     "load_resource_approval",

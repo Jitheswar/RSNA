@@ -19,7 +19,10 @@ from .gpu import (
     submit_gpu_experiment,
 )
 from .training import TrainingConfig, TrainingDataError, run_cpu_preflight
-from .gpu_campaign import reconcile_gpu_unallocated_attempt
+from .gpu_campaign import (
+    reconcile_gpu_unallocated_attempt,
+    reconcile_gpu_unallocated_from_scontrol,
+)
 
 
 _TICKET13_CPU_PREFLIGHT_RESOURCES = {
@@ -150,6 +153,16 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help="saved output of sacct -n -P --format=JobIDRaw,State,Submit,Start,End,ElapsedRaw",
     )
+
+    reconcile_scontrol = subparsers.add_parser(
+        "reconcile-unallocated-scontrol",
+        help="reconcile a terminal unallocated job when sacct is unavailable",
+    )
+    reconcile_scontrol.add_argument("--ledger", type=Path, required=True)
+    reconcile_scontrol.add_argument("--request-checksum", required=True)
+    reconcile_scontrol.add_argument("--attempt-number", type=int, required=True)
+    reconcile_scontrol.add_argument("--job-id", required=True)
+    reconcile_scontrol.add_argument("--scheduler-evidence", type=Path, required=True)
     return parser
 
 
@@ -224,6 +237,18 @@ def _record_allocation(args: argparse.Namespace) -> int:
 
 def _reconcile_unallocated(args: argparse.Namespace) -> int:
     entry = reconcile_gpu_unallocated_attempt(
+        args.ledger,
+        request_checksum=args.request_checksum,
+        attempt_number=args.attempt_number,
+        job_id=args.job_id,
+        scheduler_evidence_path=args.scheduler_evidence,
+    )
+    print(json.dumps(dict(entry), indent=2, sort_keys=True))
+    return 0
+
+
+def _reconcile_unallocated_scontrol(args: argparse.Namespace) -> int:
+    entry = reconcile_gpu_unallocated_from_scontrol(
         args.ledger,
         request_checksum=args.request_checksum,
         attempt_number=args.attempt_number,
@@ -317,6 +342,8 @@ def main(argv: list[str] | None = None) -> int:
             return _record_allocation(args)
         if args.command == "reconcile-unallocated":
             return _reconcile_unallocated(args)
+        if args.command == "reconcile-unallocated-scontrol":
+            return _reconcile_unallocated_scontrol(args)
         return _run(args)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ticket-13 GPU path failed: {exc}", file=sys.stderr)

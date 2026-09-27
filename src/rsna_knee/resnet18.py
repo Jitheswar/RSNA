@@ -16,6 +16,7 @@ from .preprocessing import SERIES_DESCRIPTOR_COLUMNS
 
 
 RESNET18_MODEL_ID = "resnet18-frozen-slice-features-v1"
+RESNET18_FINETUNE_MODEL_ID = "resnet18-layer4-finetune-v1"
 RESNET18_ENCODER_ID = "torchvision-resnet18-imagenet1k-v1"
 RESNET18_FIXTURE_ENCODER_ID = "ticket31-random-fixture-resnet18-v1"
 RESNET18_FEATURE_DIM = 512
@@ -94,16 +95,21 @@ class _ResNet18Backbone(nn.Module):
         layers.extend(_BasicBlock(self.in_channels, channels) for _ in range(blocks - 1))
         return nn.Sequential(*layers)
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
+    def forward_before_layer4(self, images: torch.Tensor) -> torch.Tensor:
         result = self.conv1(images)
         result = self.bn1(result)
         result = self.relu(result)
         result = self.maxpool(result)
         result = self.layer1(result)
         result = self.layer2(result)
-        result = self.layer3(result)
-        result = self.layer4(result)
+        return self.layer3(result)
+
+    def forward_from_layer4(self, features: torch.Tensor) -> torch.Tensor:
+        result = self.layer4(features)
         return torch.flatten(self.avgpool(result), start_dim=1)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        return self.forward_from_layer4(self.forward_before_layer4(images))
 
 
 class ResNet18StudyModel(nn.Module):
@@ -264,12 +270,62 @@ class ResNet18StudyModel(nn.Module):
         return encoded.squeeze(0)
 
 
+class ResNet18FineTunedStudyModel(ResNet18StudyModel):
+    """Adapt only ResNet-18 layer4 while fitting a fold-specific study head."""
+
+    def __init__(self, config: Any) -> None:
+        if config.model_id != RESNET18_FINETUNE_MODEL_ID:
+            raise ValueError("limited fine-tuning requires its versioned model identity")
+        super().__init__(config)
+        for parameter in self.encoder.layer4.parameters():
+            parameter.requires_grad_(True)
+
+    def encode_packed(
+        self,
+        images: torch.Tensor,
+        slice_mask: torch.Tensor,
+        series_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Encode valid slices with gradients only through the final residual stage."""
+
+        if images.ndim != 6:
+            raise ValueError("images must have shape (batch, series, slices, channels, height, width)")
+        batch, series, slices, channels, height, width = images.shape
+        if (height, width) != tuple(self.config.image_size) or channels != 1:
+            raise ValueError("image shape does not match the ResNet-18 configuration")
+        if slice_mask.shape != (batch, series, slices) or series_mask.shape != (batch, series):
+            raise ValueError("slice and series masks do not match the packed images")
+        valid = slice_mask.to(dtype=torch.bool) & series_mask.to(dtype=torch.bool).unsqueeze(-1)
+        flat = images.to(dtype=torch.float32).reshape(-1, 1, height, width)
+        valid_indices = torch.nonzero(valid.reshape(-1), as_tuple=False).flatten()
+        if not valid_indices.numel():
+            return flat.new_zeros((batch, series, slices, RESNET18_FEATURE_DIM))
+
+        encoded_chunks: list[torch.Tensor] = []
+        for start in range(0, valid_indices.numel(), RESNET18_FEATURE_BATCH_SIZE):
+            indices = valid_indices[start : start + RESNET18_FEATURE_BATCH_SIZE]
+            grayscale = flat.index_select(0, indices)
+            rgb = grayscale.expand(-1, 3, -1, -1)
+            normalized = (rgb - self.imagenet_mean) / self.imagenet_std
+            with torch.no_grad():
+                frozen_features = self.encoder.forward_before_layer4(normalized)
+            encoded_chunks.append(self.encoder.forward_from_layer4(frozen_features))
+
+        encoded = torch.cat(encoded_chunks, dim=0)
+        features = flat.new_zeros((flat.shape[0], RESNET18_FEATURE_DIM)).index_copy(
+            0, valid_indices, encoded
+        )
+        return features.reshape(batch, series, slices, RESNET18_FEATURE_DIM)
+
+
 __all__ = [
     "ANATOMICAL_POOLING_ID",
     "RESNET18_ENCODER_ID",
+    "RESNET18_FINETUNE_MODEL_ID",
     "RESNET18_FEATURE_DIM",
     "RESNET18_FIXTURE_ENCODER_ID",
     "RESNET18_MODEL_ID",
     "ResNet18StudyModel",
+    "ResNet18FineTunedStudyModel",
     "SIMPLE_POOLING_ID",
 ]

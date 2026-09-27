@@ -62,12 +62,20 @@ from .dinov2 import (
     load_dinov2_resource_approval,
     load_dinov2_weights,
 )
-from .resnet18 import RESNET18_ENCODER_ID, RESNET18_FEATURE_DIM, RESNET18_FIXTURE_ENCODER_ID, ResNet18StudyModel
+from .resnet18 import (
+    RESNET18_ENCODER_ID,
+    RESNET18_FEATURE_DIM,
+    RESNET18_FINETUNE_MODEL_ID,
+    RESNET18_FIXTURE_ENCODER_ID,
+    ResNet18FineTunedStudyModel,
+    ResNet18StudyModel,
+)
 from .pretrained import (
     RESNET18_ARTIFACT_BYTES,
     RESNET18_DOWNLOAD_URL,
     RESNET18_SHA256,
     TICKET33_RESOURCE_SCOPE,
+    TICKET39_RESOURCE_SCOPE,
     PretrainedResourceError,
     load_resnet18_weights,
     load_resource_approval,
@@ -374,13 +382,16 @@ def _validate_gpu_execution_authorization(
     if isinstance(value, _KaggleGpuExecutionAuthorization):
         from .kaggle_gpu import validate_kaggle_training_authorization
 
-        return validate_kaggle_training_authorization(
-            value,
-            request_path=request_path,
-            approval_path=approval_path,
-            preflight_path=preflight_path,
-            resource=resource,
-            preflight=preflight,
+        return cast(
+            _KaggleGpuExecutionAuthorization,
+            validate_kaggle_training_authorization(
+                value,
+                request_path=request_path,
+                approval_path=approval_path,
+                preflight_path=preflight_path,
+                resource=resource,
+                preflight=preflight,
+            ),
         )
     from .gpu import (
         _json_sha256,
@@ -547,6 +558,7 @@ class TrainingConfig:
     encoder_weights_sha256: str | None = None
     encoder_source_revision: str | None = None
     head_hidden_size: int = 32
+    encoder_learning_rate: float | None = None
 
     def __post_init__(self) -> None:
         if len(self.image_size) != 2 or any(size <= 0 for size in self.image_size):
@@ -602,17 +614,35 @@ class TrainingConfig:
             self.model_config()
         except (TypeError, ValueError, ModelConfigurationError) as exc:
             raise TrainingConfigurationError("training model configuration is invalid") from exc
-        if self.model_id == RESNET18_MODEL_ID:
+        if self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
             if self.image_size != (224, 224):
-                raise TrainingConfigurationError("Ticket 31 ResNet-18 requires the 224-pixel representation")
+                raise TrainingConfigurationError("ResNet-18 requires the 224-pixel representation")
             if self.pooling_id not in {ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID}:
-                raise TrainingConfigurationError("Ticket 31 pooling identity is unsupported")
+                raise TrainingConfigurationError("ResNet-18 pooling identity is unsupported")
             if self.preprocessing_config is not None and (
                 self.preprocessing_config.representation_id
                 != "ticket31-resnet18-224-whole-field-v1"
             ):
-                raise TrainingConfigurationError("Ticket 31 requires its versioned 224-pixel preprocessing")
+                raise TrainingConfigurationError("ResNet-18 requires its versioned 224-pixel preprocessing")
+            if self.model_id == RESNET18_FINETUNE_MODEL_ID:
+                if self.pooling_id != ANATOMICAL_POOLING_ID:
+                    raise TrainingConfigurationError("Ticket 39 requires plane-stratified pooling")
+                if self.encoder_learning_rate is None or (
+                    not np.isfinite(self.encoder_learning_rate)
+                    or self.encoder_learning_rate <= 0
+                ):
+                    raise TrainingConfigurationError(
+                        "Ticket 39 requires a positive finite layer4 learning rate"
+                    )
+            elif self.encoder_learning_rate is not None:
+                raise TrainingConfigurationError(
+                    "encoder_learning_rate is reserved for Ticket 39 fine-tuning"
+                )
         elif self.model_id == DINOV2_MODEL_ID:
+            if self.encoder_learning_rate is not None:
+                raise TrainingConfigurationError(
+                    "encoder_learning_rate is reserved for Ticket 39 fine-tuning"
+                )
             if self.image_size != (224, 224):
                 raise TrainingConfigurationError("Ticket 38 DINOv2 requires 224-pixel inputs")
             if self.pooling_id != ANATOMICAL_POOLING_ID:
@@ -633,6 +663,7 @@ class TrainingConfig:
             self.model_id != COMPACT_MODEL_ID
             or self.pooling_id != COMPACT_POOLING_ID
             or self.encoder_source_revision is not None
+            or self.encoder_learning_rate is not None
         ):
             raise TrainingConfigurationError("training model variant is unsupported")
 
@@ -658,7 +689,7 @@ class TrainingConfig:
             max_series=self.max_series,
             representation_id=(
                 "ticket31-resnet18-224-whole-field-v1"
-                if self.model_id == RESNET18_MODEL_ID
+                if self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}
                 else DINOV2_PREPROCESSING_ID
                 if self.model_id == DINOV2_MODEL_ID
                 else None
@@ -669,18 +700,21 @@ class TrainingConfig:
         return PackingConfig(max_slices=self.max_slices, max_series=self.max_series)
 
     def to_dict(self) -> dict[str, object]:
+        optimization: dict[str, object] = {
+            "batch_size": self.batch_size,
+            "successful_optimizer_steps": self.successful_optimizer_steps,
+            "optimizer": self.optimizer,
+            "learning_rate": self.learning_rate,
+            "schedule": self.schedule,
+        }
+        if self.encoder_learning_rate is not None:
+            optimization["encoder_learning_rate"] = self.encoder_learning_rate
         return {
             "schema_version": TRAINING_SCHEMA_VERSION,
             "model": self.model_config().to_dict(),
             "packing": self.packing_config().to_dict(),
             "preprocessing": self.preprocess_config().cache_config(),
-            "optimization": {
-                "batch_size": self.batch_size,
-                "successful_optimizer_steps": self.successful_optimizer_steps,
-                "optimizer": self.optimizer,
-                "learning_rate": self.learning_rate,
-                "schedule": self.schedule,
-            },
+            "optimization": optimization,
             "seeds": {
                 "initialization": self.seed,
                 "batch_order": self.batch_order_seed,
@@ -1652,6 +1686,16 @@ def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConf
             if tuple(example.features.shape) != (*expected_shape[:2], feature_width):
                 raise TrainingDataError(
                     f"study {example.study_instance_uid} has invalid frozen feature dimensions"
+                )
+        elif config.model_id == RESNET18_FINETUNE_MODEL_ID:
+            if example.images is None or tuple(example.images.shape) != expected_shape:
+                observed = None if example.images is None else example.images.shape
+                raise TrainingDataError(
+                    f"study {example.study_instance_uid} has shape {observed}; expected {expected_shape}"
+                )
+            if example.series_descriptors is None:
+                raise TrainingDataError(
+                    f"study {example.study_instance_uid} is missing series descriptors"
                 )
         elif example.images is None or tuple(example.images.shape) != expected_shape:
             observed = None if example.images is None else example.images.shape
@@ -2808,7 +2852,24 @@ def _train_fixed_budget_impl(
     )
     if not trainable_parameters:
         raise TrainingConfigurationError("the selected model has no trainable head parameters")
-    optimizer = torch.optim.Adam(trainable_parameters, lr=config.learning_rate)
+    if isinstance(model, ResNet18FineTunedStudyModel):
+        encoder_parameters = tuple(
+            parameter for parameter in model.encoder.layer4.parameters() if parameter.requires_grad
+        )
+        head_parameters = tuple(
+            parameter for parameter in model.head.parameters() if parameter.requires_grad
+        )
+        if not encoder_parameters or not head_parameters or config.encoder_learning_rate is None:
+            raise TrainingConfigurationError("Ticket 39 trainable parameter groups are incomplete")
+        optimizer = torch.optim.Adam(
+            [
+                {"params": encoder_parameters, "lr": config.encoder_learning_rate},
+                {"params": head_parameters, "lr": config.learning_rate},
+            ],
+            lr=config.learning_rate,
+        )
+    else:
+        optimizer = torch.optim.Adam(trainable_parameters, lr=config.learning_rate)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
 
     output_dir = Path(artifact_dir) if artifact_dir is not None else None
@@ -3218,7 +3279,7 @@ def _train_fixed_budget_impl(
                 )
                 if cuda_step_start is not None:
                     cuda_step_start.record()
-                if isinstance(model, (ResNet18StudyModel, Dinov2StudyModel)):
+                if config.model_id in {RESNET18_MODEL_ID, DINOV2_MODEL_ID}:
                     if any(
                         example.features is None or example.series_descriptors is None
                         for example in batch_examples
@@ -3236,14 +3297,29 @@ def _train_fixed_budget_impl(
                             [cast(np.ndarray, example.series_descriptors) for example in batch_examples]
                         )
                     ).to(device)
-                    logits = model.forward_from_features(
+                    logits = cast(Any, model).forward_from_features(
                         features, slice_mask, series_mask, descriptors
                     )
                 else:
                     images = torch.from_numpy(
-                        np.stack([example.images for example in batch_examples])
+                        np.stack(
+                            [cast(np.ndarray, example.images) for example in batch_examples]
+                        )
                     ).to(device)
-                    logits = cast(Any, model)(images, slice_mask, series_mask)
+                    if config.model_id == RESNET18_FINETUNE_MODEL_ID:
+                        if any(example.series_descriptors is None for example in batch_examples):
+                            raise TrainingDataError("Ticket 39 images require series descriptors")
+                        descriptors = torch.from_numpy(
+                            np.stack(
+                                [
+                                    cast(np.ndarray, example.series_descriptors)
+                                    for example in batch_examples
+                                ]
+                            )
+                        ).to(device)
+                        logits = cast(Any, model)(images, slice_mask, series_mask, descriptors)
+                    else:
+                        logits = cast(Any, model)(images, slice_mask, series_mask)
                 loss = masked_bce_loss(logits, targets, supervision_mask)
                 if loss is None:
                     skipped_batches += 1
@@ -3925,7 +4001,39 @@ def _train_one_fold_impl(
     if not source_version.strip():
         raise TrainingConfigurationError("source_version must be non-empty")
     pretrained_resource_evidence: Mapping[str, object] | None = None
-    if config.model_id == RESNET18_MODEL_ID and config.encoder_id == RESNET18_ENCODER_ID:
+    if config.model_id == RESNET18_FINETUNE_MODEL_ID:
+        if config.encoder_id == RESNET18_ENCODER_ID:
+            if pretrained_weights_path is None or resource_approval_path is None:
+                raise TrainingConfigurationError(
+                    "Ticket 39 requires its exact ResNet-18 weights and fine-tuning approval"
+                )
+            approval = load_resource_approval(resource_approval_path)
+            if approval.get("scope") != TICKET39_RESOURCE_SCOPE:
+                raise TrainingConfigurationError(
+                    "ResNet-18 weights are not approved for Ticket 39 fine-tuning"
+                )
+            approval_bytes = Path(resource_approval_path).read_bytes()
+            pretrained_resource_evidence = {
+                "approval_sha256": hashlib.sha256(approval_bytes).hexdigest(),
+                "artifact_id": approval["artifact_id"],
+                "source_revision": approval["source_revision"],
+                "download_url": approval["download_url"],
+                "expected_bytes": approval["expected_bytes"],
+                "sha256": approval["sha256"],
+                "scope": approval["scope"],
+                "decision": approval["decision"],
+                "rights_status": approval["rights_status"],
+                "rights_basis": approval["rights_basis"],
+                "approved_by": approval["approved_by"],
+                "approved_at": approval["approved_at"],
+                "external_spend": approval["external_spend"],
+                "trainable_encoder_portion": "layer4",
+            }
+        elif pretrained_weights_path is not None or resource_approval_path is not None:
+            raise TrainingConfigurationError(
+                "fixture fine-tuning cannot consume an external pretrained resource"
+            )
+    elif config.model_id == RESNET18_MODEL_ID and config.encoder_id == RESNET18_ENCODER_ID:
         if pretrained_weights_path is None or resource_approval_path is None:
             raise TrainingConfigurationError(
                 "ImageNet ResNet-18 requires its exact weights and resource approval"
@@ -4609,6 +4717,45 @@ def _train_one_fold_impl(
                 "encoder_adapted_on_held_out_data": False,
             }
         model_for_run = built_model
+    elif config.model_id == RESNET18_FINETUNE_MODEL_ID:
+        if supervision is not None or additional_examples or precomputed_feature_examples is not None:
+            raise TrainingConfigurationError("Ticket 39 uses gold-only pixels without feature caches")
+        if not allow_gpu and not (
+            allow_local_smoke and source_version.startswith("synthetic-")
+        ):
+            raise TrainingConfigurationError("Ticket 39 real fine-tuning requires the approved GPU path")
+        if allow_gpu:
+            if config.encoder_id != RESNET18_ENCODER_ID:
+                raise TrainingConfigurationError("Ticket 39 GPU execution requires ImageNet ResNet-18")
+            approval = load_resource_approval(cast(str | Path, resource_approval_path))
+            if approval.get("scope") != TICKET39_RESOURCE_SCOPE:
+                raise TrainingConfigurationError("GPU fine-tuning is outside the Ticket 39 resource scope")
+        if config.encoder_id == RESNET18_ENCODER_ID:
+            if pretrained_weights_path is None or resource_approval_path is None:
+                raise TrainingConfigurationError("Ticket 39 requires its exact admitted weights")
+            state = load_resnet18_weights(pretrained_weights_path, resource_approval_path)
+        elif config.encoder_id == RESNET18_FIXTURE_ENCODER_ID:
+            if not allow_local_smoke or not source_version.startswith("synthetic-"):
+                raise TrainingConfigurationError(
+                    "random fine-tuning encoders are limited to synthetic local smoke runs"
+                )
+            state = None
+        else:
+            raise TrainingConfigurationError("Ticket 39 encoder identity is unsupported")
+        seed_everything(config.seed)
+        built_model = build_study_model(config.model_config())
+        if not isinstance(built_model, ResNet18FineTunedStudyModel):
+            raise TrainingConfigurationError("Ticket 39 model construction returned the wrong model")
+        if state is not None:
+            built_model.load_pretrained_state(state)
+        built_model.to(torch.device(config.device))
+        model_for_run = built_model
+        feature_cache_evidence = {
+            "feature_cache_used": False,
+            "reason": "the encoder changes during training and features are fold-local",
+            "cross_fold_fine_tuned_feature_reuse": False,
+            "held_out_images_used_for_gradient_updates": False,
+        }
     elif pretrained_weights_path is not None or resource_approval_path is not None:
         raise TrainingConfigurationError(
             "pretrained resource arguments require an admitted frozen encoder"

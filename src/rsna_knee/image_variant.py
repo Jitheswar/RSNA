@@ -6,6 +6,9 @@ from dataclasses import replace
 
 from .preprocessing import PackingConfig, PreprocessConfig
 from .model import ANATOMICAL_POOLING_ID, DINOV2_MODEL_ID, SIMPLE_POOLING_ID
+from .model import RESNET18_FINETUNE_MODEL_ID
+from .pretrained import RESNET18_SHA256
+from .resnet18 import RESNET18_ENCODER_ID
 from .dinov2 import (
     DINOV2_ENCODER_ID,
     DINOV2_IMAGE_SIZE,
@@ -21,10 +24,15 @@ MECHANICS_BASELINE_VARIANT = "mechanics-baseline"
 TICKET19_VARIANT = "ticket19-wider-slice-encoder-v1"
 TICKET19_ENCODER_CHANNELS = (16, 32, 64)
 TICKET38_DINOV2_VARIANT = "ticket38-frozen-dinov2-small-vits14"
+TICKET39_RESNET18_FINETUNE_VARIANT = "ticket39-resnet18-layer4-finetuning-v1"
+TICKET39_ENCODER_LEARNING_RATE = 1e-5
+_RESNET18_IMAGE_SIZE = (224, 224)
+_RESNET18_REPRESENTATION_ID = "ticket31-resnet18-224-whole-field-v1"
 IMAGE_MODEL_VARIANTS = (
     MECHANICS_BASELINE_VARIANT,
     TICKET19_VARIANT,
     TICKET38_DINOV2_VARIANT,
+    TICKET39_RESNET18_FINETUNE_VARIANT,
 )
 
 
@@ -91,6 +99,29 @@ def image_model_training_config(
             head_hidden_size=32,
             preprocessing_config=dinov2_preprocessing,
         )
+    if variant == TICKET39_RESNET18_FINETUNE_VARIANT:
+        if pooling_id != ANATOMICAL_POOLING_ID:
+            raise ValueError("Ticket 39 keeps plane-stratified ResNet pooling")
+        source_preprocessing = effective_preprocessing or baseline.preprocess_config()
+        resnet_preprocessing = replace(
+            source_preprocessing,
+            image_size=_RESNET18_IMAGE_SIZE,
+            representation_id=_RESNET18_REPRESENTATION_ID,
+        )
+        return replace(
+            baseline,
+            image_size=_RESNET18_IMAGE_SIZE,
+            max_slices=source_preprocessing.max_slices,
+            max_series=source_preprocessing.max_series,
+            channels=(64, 128, 256),
+            model_id=RESNET18_FINETUNE_MODEL_ID,
+            pooling_id=ANATOMICAL_POOLING_ID,
+            encoder_id=RESNET18_ENCODER_ID,
+            encoder_weights_sha256=RESNET18_SHA256,
+            head_hidden_size=32,
+            encoder_learning_rate=TICKET39_ENCODER_LEARNING_RATE,
+            preprocessing_config=resnet_preprocessing,
+        )
     raise ValueError(f"unsupported image-model variant {variant!r}")
 
 
@@ -100,5 +131,7 @@ __all__ = [
     "TICKET19_ENCODER_CHANNELS",
     "TICKET19_VARIANT",
     "TICKET38_DINOV2_VARIANT",
+    "TICKET39_ENCODER_LEARNING_RATE",
+    "TICKET39_RESNET18_FINETUNE_VARIANT",
     "image_model_training_config",
 ]

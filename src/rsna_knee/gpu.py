@@ -35,9 +35,10 @@ from .pretrained import (
     RESNET18_SHA256,
     RESNET18_SOURCE_REVISION,
     TICKET33_RESOURCE_SCOPE,
+    TICKET39_RESOURCE_SCOPE,
     load_resource_approval,
 )
-from .resnet18 import RESNET18_ENCODER_ID
+from .resnet18 import RESNET18_ENCODER_ID, RESNET18_FINETUNE_MODEL_ID
 from .gpu_campaign import (
     GPU_CAMPAIGN_BUDGET_HOURS,
     GpuCampaignActiveRequestError,
@@ -386,6 +387,11 @@ def _training_config_from_dict(value: object) -> TrainingConfig:
             successful_optimizer_steps=int(cast(Any, optimization["successful_optimizer_steps"])),
             optimizer=str(optimization["optimizer"]),
             learning_rate=float(cast(Any, optimization["learning_rate"])),
+            encoder_learning_rate=(
+                float(cast(Any, optimization["encoder_learning_rate"]))
+                if optimization.get("encoder_learning_rate") is not None
+                else None
+            ),
             schedule=str(optimization["schedule"]),
             seed=int(cast(Any, seeds["initialization"])),
             batch_order_seed=int(cast(Any, seeds["batch_order"])),
@@ -454,6 +460,45 @@ def _ticket33_pretrained_resource(execution: object) -> Mapping[str, object]:
     )
     if not approval_path.is_absolute():
         raise GpuApprovalError("GPU request pretrained resource approval path must be absolute")
+    return cast(Mapping[str, object], resource)
+
+
+def _ticket39_pretrained_resource(execution: object) -> Mapping[str, object]:
+    """Validate the exact ResNet resource scope for layer4 fine-tuning."""
+
+    if not isinstance(execution, Mapping):
+        raise GpuApprovalError("GPU request execution section is invalid")
+    resource = execution.get("pretrained_resource")
+    if not isinstance(resource, Mapping):
+        raise GpuApprovalError("GPU request has no pretrained artifact authorization scope")
+    expected = {
+        "artifact_id": RESNET18_ARTIFACT_ID,
+        "source_revision": RESNET18_SOURCE_REVISION,
+        "download_url": RESNET18_DOWNLOAD_URL,
+        "sha256": RESNET18_SHA256,
+        "expected_bytes": RESNET18_ARTIFACT_BYTES,
+        "scope": TICKET39_RESOURCE_SCOPE,
+        "decision": "approved",
+        "rights_status": "eligible",
+        "rights_status_scope": TICKET39_RESOURCE_SCOPE,
+        "encoder_frozen": False,
+        "trainable_encoder_portion": "layer4",
+        "runtime_network": False,
+        "external_spend": 0,
+    }
+    if any(resource.get(name) != value for name, value in expected.items()):
+        raise GpuApprovalError("Ticket 39 pretrained artifact identity or scope is invalid")
+    if (
+        not isinstance(resource.get("expected_bytes"), int)
+        or isinstance(resource.get("expected_bytes"), bool)
+        or not isinstance(resource.get("external_spend"), int)
+        or isinstance(resource.get("external_spend"), bool)
+    ):
+        raise GpuApprovalError("Ticket 39 pretrained artifact numeric fields are invalid")
+    for field_name in ("weights_path", "resource_approval_path"):
+        value = Path(_nonempty(resource.get(field_name), field_name))
+        if not value.is_absolute():
+            raise GpuApprovalError(f"Ticket 39 {field_name} must be absolute")
     return cast(Mapping[str, object], resource)
 
 
@@ -550,6 +595,14 @@ def load_gpu_experiment_request(path: str | Path) -> GpuExperimentRequest:
         ):
             raise GpuApprovalError("GPU ResNet request must use the admitted ImageNet encoder")
         _ticket33_pretrained_resource(execution_payload)
+    elif config.model_id == RESNET18_FINETUNE_MODEL_ID:
+        if (
+            config.encoder_id != RESNET18_ENCODER_ID
+            or config.encoder_weights_sha256 != RESNET18_SHA256
+            or config.encoder_learning_rate is None
+        ):
+            raise GpuApprovalError("Ticket 39 must use the admitted encoder and layer4 schedule")
+        _ticket39_pretrained_resource(execution_payload)
     elif isinstance(execution_payload, Mapping) and execution_payload.get("pretrained_resource") is not None:
         raise GpuApprovalError("GPU request binds pretrained weights for an unsupported model")
     inputs = payload.get("inputs", {})
@@ -649,8 +702,12 @@ def load_gpu_approval(path: str | Path, request: GpuExperimentRequest) -> GpuApp
         datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
     except ValueError as exc:
         raise GpuApprovalError("GPU approval timestamp is not ISO-8601") from exc
-    if request.training_config.model_id == RESNET18_MODEL_ID:
-        resource = _ticket33_pretrained_resource(request.payload.get("execution"))
+    if request.training_config.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
+        resource = (
+            _ticket39_pretrained_resource(request.payload.get("execution"))
+            if request.training_config.model_id == RESNET18_FINETUNE_MODEL_ID
+            else _ticket33_pretrained_resource(request.payload.get("execution"))
+        )
         expected_resource_values = {
             "artifact_id": resource["artifact_id"],
             "source_revision": resource["source_revision"],
@@ -671,14 +728,14 @@ def load_gpu_approval(path: str | Path, request: GpuExperimentRequest) -> GpuApp
         )
         if resource_approval_path.is_symlink() or not resource_approval_path.is_file():
             raise GpuApprovalError(
-                "Ticket 33 pretrained artifact authorization requires a regular non-symlink resource approval file"
+                "pretrained artifact authorization requires a regular non-symlink resource approval file"
             )
         resource_approval_path = resource_approval_path.resolve()
         try:
             resource_approval = load_resource_approval(resource_approval_path)
         except PretrainedResourceError as exc:
             raise GpuApprovalError(
-                f"Ticket 33 pretrained artifact authorization is invalid: {exc}"
+                f"pretrained artifact authorization is invalid: {exc}"
             ) from exc
         if any(
             resource_approval.get(name) != value
@@ -2095,9 +2152,11 @@ def run_approved_gpu_experiment(
         )
         pretrained_weights_path: Path | None = None
         resource_approval_path: Path | None = None
-        if config.model_id == RESNET18_MODEL_ID:
-            pretrained_resource = _ticket33_pretrained_resource(
-                request.payload.get("execution")
+        if config.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
+            pretrained_resource = (
+                _ticket39_pretrained_resource(request.payload.get("execution"))
+                if config.model_id == RESNET18_FINETUNE_MODEL_ID
+                else _ticket33_pretrained_resource(request.payload.get("execution"))
             )
             pretrained_weights_path = Path(
                 _nonempty(pretrained_resource.get("weights_path"), "pretrained weights path")
@@ -2480,7 +2539,7 @@ def run_gpu_smoke_test(
     if not examples:
         raise GpuExecutionError("GPU smoke execution requires at least one example")
     config = request.training_config
-    if config.model_id == RESNET18_MODEL_ID:
+    if config.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
         raise GpuExecutionError(
             "pretrained ResNet smoke runs must use the approved real-fold GPU adapter"
         )
@@ -2571,6 +2630,14 @@ def prepare_gpu_experiment(
         ):
             raise GpuConfigurationError("GPU ResNet execution requires the admitted ImageNet encoder")
         _ticket33_pretrained_resource(execution_payload)
+    elif config.model_id == RESNET18_FINETUNE_MODEL_ID:
+        if (
+            config.encoder_id != RESNET18_ENCODER_ID
+            or config.encoder_weights_sha256 != RESNET18_SHA256
+            or config.encoder_learning_rate is None
+        ):
+            raise GpuConfigurationError("Ticket 39 must use the admitted encoder and layer4 schedule")
+        _ticket39_pretrained_resource(execution_payload)
     elif execution_payload.get("pretrained_resource") is not None:
         raise GpuConfigurationError("pretrained GPU resource metadata requires the ResNet-18 model")
     try:

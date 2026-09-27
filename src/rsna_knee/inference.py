@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from .domain import StudyRecord
-from .model import DINOV2_MODEL_ID, StudyModel
+from .model import DINOV2_MODEL_ID, RESNET18_FINETUNE_MODEL_ID, RESNET18_MODEL_ID, StudyModel
 from .preprocessing import (
     PackedStudy,
     PreprocessConfig,
@@ -93,7 +93,11 @@ class InferenceEngine:
         slice_mask = torch.from_numpy(packed.slice_mask).unsqueeze(0).to(self.device)
         series_mask = torch.from_numpy(packed.series_mask).unsqueeze(0).to(self.device)
         with torch.inference_mode():
-            if self.model.config.model_id == DINOV2_MODEL_ID:
+            if self.model.config.model_id in {
+                RESNET18_MODEL_ID,
+                RESNET18_FINETUNE_MODEL_ID,
+                DINOV2_MODEL_ID,
+            }:
                 if packed.series_descriptors is None:
                     raise InferenceError("packed study is missing frozen-model series descriptors")
                 descriptors = torch.from_numpy(packed.series_descriptors).unsqueeze(0).to(self.device)

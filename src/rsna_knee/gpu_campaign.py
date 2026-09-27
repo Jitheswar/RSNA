@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import json
 import math
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -789,6 +790,156 @@ def reconcile_gpu_unallocated_attempt(
                 "scheduler_end_epoch": ended_epoch,
                 "scheduler_evidence_path": str(evidence_path),
                 "scheduler_evidence_sha256": hashlib.sha256(evidence).hexdigest(),
+                "reconciled_at_utc": _utc_now(),
+            }
+        )
+        _refresh_request_totals(entry)
+        attempts = cast(list[Mapping[str, object]], entry["attempts"])
+        has_unaccounted_job = any(
+            (item.get("job_id") is not None and item.get("allocated_seconds") is None)
+            or item.get("allocation_timing_missing") is True
+            for item in attempts
+        )
+        has_successful_allocation = any(
+            item.get("status") == "completed" and item.get("allocation_confirmed") is True
+            for item in attempts
+        )
+        if has_unaccounted_job:
+            entry["status"] = "unknown"
+        else:
+            _close_terminal_request(
+                ledger,
+                entry,
+                "completed" if has_successful_allocation else "failed",
+            )
+        atomic_json_write(destination, ledger, overwrite=True)
+        return dict(entry)
+
+
+def reconcile_gpu_unallocated_from_scontrol(
+    path: str | Path,
+    *,
+    request_checksum: str,
+    attempt_number: int,
+    job_id: str,
+    scheduler_evidence_path: str | Path,
+) -> Mapping[str, object]:
+    """Close a canceled pending job using a saved Slurm controller record.
+
+    This is the recovery path when ``sacct`` is unavailable. It requires the
+    controller to show a terminal job with zero runtime and no allocated node,
+    plus evidence that the exact job was canceled and left the queue.
+    """
+
+    evidence_path = Path(scheduler_evidence_path).resolve()
+    try:
+        raw = evidence_path.read_bytes()
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise GpuCampaignLedgerError("could not read Slurm controller no-allocation evidence") from exc
+    if not raw or len(raw) > 1_000_000 or not isinstance(payload, Mapping):
+        raise GpuCampaignLedgerError("Slurm controller evidence must be a bounded JSON object")
+    if (
+        payload.get("schema_version") != "rsna-slurm-scontrol-unallocated-v1"
+        or payload.get("request_checksum") != request_checksum
+        or payload.get("job_id") != job_id
+        or payload.get("job_state") not in {"CANCELLED", "FAILED", "PREEMPTED", "TIMEOUT", "NODE_FAIL"}
+        or payload.get("elapsed_seconds") != 0
+        or payload.get("node_list") not in (None, "(null)", "")
+        or payload.get("held_pending_before_cancel") is not True
+        or payload.get("cancel_command_exit_code") != 0
+        or payload.get("absent_from_queue_after_cancel") is not True
+        or payload.get("sacct_status") != "unavailable_connection_refused"
+    ):
+        raise GpuCampaignLedgerError("Slurm controller evidence does not prove an unallocated terminal job")
+    controller_path_value = payload.get("controller_record_path")
+    controller_digest = payload.get("controller_record_sha256")
+    if not isinstance(controller_path_value, str) or not isinstance(controller_digest, str):
+        raise GpuCampaignLedgerError("Slurm controller evidence has no raw record reference")
+    controller_path = Path(controller_path_value)
+    if controller_path.is_symlink() or not controller_path.is_file():
+        raise GpuCampaignLedgerError("Slurm controller record is unavailable")
+    controller_raw = controller_path.read_bytes()
+    if hashlib.sha256(controller_raw).hexdigest() != controller_digest:
+        raise GpuCampaignLedgerError("Slurm controller record checksum differs")
+    try:
+        controller_text = controller_raw.decode("utf-8")
+    except UnicodeError as exc:
+        raise GpuCampaignLedgerError("Slurm controller record is not UTF-8") from exc
+    controller_fields = {
+        key: value
+        for token in controller_text.split()
+        if "=" in token
+        for key, value in (token.split("=", 1),)
+    }
+    submit_time = payload.get("controller_submit_time")
+    end_time = payload.get("controller_end_time")
+    if (
+        controller_fields.get("JobId") != job_id
+        or controller_fields.get("JobState") != payload.get("job_state")
+        or controller_fields.get("RunTime") != "00:00:00"
+        or controller_fields.get("NodeList") not in {"(null)", ""}
+        or controller_fields.get("SubmitTime") != submit_time
+        or controller_fields.get("EndTime") != end_time
+    ):
+        raise GpuCampaignLedgerError("raw Slurm controller record contradicts its evidence")
+    submitted_epoch = payload.get("submitted_epoch")
+    ended_epoch = payload.get("ended_epoch")
+    if (
+        not isinstance(submitted_epoch, int)
+        or isinstance(submitted_epoch, bool)
+        or not isinstance(ended_epoch, int)
+        or isinstance(ended_epoch, bool)
+        or submitted_epoch < 0
+        or ended_epoch < submitted_epoch
+    ):
+        raise GpuCampaignLedgerError("Slurm controller evidence has invalid timestamps")
+    if not isinstance(submit_time, str) or not isinstance(end_time, str):
+        raise GpuCampaignLedgerError("Slurm controller evidence has invalid local timestamps")
+    try:
+        parsed_submit = datetime.fromisoformat(submit_time.replace("Z", "+00:00"))
+        parsed_end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        controller_submit_epoch = (
+            int(parsed_submit.timestamp())
+            if parsed_submit.tzinfo is not None
+            else int(time.mktime(parsed_submit.timetuple()))
+        )
+        controller_end_epoch = (
+            int(parsed_end.timestamp())
+            if parsed_end.tzinfo is not None
+            else int(time.mktime(parsed_end.timetuple()))
+        )
+    except (OverflowError, OSError, ValueError) as exc:
+        raise GpuCampaignLedgerError("Slurm controller evidence has invalid local timestamps") from exc
+    if submitted_epoch != controller_submit_epoch or ended_epoch != controller_end_epoch:
+        raise GpuCampaignLedgerError("Slurm controller timestamps differ from recorded epochs")
+
+    destination = Path(path).resolve()
+    with _locked_ledger(destination):
+        ledger = _read_ledger(destination)
+        entry = _request_entry(ledger, request_checksum)
+        attempt = _attempt_entry(entry, attempt_number)
+        if entry["status"] not in ACTIVE_REQUEST_STATUSES:
+            raise GpuCampaignLedgerError("only an active GPU request can be reconciled")
+        if attempt.get("job_id") != job_id:
+            raise GpuCampaignLedgerError("Slurm controller evidence names a different GPU job")
+        if attempt.get("allocated_seconds") is not None:
+            raise GpuCampaignLedgerError("GPU allocation time is already recorded for this job")
+        if attempt.get("submitted_epoch") != submitted_epoch:
+            raise GpuCampaignLedgerError("Slurm controller submit time differs from the campaign ledger")
+        attempt.update(
+            {
+                "allocated_seconds": 0,
+                "allocation_confirmed": False,
+                "allocation_timing_missing": False,
+                "queue_wait_seconds": ended_epoch - submitted_epoch,
+                "status": "not_allocated",
+                "scheduler_terminal_state": payload["job_state"],
+                "scheduler_evidence_source": "scontrol",
+                "scheduler_submit_epoch": submitted_epoch,
+                "scheduler_end_epoch": ended_epoch,
+                "scheduler_evidence_path": str(evidence_path),
+                "scheduler_evidence_sha256": hashlib.sha256(raw).hexdigest(),
                 "reconciled_at_utc": _utc_now(),
             }
         )

@@ -39,6 +39,7 @@ from .model import (
     restore_study_model,
 )
 from .preprocessing import PackingConfig, PreprocessConfig
+from .resnet18 import RESNET18_FINETUNE_MODEL_ID, RESNET18_MODEL_ID
 from .real_inference import (
     DEFAULT_REAL_DECODER_POLICY,
     RealInferenceError,
@@ -166,9 +167,13 @@ class _CandidateEnsemble(nn.Module):
         series_mask: torch.Tensor,
         series_descriptors: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        if self.config.model_id == DINOV2_MODEL_ID:
+        if self.config.model_id in {
+            RESNET18_MODEL_ID,
+            RESNET18_FINETUNE_MODEL_ID,
+            DINOV2_MODEL_ID,
+        }:
             if series_descriptors is None:
-                raise CandidateError("frozen image-model candidate inference requires series descriptors")
+                raise CandidateError("image-model candidate inference requires series descriptors")
             logits = torch.stack(
                 tuple(
                     cast(Any, model)(images, slice_mask, series_mask, series_descriptors)
@@ -193,9 +198,13 @@ class _CandidateEnsemble(nn.Module):
         series_mask: torch.Tensor,
         series_descriptors: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        if self.config.model_id == DINOV2_MODEL_ID:
+        if self.config.model_id in {
+            RESNET18_MODEL_ID,
+            RESNET18_FINETUNE_MODEL_ID,
+            DINOV2_MODEL_ID,
+        }:
             if series_descriptors is None:
-                raise CandidateError("frozen image-model candidate inference requires series descriptors")
+                raise CandidateError("image-model candidate inference requires series descriptors")
             probabilities = torch.stack(
                 tuple(
                     cast(Any, model).predict_proba(
