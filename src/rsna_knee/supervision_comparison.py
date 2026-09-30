@@ -49,6 +49,8 @@ _PUBLIC_ADMISSION_FIELDS = (
 )
 _TICKET18_ADDITIVE_DESIGN = "ticket18-additive-report-supervision-v2"
 _TICKET18_WEAK_SAMPLING_POLICY = "ticket18-report-only-cyclic-shuffle-v1"
+_TICKET34_ADDITIVE_DESIGN = "ticket34-additive-report-supervision-v1"
+_TICKET34_WEAK_SAMPLING_POLICY = "ticket34-report-only-cyclic-shuffle-v1"
 
 
 def _mapping(value: object, field: str) -> Mapping[str, object]:
@@ -243,6 +245,8 @@ class SupervisionComparison:
     undefined_folds: int
     interpretation: str
     additive_design: bool = False
+    report_extractor: str = "deterministic Ticket 15 extractor"
+    report_ticket_number: int = 18
 
     def __post_init__(self) -> None:
         if tuple(item.target for item in self.pooled_targets) != TARGET_COLUMNS:
@@ -273,6 +277,7 @@ class SupervisionComparison:
 
     def to_public_dict(self) -> dict[str, object]:
         return {
+            "ticket": self.report_ticket_number,
             "schema_version": (
                 "rsna-knee-supervision-comparison-additive-v2"
                 if self.additive_design
@@ -329,7 +334,8 @@ class SupervisionComparison:
             "supervision_provenance": {
                 "weak_label_version": self.weak_label_version,
                 "mixture_policy": self.mixture_policy,
-                "extractor": "deterministic Ticket 15 extractor",
+                "extractor": self.report_extractor,
+                "source_id": self.report_extractor,
                 "report_artifact_sha256": self.report_artifact_sha256,
                 "report_semantic_digest": self.report_semantic_digest,
             },
@@ -354,15 +360,18 @@ class SupervisionComparison:
 
 
 def _load_report_evidence(
-    record: OOFRunRecord, *, additive_design: bool = False
+    record: OOFRunRecord,
+    *,
+    additive_design: bool = False,
+    expected_ticket: int | None = None,
 ) -> tuple[str, str]:
     run_directory = record.path.parent
     evidence_path = run_directory.parent / f"{run_directory.name}.public.json"
     evidence = _read_json_object(evidence_path, "report-supervision run evidence")
-    expected_ticket = "18" if additive_design else "17"
-    if evidence.get("ticket") != expected_ticket:
+    selected_ticket = expected_ticket or (18 if additive_design else 17)
+    if evidence.get("ticket") not in (selected_ticket, str(selected_ticket)):
         raise SupervisionComparisonError(
-            f"report run evidence is not from the Ticket {expected_ticket} training adapter"
+            f"report run evidence is not from the Ticket {selected_ticket} training adapter"
         )
     if evidence.get("fold") != record.fold or evidence.get("fold_manifest_checksum") != record.fold_manifest_checksum:
         raise SupervisionComparisonError("report run evidence fold identity disagrees with its run record")
@@ -378,11 +387,38 @@ def _load_report_evidence(
     if not isinstance(artifact_sha256, str) or not _DIGEST_RE.fullmatch(artifact_sha256):
         raise SupervisionComparisonError("report run evidence has no frozen artifact checksum")
     image_admission = _mapping(evidence.get("supervision_admission"), "image-scope supervision evidence")
-    expected_image_admission = {field: supervision.get(field) for field in _PUBLIC_ADMISSION_FIELDS}
-    if dict(image_admission) != expected_image_admission:
+    image_admission_fields = (
+        (*_PUBLIC_ADMISSION_FIELDS, "source_id")
+        if selected_ticket == 36
+        else _PUBLIC_ADMISSION_FIELDS
+    )
+    expected_image_admission = {
+        field: supervision.get(field) for field in image_admission_fields
+    }
+    observed_image_admission = {
+        field: image_admission.get(field) for field in image_admission_fields
+    }
+    image_admission_matches = (
+        set(image_admission_fields).issubset(image_admission)
+        and observed_image_admission == expected_image_admission
+    )
+    if selected_ticket != 36:
+        image_admission_matches = dict(image_admission) == expected_image_admission
+    if not image_admission_matches:
         raise SupervisionComparisonError("public report admission evidence disagrees with the private run")
     full_admission = _mapping(evidence.get("full_fold_supervision_admission"), "full-fold supervision evidence")
-    for field in ("schema_version", "fold", "fold_manifest_checksum", "source_artifact_digest", "source_schema_version", "weak_label_version", "mixture_policy"):
+    full_admission_fields = (
+        "schema_version",
+        "fold",
+        "fold_manifest_checksum",
+        "source_artifact_digest",
+        "source_schema_version",
+        "weak_label_version",
+        "mixture_policy",
+    )
+    if selected_ticket == 36:
+        full_admission_fields = (*full_admission_fields, "source_id")
+    for field in full_admission_fields:
         if full_admission.get(field) != supervision.get(field):
             raise SupervisionComparisonError("full-fold report lineage disagrees with the training run")
     return artifact_sha256, semantic_digest
@@ -659,6 +695,9 @@ def compare_supervision_oof(
     bootstrap_seed: int = 20260918,
     bootstrap_confidence_level: float = 0.95,
     require_additive_gold_exposure: bool = False,
+    additive_design_id: str | None = None,
+    weak_sampling_policy: str | None = None,
+    report_ticket_number: int | None = None,
 ) -> SupervisionComparison:
     """Validate and compare matched three-fold reference/report OOF artifacts."""
 
@@ -668,6 +707,13 @@ def compare_supervision_oof(
         raise SupervisionComparisonError("bootstrap resamples must be positive and seed non-negative")
     if not 0.0 < bootstrap_confidence_level < 1.0:
         raise SupervisionComparisonError("bootstrap confidence level must be between zero and one")
+    selected_design = additive_design_id or _TICKET18_ADDITIVE_DESIGN
+    selected_weak_sampling = weak_sampling_policy or _TICKET18_WEAK_SAMPLING_POLICY
+    selected_ticket = (
+        18 if require_additive_gold_exposure else 17
+    ) if report_ticket_number is None else report_ticket_number
+    if selected_ticket not in {17, 18, 36}:
+        raise SupervisionComparisonError("unsupported report-supervision ticket identity")
     try:
         gold_oof = aggregate_oof_run_records(
             gold_only_run_paths,
@@ -678,13 +724,18 @@ def compare_supervision_oof(
             report_supervised_run_paths,
             fold_manifest,
             expected_supervision="report",
+            expected_report_ticket=selected_ticket,
         )
         gold_records = tuple(
             load_oof_run_record(path, expected_supervision="reference")
             for path in gold_only_run_paths
         )
         report_records = tuple(
-            load_oof_run_record(path, expected_supervision="report")
+            load_oof_run_record(
+                path,
+                expected_supervision="report",
+                expected_report_ticket=selected_ticket,
+            )
             for path in report_supervised_run_paths
         )
     except OOFArtifactError as exc:
@@ -741,11 +792,11 @@ def compare_supervision_oof(
             report_record = report_by_fold[fold]
             gold = gold_exposures[fold]
             report = report_exposures[fold]
-            if gold_record.counts.get("training_design") != _TICKET18_ADDITIVE_DESIGN:
-                raise SupervisionComparisonError("gold control is not marked as additive Ticket 18 v2")
-            if report_record.counts.get("training_design") != _TICKET18_ADDITIVE_DESIGN:
-                raise SupervisionComparisonError("report treatment is not marked as additive Ticket 18 v2")
-            if report_record.counts.get("weak_sampling_policy") != _TICKET18_WEAK_SAMPLING_POLICY:
+            if gold_record.counts.get("training_design") != selected_design:
+                raise SupervisionComparisonError("gold control has a different additive training design")
+            if report_record.counts.get("training_design") != selected_design:
+                raise SupervisionComparisonError("report treatment has a different additive training design")
+            if report_record.counts.get("weak_sampling_policy") != selected_weak_sampling:
                 raise SupervisionComparisonError("report treatment uses an undeclared weak sampling policy")
             if (
                 gold.exposures_by_source["reference"]
@@ -794,7 +845,11 @@ def compare_supervision_oof(
                     f"fold {fold} optimizer-step budgets differ between arms"
                 )
     report_evidence = tuple(
-        _load_report_evidence(report_by_fold[fold], additive_design=require_additive_gold_exposure)
+        _load_report_evidence(
+            report_by_fold[fold],
+            additive_design=require_additive_gold_exposure,
+            expected_ticket=selected_ticket,
+        )
         for fold in FOLD_IDS
     )
     artifact_hashes = {item[0] for item in report_evidence}
@@ -907,6 +962,8 @@ def compare_supervision_oof(
         undefined_folds=undefined_folds,
         interpretation=interpretation,
         additive_design=require_additive_gold_exposure,
+        report_extractor=str(report_by_fold[0].supervision.get("source_id", "unknown report extractor")),
+        report_ticket_number=selected_ticket,
     )
 
 
@@ -920,14 +977,21 @@ def _format_confidence_level(value: float) -> str:
 
 def render_supervision_comparison_markdown(comparison: SupervisionComparison) -> str:
     interval = comparison.macro_auc_delta_interval
-    lines = [
-        (
+    title = (
+        "# Ticket 36 — Expanded report-supervision OOF comparison"
+        if comparison.report_ticket_number == 36
+        else (
             "# Ticket 18 — Additive report-supervision OOF comparison v2"
             if comparison.additive_design
             else "# Ticket 18 — Controlled report-supervision OOF comparison"
-        ),
+        )
+    )
+    lines = [
+        title,
         "",
-        "The gold-only and gold-plus-clean-report arms use the same image model, folds, initialization, preprocessing, optimizer, loss, successful-step budget, and final-checkpoint evaluation. The report arm uses the frozen Ticket 15 deterministic extractor and reference-precedence mixture policy.",
+        "The gold-only and gold-plus-report arms use the same image model, folds, initialization, preprocessing, optimizer, loss, successful-step budget, and final-checkpoint evaluation. The report arm uses the frozen "
+        + comparison.report_extractor
+        + " source and reference-precedence mixture policy.",
         "",
         f"- Gold reference predictions: {comparison.prediction_count}",
         f"- Fold manifest: `{comparison.fold_manifest_checksum}`",
@@ -948,7 +1012,7 @@ def render_supervision_comparison_markdown(comparison: SupervisionComparison) ->
         f"{_format(comparison.gold_only.fold_macro_auc_std)} | "
         f"{_format(comparison.gold_only.fold_macro_auc_min)} | "
         f"{_format(comparison.gold_only.fold_macro_auc_max)} |",
-        f"| Gold + clean reports | {_format(comparison.report_supervised.pooled_macro_auc)} | "
+        f"| Gold + admitted reports | {_format(comparison.report_supervised.pooled_macro_auc)} | "
         f"{_format(comparison.report_supervised.mean_fold_macro_auc)} | "
         f"{_format(comparison.report_supervised.fold_macro_auc_std)} | "
         f"{_format(comparison.report_supervised.fold_macro_auc_min)} | "

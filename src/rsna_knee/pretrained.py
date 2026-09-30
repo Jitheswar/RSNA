@@ -22,6 +22,7 @@ RESNET18_RESOURCE_SCOPE = "ticket31-one-reference-fold-cpu"
 TICKET32_RESOURCE_SCOPE = "ticket32-three-fold-reference-oof-cpu"
 TICKET34_RESOURCE_SCOPE = "ticket34-fold0-report-supervision-cpu"
 TICKET36_RESOURCE_SCOPE = "ticket36-expanded-three-fold-report-supervision-cpu"
+TICKET44_RESOURCE_SCOPE = "ticket44-full-weak-cohort-exposure-cpu"
 TICKET33_RESOURCE_SCOPE = "ticket33-fold0-resnet18-gpu-experiment"
 TICKET39_RESOURCE_SCOPE = "ticket39-layer4-resnet18-finetune-experiment"
 _PRETRAINED_APPROVAL_SCHEMAS = frozenset(
@@ -29,6 +30,7 @@ _PRETRAINED_APPROVAL_SCHEMAS = frozenset(
         PRETRAINED_APPROVAL_SCHEMA,
         RESNET18_APPROVAL_SCHEMA,
         "rsna-ticket36-resource-approval-v1",
+        "rsna-ticket44-resource-approval-v1",
     }
 )
 _RESNET18_RESOURCE_SCOPES = frozenset(
@@ -37,6 +39,7 @@ _RESNET18_RESOURCE_SCOPES = frozenset(
         TICKET32_RESOURCE_SCOPE,
         TICKET34_RESOURCE_SCOPE,
         TICKET36_RESOURCE_SCOPE,
+        TICKET44_RESOURCE_SCOPE,
         TICKET33_RESOURCE_SCOPE,
         TICKET39_RESOURCE_SCOPE,
     }
@@ -92,6 +95,10 @@ def load_resource_approval(path: str | Path) -> Mapping[str, object]:
         "rights_status_scope"
     ) != TICKET33_RESOURCE_SCOPE:
         raise PretrainedResourceError("Ticket 33 rights status is not scope-limited")
+    if payload.get("scope") == TICKET44_RESOURCE_SCOPE and payload.get(
+        "rights_status_scope"
+    ) != TICKET44_RESOURCE_SCOPE:
+        raise PretrainedResourceError("Ticket 44 rights status is not scope-limited")
     if payload.get("scope") == TICKET39_RESOURCE_SCOPE:
         if payload.get("rights_status_scope") != TICKET39_RESOURCE_SCOPE:
             raise PretrainedResourceError("Ticket 39 rights status is not scope-limited")

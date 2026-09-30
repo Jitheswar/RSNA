@@ -953,6 +953,7 @@ def test_submit_gpu_experiment_uses_sbatch_and_retries_one_transient_failure(
     assert len(calls) == 2
     assert calls[0][0] == calls[1][0]
     assert "--wait" in calls[0][0]
+    assert "--no-requeue" in calls[0][0]
     assert "--partition=cluster1-gpu" in calls[0][0]
     assert "--gres=gpu:1" in calls[0][0]
     assert "srun" not in calls[0][0]

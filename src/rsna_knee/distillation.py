@@ -276,7 +276,10 @@ def _load_ticket19_teacher(
         raise DistillationExperimentError("Ticket 19 teacher checkpoint checksum does not match its run record")
 
     config = _teacher_config(integration_manifest)
-    model = build_study_model(config.model_config())
+    built_model = build_study_model(config.model_config())
+    if not isinstance(built_model, HierarchicalStudyModel):
+        raise DistillationExperimentError("Ticket 19 teacher must use the compact hierarchical model")
+    model = built_model
     load_training_checkpoint(
         checkpoint_path,
         model=model,
@@ -500,7 +503,12 @@ def _measure_ensemble_runtime(
         started = time.perf_counter()
         models: list[HierarchicalStudyModel] = []
         for fold, checkpoint in enumerate(checkpoints):
-            model = build_study_model(config.model_config())
+            built_model = build_study_model(config.model_config())
+            if not isinstance(built_model, HierarchicalStudyModel):
+                raise DistillationExperimentError(
+                    "Ticket 22 inference arms must use the compact hierarchical model"
+                )
+            model = built_model
             load_training_checkpoint(
                 checkpoint,
                 model=model,

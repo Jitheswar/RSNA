@@ -51,6 +51,40 @@ def _manifest() -> FoldManifest:
     )
 
 
+def test_ticket44_analysis_view_recovers_source_identity_without_changing_training(tmp_path: Path) -> None:
+    import runpy
+    from rsna_knee.oof import load_oof_run_record
+
+    analysis_view = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/ticket44_completed_analysis.py"))["analysis_view"]
+    source = tmp_path / "original"
+    _write_run(source, _manifest(), 0, arm="gold")
+    configuration = json.loads((source / "configuration.json").read_text())
+    configuration["environment"].update(code_revision=None, slurm_job_id="7830")
+    (source / "configuration.json").write_text(json.dumps(configuration))
+    before = {path.relative_to(source): path.read_bytes() for path in source.rglob("*") if path.is_file()}
+    derived = tmp_path / "analysis"
+    supplement = analysis_view(source, derived, snapshot_sha256="a" * 64, job_id="7830")
+    record = load_oof_run_record(derived)
+    assert record.environment["code_revision"] == "verified-source-snapshot-sha256:" + "a" * 64
+    assert record.predictions == load_oof_run_record(source).predictions
+    assert supplement["git_revision_recovered"] is False
+    assert {path.relative_to(source): path.read_bytes() for path in source.rglob("*") if path.is_file()} == before
+
+
+def test_ticket44_analysis_view_rejects_a_different_training_allocation(tmp_path: Path) -> None:
+    import runpy
+
+    analysis_view = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/ticket44_completed_analysis.py"))["analysis_view"]
+    source = tmp_path / "original"
+    _write_run(source, _manifest(), 0, arm="gold")
+    configuration = json.loads((source / "configuration.json").read_text())
+    configuration["environment"].update(code_revision=None, slurm_job_id="different-job")
+    (source / "configuration.json").write_text(json.dumps(configuration))
+    with pytest.raises(ValueError, match="missing-revision allocation"):
+        analysis_view(source, tmp_path / "analysis", snapshot_sha256="a" * 64, job_id="7830")
+    assert not (tmp_path / "analysis").exists()
+
+
 def _training_config() -> dict[str, object]:
     return {
         "schema_version": "rsna-knee-training-v1",

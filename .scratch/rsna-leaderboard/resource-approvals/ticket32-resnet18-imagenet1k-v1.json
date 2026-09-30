@@ -1,0 +1,65 @@
+{
+  "acquisition_verification": {
+    "expected_bytes": 46830571,
+    "expected_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+    "observed_bytes": 46830571,
+    "observed_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+    "status": "verified_before_ticket32_model_loading",
+    "verification_requirement": "The exact existing file was independently rechecked by SHA-256 and byte count for this added scope. The admitted loader will recheck the same exact bytes before each of the three folds; abort on mismatch.",
+    "verification_tool": "sha256 via Python hashlib.sha256 and filesystem stat; the admitted training loader also rechecks the full digest and byte count before exposing tensors.",
+    "verified_at": "2026-09-25T12:28:03Z"
+  },
+  "approved_at": "2026-09-25T12:28:03Z",
+  "approved_by": "RSNA project owner (conditional authorization in /home/ch.jitheswar/tsk7.txt; full-CV gate satisfied)",
+  "artifact_id": "torchvision.ResNet18_Weights.IMAGENET1K_V1",
+  "decision": "approved",
+  "download_url": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+  "expected_bytes": 46830571,
+  "external_spend": 0,
+  "proposed_rights_status": "eligible_for_this_bounded_competition_experiment_only",
+  "provenance": {
+    "architecture_and_training_data": "ResNet-18 pretrained for ImageNet-1K classification; the ImageNet-1K dataset is the stated training-data source.",
+    "checkpoint_license": "The reviewed TorchVision weight entry does not state a separate checkpoint-specific license. TorchVision guidance warns that terms may derive from training data and assigns use-case permission responsibility to the user.",
+    "competition_basis": "The official competition overview permits freely/publicly available external data including pretrained models. Host Po-Hao Howard Chen's 2026-08-27 official response in topic 733965/comment 3517696 says competition research-only use is non-commercial, prize money alone does not make it commercial, and NC restrictions alone do not disqualify a resource. This is not a checkpoint-specific host ruling and does not grant source-side rights.",
+    "publisher_and_project": "TorchVision / pytorch/vision",
+    "source_identity": "The project pins pytorch/vision@v0.22.1. The tagged source defines this enum and URL. The weight metadata does not pin an immutable training-recipe revision; its recipe link points to a mutable branch.",
+    "source_links": [
+      "https://github.com/pytorch/vision/blob/v0.22.1/torchvision/models/resnet.py",
+      "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+      "https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.resnet18.html",
+      "https://docs.pytorch.org/vision/stable/models.html",
+      "https://image-net.org/download-images",
+      "https://www.kaggle.com/competitions/rsna-knee-abnormality-detection/overview",
+      "https://www.kaggle.com/competitions/rsna-knee-abnormality-detection/discussion/733965#3517696"
+    ],
+    "upstream_dataset_terms": "ImageNet's official access terms offer images for non-commercial research/education and state ImageNet does not own image copyrights. Those terms do not expressly resolve whether they govern this already-trained checkpoint or resulting fine-tuned weights.",
+    "weight_enum": "torchvision.ResNet18_Weights.IMAGENET1K_V1 (do not substitute DEFAULT)",
+    "winner_release_provenance": "The 2026-09-11 captured Rules text records an exception to granting the winner license to incompatible-license pretrained models and a separate public Kaggle model-weight delivery duty; the overview requests public code/weights and model availability. The capture records conflicting winner-license wording. The exact application to this checkpoint and redistribution of any fine-tuned weights remain unresolved."
+  },
+  "release_eligibility": {
+    "final_candidate_freeze": "blocked",
+    "redistribution_or_release": "blocked",
+    "release_gate": "Require a separate documented resolution of checkpoint and derivative redistribution rights and the competition's winner-license exception/public-weight obligations, followed by a separate owner approval. This experimental-use record cannot clear or waive that gate. Ticket 32 experimental-use approval does not clear or waive this release gate.",
+    "winner_publication": "blocked"
+  },
+  "requested_owner_decision": "Conditional authorization under /home/ch.jitheswar/tsk7.txt: because the existing validation gate requires complete planned folds before interpreting an improvement, authorize this exact checkpoint solely for one complete, corrected three-fold reference OOF ResNet-18 comparison in Ticket 32 on CPU, locally/offline and at zero external spend. Keep every fitted head fold-specific, held-out data prediction/evaluation-only, and the artifact excluded from final candidate freeze, publication, redistribution, and release pending a separate decision.",
+  "rights_basis": "APPROVED FOR THE BOUNDED THREE-FOLD EXPERIMENT ONLY: the conditional owner instruction in /home/ch.jitheswar/tsk7.txt directs proceeding to Ticket 32 only where the existing policy requires full-CV confirmation. The policy says complete the planned folds before interpreting an improvement; Ticket 32 is that predeclared matched three-fold comparison. Competition-use basis is the same narrow basis recorded for Ticket 31: the official overview permits freely/publicly available pretrained models and the documented host interpretation treats research-only competition use as non-commercial. This is not a third-party rights grant, a determination that ImageNet terms govern or do not govern this checkpoint or its derivatives, or a legal guarantee. No ImageNet source images or external spend are authorized.",
+  "rights_status": "eligible",
+  "rights_status_scope": "ticket32-three-fold-reference-oof-cpu only",
+  "rights_status_semantics": "rights_status=eligible records the project decision to permit only this scoped Ticket 32 comparison under the conditional owner instruction in /home/ch.jitheswar/tsk7.txt, because the predeclared validation gate requires complete planned folds before interpreting an improvement. It does not resolve the upstream-term question or authorize any use beyond the three-fold CPU comparison, final candidate freeze, publication, redistribution, or release.",
+  "schema_version": "rsna-resnet18-resource-approval-v1",
+  "scope": "ticket32-three-fold-reference-oof-cpu",
+  "scope_details": {
+    "acquisition": "No new checkpoint download is needed. Reuse only the previously acquired exact public artifact after this scoped approval and independent digest/size recheck; zero cost.",
+    "experiment": "Ticket 32 only: one frozen ResNet-18 configuration across corrected reference folds 0, 1 and 2; CPU-only.",
+    "held_out_data": "Held-out inputs and outcomes are for feature prediction/evaluation only; no fitting, adaptation, calibration or selection may use them.",
+    "image_data": "Do not download, access or use ImageNet source images.",
+    "model_use": "Keep the pretrained encoder frozen. Fit each fold head and any fitted transform independently on only that fold training partition.",
+    "processing": "Local/offline execution through cluster1-cpu Slurm; no runtime network or GPU; no external spend.",
+    "reuse_and_sharing": "Reuse identity-matched frozen features only within this three-fold comparison. No reuse outside Ticket 32, external sharing, mirroring or publication."
+  },
+  "sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+  "sha256_role": "expected and independently reverified exact artifact digest; loader rechecks before each fold",
+  "source_revision": "pytorch/vision@v0.22.1",
+  "ticket31_approval_record": ".scratch/rsna-leaderboard/resource-approvals/ticket31-resnet18-imagenet1k-v1.json (unchanged; one-fold scope only)"
+}

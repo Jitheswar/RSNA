@@ -1,0 +1,64 @@
+{
+  "schema_version": "rsna-ticket31-resource-approval-v1",
+  "artifact_id": "torchvision.ResNet18_Weights.IMAGENET1K_V1",
+  "source_revision": "pytorch/vision@v0.22.1",
+  "download_url": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+  "expected_bytes": 46830571,
+  "sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+  "sha256_role": "expected_full_sha256_until_verified_against_acquired_bytes",
+  "scope": "ticket31-one-reference-fold-cpu",
+  "decision": "approved",
+  "rights_status": "eligible",
+  "proposed_rights_status": "eligible_for_this_bounded_competition_experiment_only",
+  "rights_status_scope": "ticket31-one-reference-fold-cpu only",
+  "rights_status_semantics": "rights_status=eligible records the project decision to permit only this scoped competition experiment based on the documented competition materials and host interpretation while expressly accepting the unresolved upstream-term question. It does not mean third-party terms have been conclusively interpreted, and it does not authorize final candidate freeze, winner publication, redistribution, or release.",
+  "external_spend": 0,
+  "approved_by": "RSNA project owner (explicit approval in /home/ch.jitheswar/tsk6.txt)",
+  "approved_at": "2026-09-25T11:12:47Z",
+  "rights_basis": "APPROVED FOR THE BOUNDED EXPERIMENT ONLY: the official competition overview allows freely/publicly available pretrained models, and host Po-Hao Howard Chen's 2026-08-27 interpretation says research-only use is non-commercial for competition purposes, prize money alone is not commercial use, and NC terms alone do not exclude a resource. This is a project/competition-policy basis for the one-fold experiment only. It is not a third-party rights grant, a determination that ImageNet terms govern or do not govern this checkpoint or its derivatives, or a legal guarantee.",
+  "requested_owner_decision": "I authorize one zero-cost acquisition and use of this exact public checkpoint solely for the Ticket 31 one-reference-fold CPU experiment under the scope and safeguards in this record. I accept that upstream terms do not expressly resolve whether they cover this checkpoint or experimental derivatives. This decision does not authorize final candidate freeze, winner publication, redistribution, or release; those remain blocked pending a separate rights and competition-rule decision.",
+  "scope_details": {
+    "experiment": "Ticket 31 single, pre-frozen reference fold only; record the selected fold identity and run evidence in the ticket/final-freeze register.",
+    "model_use": "Initialize the frozen ResNet-18 encoder; train only the Ticket 31 head on that fold's training partition.",
+    "held_out_data": "Use held-out studies and outcomes only for prediction/evaluation. No fitting, calibration, selection, gradient updates, or other adaptation from held-out inputs or outcomes.",
+    "image_data": "Do not download, access, or use ImageNet source images.",
+    "acquisition": "One transfer from the exact public HTTPS URL after owner approval; no fee, subscription, paid service, or other external spend.",
+    "processing": "After acquisition, verify and process locally/offline. No runtime network access for feature extraction, training, evaluation, checkpoint reload, or offline inference.",
+    "reuse_and_sharing": "No reuse in another experiment, mirroring, external sharing, or publication under this approval."
+  },
+  "acquisition_verification": {
+    "status": "verified",
+    "expected_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+    "expected_bytes": 46830571,
+    "observed_sha256": "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec",
+    "observed_bytes": 46830571,
+    "verified_at": "2026-09-25T11:17:03Z",
+    "verification_requirement": "After explicit owner approval and acquisition, independently compute the full SHA-256 and byte count and compare both with the expected values before any model loading or training. Record observed values and verification time here. Abort and remove the acquired temporary artifact on any mismatch. The loader must recheck the approved record, byte count, and full SHA-256 before exposing tensors.",
+    "verification_tool": "Independent sha256sum and stat checks after acquisition; the approved acquisition helper also validated the stream before atomically promoting it."
+  },
+  "provenance": {
+    "publisher_and_project": "TorchVision / pytorch/vision",
+    "weight_enum": "torchvision.ResNet18_Weights.IMAGENET1K_V1 (do not substitute DEFAULT)",
+    "architecture_and_training_data": "ResNet-18 pretrained for ImageNet-1K classification; the ImageNet-1K dataset is the stated training-data source.",
+    "source_identity": "The project pins pytorch/vision@v0.22.1. The tagged source defines this enum and URL. The weight metadata does not pin an immutable training-recipe revision; its recipe link points to a mutable branch.",
+    "checkpoint_license": "The reviewed TorchVision weight entry does not state a separate checkpoint-specific license. TorchVision guidance warns that terms may derive from training data and assigns use-case permission responsibility to the user.",
+    "upstream_dataset_terms": "ImageNet's official access terms offer images for non-commercial research/education and state ImageNet does not own image copyrights. Those terms do not expressly resolve whether they govern this already-trained checkpoint or resulting fine-tuned weights.",
+    "competition_basis": "The official competition overview permits freely/publicly available external data including pretrained models. Host Po-Hao Howard Chen's 2026-08-27 official response in topic 733965/comment 3517696 says competition research-only use is non-commercial, prize money alone does not make it commercial, and NC restrictions alone do not disqualify a resource. This is not a checkpoint-specific host ruling and does not grant source-side rights.",
+    "winner_release_provenance": "The 2026-09-11 captured Rules text records an exception to granting the winner license to incompatible-license pretrained models and a separate public Kaggle model-weight delivery duty; the overview requests public code/weights and model availability. The capture records conflicting winner-license wording. The exact application to this checkpoint and redistribution of any fine-tuned weights remain unresolved.",
+    "source_links": [
+      "https://github.com/pytorch/vision/blob/v0.22.1/torchvision/models/resnet.py",
+      "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+      "https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.resnet18.html",
+      "https://docs.pytorch.org/vision/stable/models.html",
+      "https://image-net.org/download-images",
+      "https://www.kaggle.com/competitions/rsna-knee-abnormality-detection/overview",
+      "https://www.kaggle.com/competitions/rsna-knee-abnormality-detection/discussion/733965#3517696"
+    ]
+  },
+  "release_eligibility": {
+    "final_candidate_freeze": "blocked",
+    "winner_publication": "blocked",
+    "redistribution_or_release": "blocked",
+    "release_gate": "Require a separate documented resolution of checkpoint and derivative redistribution rights and the competition's winner-license exception/public-weight obligations, followed by a separate owner approval. This experimental-use record cannot clear or waive that gate."
+  }
+}

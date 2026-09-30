@@ -514,7 +514,10 @@ def record_gpu_backend_allocation(
     scope_payload = evidence_payload.get("scope") if isinstance(evidence_payload, Mapping) else None
     if (
         not isinstance(evidence_payload, Mapping)
-        or evidence_payload.get("schema_version") != "rsna-ticket33-kaggle-gpu-evidence-v1"
+        or evidence_payload.get("schema_version") not in {
+            "rsna-ticket33-kaggle-gpu-evidence-v1",
+            "rsna-kaggle-gpu-allocation-evidence-v1",
+        }
         or evidence_payload.get("status") != "completed"
         or evidence_payload.get("request_checksum") != request_checksum
         or evidence_payload.get("kernel_id") != backend_run_id
@@ -604,7 +607,10 @@ def record_gpu_backend_failure_allocation(
         raise GpuCampaignLedgerError("external GPU failure evidence is unreadable") from exc
     if (
         not isinstance(evidence_payload, Mapping)
-        or evidence_payload.get("schema_version") != "rsna-ticket33-kaggle-gpu-failure-v1"
+        or evidence_payload.get("schema_version") not in {
+            "rsna-ticket33-kaggle-gpu-failure-v1",
+            "rsna-kaggle-gpu-allocation-failure-v1",
+        }
         or evidence_payload.get("status") != "failed"
         or evidence_payload.get("request_checksum") != request_checksum
         or evidence_payload.get("kernel_id") != backend_run_id
@@ -716,6 +722,94 @@ def mark_gpu_campaign_request_externally_blocked(
                 },
             }
         )
+        atomic_json_write(destination, ledger, overwrite=True)
+        return dict(entry)
+
+
+def record_kaggle_scoring_terminal_without_allocation(
+    path: str | Path,
+    *,
+    request_checksum: str,
+    job_id: str,
+    evidence_path: str | Path,
+    evidence_sha256: str,
+) -> Mapping[str, object]:
+    """Close an exact terminal scoring job, charging its entire unknown exposure.
+
+    Submission status proves termination, not GPU allocation timing. Keep timing
+    unknown and convert the whole reserved GPU budget to a conservative charge.
+    This path is limited to one immutable, unaccounted submission attempt.
+    """
+
+    evidence = Path(evidence_path).resolve()
+    if not evidence.is_file() or evidence.is_symlink():
+        raise GpuCampaignLedgerError("Kaggle scoring terminal evidence is unavailable")
+    raw = evidence.read_bytes()
+    if not raw or len(raw) > 1_000_000 or hashlib.sha256(raw).hexdigest() != evidence_sha256:
+        raise GpuCampaignLedgerError("Kaggle scoring terminal evidence checksum is invalid")
+    try:
+        payload = json.loads(raw)
+    except (UnicodeError, ValueError) as exc:
+        raise GpuCampaignLedgerError("Kaggle scoring terminal evidence is unreadable") from exc
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("schema_version") != "rsna-kaggle-scoring-terminal-evidence-v1"
+        or payload.get("request_checksum") != request_checksum
+        or payload.get("job_id") != job_id
+        or payload.get("allocation_timing_available") is not False
+    ):
+        raise GpuCampaignLedgerError("Kaggle scoring terminal evidence has a different identity")
+    submission = payload.get("submission")
+    if (
+        not isinstance(submission, Mapping)
+        or type(submission.get("ref")) is not int
+        or str(submission["ref"]) != job_id
+        or submission.get("status") not in {"COMPLETE", "ERROR"}
+    ):
+        raise GpuCampaignLedgerError("Kaggle scoring evidence does not prove the exact terminal submission")
+    terminal_status = "completed" if submission["status"] == "COMPLETE" else "failed"
+    destination = Path(path).resolve()
+    with _locked_ledger(destination):
+        ledger = _read_ledger(destination)
+        entry = _request_entry(ledger, request_checksum)
+        attempts = cast(list[dict[str, object]], entry["attempts"])
+        if entry["status"] not in ACTIVE_REQUEST_STATUSES or len(attempts) != 1:
+            raise GpuCampaignLedgerError("terminal scoring accounting requires one active submission attempt")
+        attempt = attempts[0]
+        if (
+            attempt.get("job_id") != job_id
+            or attempt.get("allocated_seconds") is not None
+            or entry["actual_allocated_seconds"] != 0
+            or entry.get("unverified_allocation_charge_seconds", 0) != 0
+        ):
+            raise GpuCampaignLedgerError("scoring allocation is already recorded or names a different job")
+        charge = _stored_int(entry["reserved_seconds"], "reserved GPU exposure")
+        if charge <= 0:
+            raise GpuCampaignLedgerError("terminal scoring request has no reserved exposure to charge")
+        attempt.update({
+            "status": terminal_status,
+            "allocation_confirmed": False,
+            "allocation_timing_missing": True,
+            "terminal_evidence_path": str(evidence),
+            "terminal_evidence_sha256": evidence_sha256,
+            "terminal_backend_status": submission["status"],
+            "conservative_exposure_charge_seconds": charge,
+        })
+        entry.update({
+            "status": terminal_status,
+            "actual_allocation_known": False,
+            "reserved_seconds": 0,
+            "unverified_allocation_charge_seconds": charge,
+            "terminal_accounting": {
+                "basis": "Exact authenticated terminal submission; full reservation charged because VM allocation timing is unavailable",
+                "job_id": job_id,
+                "evidence_path": str(evidence),
+                "evidence_sha256": evidence_sha256,
+                "conservative_charge_seconds": charge,
+                "recorded_at_utc": _utc_now(),
+            },
+        })
+        _close_terminal_request(ledger, entry, terminal_status)
         atomic_json_write(destination, ledger, overwrite=True)
         return dict(entry)
 
@@ -839,16 +933,83 @@ def reconcile_gpu_unallocated_from_scontrol(
         raise GpuCampaignLedgerError("could not read Slurm controller no-allocation evidence") from exc
     if not raw or len(raw) > 1_000_000 or not isinstance(payload, Mapping):
         raise GpuCampaignLedgerError("Slurm controller evidence must be a bounded JSON object")
+    schema_version = payload.get("schema_version")
+    standard_cancel_evidence = (
+        payload.get("held_pending_before_cancel") is True
+        and payload.get("cancel_command_exit_code") == 0
+        and payload.get("absent_from_queue_after_cancel") is True
+    )
+    external_terminal_evidence = False
+    if schema_version == "rsna-slurm-scontrol-unallocated-external-v1":
+        prior_path_value = payload.get("prior_pending_observation_path")
+        prior_digest = payload.get("prior_pending_observation_sha256")
+        if isinstance(prior_path_value, str) and isinstance(prior_digest, str):
+            prior_path = Path(prior_path_value)
+            if not prior_path.is_symlink() and prior_path.is_file():
+                prior_raw = prior_path.read_bytes()
+                if hashlib.sha256(prior_raw).hexdigest() == prior_digest:
+                    try:
+                        prior_payload = json.loads(prior_raw.decode("utf-8"))
+                    except (UnicodeError, ValueError):
+                        prior_payload = None
+                    if isinstance(prior_payload, Mapping):
+                        prior_record_value = prior_payload.get("controller_record_path")
+                        prior_record_digest = prior_payload.get("controller_record_sha256")
+                        if isinstance(prior_record_value, str) and isinstance(
+                            prior_record_digest, str
+                        ):
+                            prior_record_path = Path(prior_record_value)
+                            if not prior_record_path.is_symlink() and prior_record_path.is_file():
+                                prior_record_raw = prior_record_path.read_bytes()
+                                prior_text = prior_record_raw.decode("utf-8")
+                                prior_fields = {
+                                    key: value
+                                    for token in prior_text.split()
+                                    if "=" in token
+                                    for key, value in (token.split("=", 1),)
+                                }
+                                observed_at_epoch = prior_payload.get("observed_at_epoch")
+                                ended_epoch_value = payload.get("ended_epoch")
+                                external_terminal_evidence = (
+                                    prior_payload.get("schema_version")
+                                    == "rsna-slurm-scontrol-pending-observation-v1"
+                                    and prior_payload.get("request_checksum") == request_checksum
+                                    and prior_payload.get("job_id") == job_id
+                                    and prior_payload.get("state") == "PENDING"
+                                    and prior_payload.get("elapsed_seconds") == 0
+                                    and prior_payload.get("node_list") in (None, "(null)", "")
+                                    and isinstance(observed_at_epoch, int)
+                                    and not isinstance(observed_at_epoch, bool)
+                                    and isinstance(ended_epoch_value, int)
+                                    and not isinstance(ended_epoch_value, bool)
+                                    and observed_at_epoch < ended_epoch_value
+                                    and hashlib.sha256(prior_record_raw).hexdigest()
+                                    == prior_record_digest
+                                    and prior_fields.get("JobId") == job_id
+                                    and prior_fields.get("JobState") == "PENDING"
+                                    and prior_fields.get("RunTime") == "00:00:00"
+                                    and prior_fields.get("NodeList") in {"(null)", ""}
+                                    and prior_fields.get("SubmitTime")
+                                    == payload.get("controller_submit_time")
+                                )
     if (
-        payload.get("schema_version") != "rsna-slurm-scontrol-unallocated-v1"
+        schema_version not in {
+            "rsna-slurm-scontrol-unallocated-v1",
+            "rsna-slurm-scontrol-unallocated-external-v1",
+        }
         or payload.get("request_checksum") != request_checksum
         or payload.get("job_id") != job_id
         or payload.get("job_state") not in {"CANCELLED", "FAILED", "PREEMPTED", "TIMEOUT", "NODE_FAIL"}
         or payload.get("elapsed_seconds") != 0
         or payload.get("node_list") not in (None, "(null)", "")
-        or payload.get("held_pending_before_cancel") is not True
-        or payload.get("cancel_command_exit_code") != 0
-        or payload.get("absent_from_queue_after_cancel") is not True
+        or not (standard_cancel_evidence or external_terminal_evidence)
+        or (
+            schema_version == "rsna-slurm-scontrol-unallocated-external-v1"
+            and (
+                payload.get("terminalized_without_agent_cancel") is not True
+                or payload.get("absent_from_queue_after_terminal") is not True
+            )
+        )
         or payload.get("sacct_status") != "unavailable_connection_refused"
     ):
         raise GpuCampaignLedgerError("Slurm controller evidence does not prove an unallocated terminal job")

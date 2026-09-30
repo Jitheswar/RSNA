@@ -1827,6 +1827,7 @@ def submit_gpu_experiment(
     command = [
         sbatch_binary,
         "--wait" if wait else "--parsable",
+        "--no-requeue",
         f"--job-name=rsna-ticket13-{request.payload['experiment_id']}",
         f"--partition={resource.partition}",
         f"--gres={resource.gres}",

@@ -338,6 +338,7 @@ class AdmittedFoldSupervision:
     admitted_report_only_study_uids: tuple[str, ...]
     missing_report_only_study_uids: tuple[str, ...]
     resolved: tuple[ResolvedLabelVector, ...]
+    source_id: str = "ticket15-deterministic"
     source_disagreements: tuple[SupervisionDisagreement, ...] = ()
     excluded_image_report_only_study_uids: tuple[str, ...] = ()
 
@@ -348,6 +349,8 @@ class AdmittedFoldSupervision:
         _require_digest(self.source_artifact_digest, "source_artifact_digest")
         _require_digest(self.extractor_configuration_fingerprint, "extractor_configuration_fingerprint")
         _require_digest(self.extractor_ruleset_fingerprint, "extractor_ruleset_fingerprint")
+        if not isinstance(self.source_id, str) or not self.source_id.strip():
+            raise SupervisionAdmissionError("supervision source_id must be non-empty")
         for name, values in (
             ("training_study_uids", self.training_study_uids),
             ("held_out_study_uids", self.held_out_study_uids),
@@ -426,7 +429,11 @@ class AdmittedFoldSupervision:
         """
 
         available = set(_tuple_of_strings(available_study_uids, "available study identifiers"))
-        known = set(self.training_study_uids).union(self.held_out_study_uids)
+        known = (
+            set(self.training_study_uids)
+            | set(self.held_out_study_uids)
+            | set(self.eligible_report_only_study_uids)
+        )
         unknown = sorted(available - known)
         if unknown:
             raise SupervisionAdmissionError(
@@ -451,6 +458,7 @@ class AdmittedFoldSupervision:
             fold=self.fold,
             fold_manifest_checksum=self.fold_manifest_checksum,
             source_artifact_digest=self.source_artifact_digest,
+            source_id=self.source_id,
             source_schema_version=self.source_schema_version,
             extractor_version=self.extractor_version,
             extractor_configuration_fingerprint=self.extractor_configuration_fingerprint,
@@ -508,6 +516,7 @@ class AdmittedFoldSupervision:
             "fold": self.fold,
             "fold_manifest_checksum": self.fold_manifest_checksum,
             "source_artifact_digest": self.source_artifact_digest,
+            "source_id": self.source_id,
             "source_schema_version": self.source_schema_version,
             "weak_label_version": self.weak_label_version,
             "mixture_policy": self.mixture_policy,

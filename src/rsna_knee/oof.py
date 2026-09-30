@@ -17,6 +17,7 @@ from .folds import FOLD_IDS, FoldManifest, validate_fold_manifest_against_source
 from .inventory import SourceManifest
 from .report_extraction import FrozenDeterministicExtractor, REPORT_EXTRACTION_SCHEMA_VERSION
 from .supervision import ADMISSION_SCHEMA_VERSION, MIXTURE_POLICY_VERSION, WEAK_LABEL_VERSION
+from .ticket34 import TICKET30_SOURCE_ID
 from .targets import TARGET_COLUMNS
 
 
@@ -107,6 +108,7 @@ def _load_artifact_contract(
     config_fingerprint: str,
     prediction_count: int,
     expected_supervision: str,
+    expected_report_ticket: int,
 ) -> tuple[Mapping[str, object], Mapping[str, object], Mapping[str, object]]:
     configuration_path = run_path.parent / "configuration.json"
     if not configuration_path.is_file():
@@ -150,7 +152,12 @@ def _load_artifact_contract(
                 f"OOF configuration does not prove report exclusion: {configuration_path}"
             )
     elif expected_supervision == "report":
-        _validate_report_supervision_contract(supervision, fold=fold, configuration_path=configuration_path)
+        _validate_report_supervision_contract(
+            supervision,
+            fold=fold,
+            configuration_path=configuration_path,
+            expected_report_ticket=expected_report_ticket,
+        )
     else:
         raise OOFArtifactError(f"unsupported OOF supervision arm {expected_supervision!r}")
     preflight = _mapping(configuration["preflight"], "configuration.preflight")
@@ -195,17 +202,29 @@ def _load_artifact_contract(
 
 
 def _validate_report_supervision_contract(
-    supervision: Mapping[str, object], *, fold: int, configuration_path: Path
+    supervision: Mapping[str, object],
+    *,
+    fold: int,
+    configuration_path: Path,
+    expected_report_ticket: int = 18,
 ) -> None:
     if supervision.get("schema_version") != ADMISSION_SCHEMA_VERSION:
         raise OOFArtifactError("report-supervised run has an unsupported admission schema")
-    if supervision.get("source_schema_version") != REPORT_EXTRACTION_SCHEMA_VERSION:
+    if expected_report_ticket == 36:
+        expected_source_schema = "rsna-knee-report-label-audit-v1"
+        expected_weak_policy = "ticket30-fold-specific-wilson-admission-v4"
+        expected_mixture_policy = "reference-precedence-plus-ticket30-report-only-v1"
+    else:
+        expected_source_schema = REPORT_EXTRACTION_SCHEMA_VERSION
+        expected_weak_policy = WEAK_LABEL_VERSION
+        expected_mixture_policy = MIXTURE_POLICY_VERSION
+    if supervision.get("source_schema_version") != expected_source_schema:
         raise OOFArtifactError("report-supervised run has an unsupported extraction schema")
     if supervision.get("fold") != fold:
         raise OOFArtifactError("report supervision fold disagrees with the training run")
-    if supervision.get("weak_label_version") != WEAK_LABEL_VERSION:
+    if supervision.get("weak_label_version") != expected_weak_policy:
         raise OOFArtifactError("report-supervised run uses an unapproved weak-label policy")
-    if supervision.get("mixture_policy") != MIXTURE_POLICY_VERSION:
+    if supervision.get("mixture_policy") != expected_mixture_policy:
         raise OOFArtifactError("report-supervised run uses an unapproved mixture policy")
     if not _DIGEST_RE.fullmatch(str(supervision.get("source_artifact_digest", ""))):
         raise OOFArtifactError("report-supervised run has no valid source artifact digest")
@@ -224,14 +243,20 @@ def _validate_report_supervision_contract(
         raise OOFArtifactError("report supervision does not prove reference-only fallback provenance")
 
     extractor = _mapping(supervision.get("extractor"), "report supervision extractor")
-    expected_extractor = FrozenDeterministicExtractor().to_public_dict()
-    for field_name, expected in (
-        ("version", expected_extractor["extractor_version"]),
-        ("configuration_fingerprint", expected_extractor["configuration_fingerprint"]),
-        ("ruleset_fingerprint", expected_extractor["ruleset_fingerprint"]),
-    ):
-        if extractor.get(field_name) != expected:
-            raise OOFArtifactError("report-supervised run does not use the selected deterministic extractor")
+    if expected_report_ticket == 36:
+        if supervision.get("source_id") != TICKET30_SOURCE_ID:
+            raise OOFArtifactError("Ticket 36 report run does not use the frozen Ticket 16 source")
+        for field_name in ("version", "configuration_fingerprint", "ruleset_fingerprint"):
+            _nonempty(extractor.get(field_name), f"report supervision extractor.{field_name}")
+    else:
+        expected_extractor = FrozenDeterministicExtractor().to_public_dict()
+        for field_name, expected in (
+            ("version", expected_extractor["extractor_version"]),
+            ("configuration_fingerprint", expected_extractor["configuration_fingerprint"]),
+            ("ruleset_fingerprint", expected_extractor["ruleset_fingerprint"]),
+        ):
+            if extractor.get(field_name) != expected:
+                raise OOFArtifactError("report-supervised run does not use the selected deterministic extractor")
 
     for field_name in (
         "training_study_uids",
@@ -317,7 +342,10 @@ _DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 
 
 def load_oof_run_record(
-    path: str | Path, *, expected_supervision: str = "reference"
+    path: str | Path,
+    *,
+    expected_supervision: str = "reference",
+    expected_report_ticket: int = 18,
 ) -> OOFRunRecord:
     """Load one completed fold record without changing its directory."""
 
@@ -364,6 +392,7 @@ def load_oof_run_record(
         config_fingerprint=config_fingerprint,
         prediction_count=len(predictions),
         expected_supervision=expected_supervision,
+        expected_report_ticket=expected_report_ticket,
     )
     run_supervision = _mapping(payload.get("supervision"), "run.supervision")
     if expected_supervision == "reference":
@@ -595,6 +624,7 @@ def aggregate_oof_run_records(
     permutation_resamples: int | None = None,
     permutation_seed: int = 20260911,
     expected_supervision: str = "reference",
+    expected_report_ticket: int = 18,
     allow_superseded_fold_manifest: bool = False,
 ) -> OOFEvaluation:
     """Recompute an OOF view from one atomic record per fold and supervision arm."""
@@ -622,7 +652,12 @@ def aggregate_oof_run_records(
     if not run_paths:
         raise OOFArtifactError("at least one OOF run record is required")
     records = tuple(
-        load_oof_run_record(path, expected_supervision=expected_supervision) for path in run_paths
+        load_oof_run_record(
+            path,
+            expected_supervision=expected_supervision,
+            expected_report_ticket=expected_report_ticket,
+        )
+        for path in run_paths
     )
     if len({record.path for record in records}) != len(records):
         raise OOFArtifactError("OOF aggregation received the same run record more than once")

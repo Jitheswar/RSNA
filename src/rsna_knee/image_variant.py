@@ -23,6 +23,9 @@ from .training import TrainingConfig
 MECHANICS_BASELINE_VARIANT = "mechanics-baseline"
 TICKET19_VARIANT = "ticket19-wider-slice-encoder-v1"
 TICKET19_ENCODER_CHANNELS = (16, 32, 64)
+TICKET31_RESNET18_VARIANT = "ticket31-resnet18-imagenet1k-v1"
+TICKET31_IMAGE_SIZE = (224, 224)
+TICKET31_REPRESENTATION_ID = "ticket31-resnet18-224-whole-field-v1"
 TICKET38_DINOV2_VARIANT = "ticket38-frozen-dinov2-small-vits14"
 TICKET39_RESNET18_FINETUNE_VARIANT = "ticket39-resnet18-layer4-finetuning-v1"
 TICKET39_ENCODER_LEARNING_RATE = 1e-5
@@ -31,6 +34,7 @@ _RESNET18_REPRESENTATION_ID = "ticket31-resnet18-224-whole-field-v1"
 IMAGE_MODEL_VARIANTS = (
     MECHANICS_BASELINE_VARIANT,
     TICKET19_VARIANT,
+    TICKET31_RESNET18_VARIANT,
     TICKET38_DINOV2_VARIANT,
     TICKET39_RESNET18_FINETUNE_VARIANT,
 )
@@ -76,6 +80,30 @@ def image_model_training_config(
         return baseline
     if variant == TICKET19_VARIANT:
         return replace(baseline, channels=TICKET19_ENCODER_CHANNELS)
+    if variant == TICKET31_RESNET18_VARIANT:
+        from .model import RESNET18_MODEL_ID
+
+        if pooling_id not in {ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID}:
+            raise ValueError(f"unsupported Ticket 31 pooling identity {pooling_id!r}")
+        source_preprocessing = effective_preprocessing or baseline.preprocess_config()
+        resnet_preprocessing = replace(
+            source_preprocessing,
+            image_size=TICKET31_IMAGE_SIZE,
+            representation_id=TICKET31_REPRESENTATION_ID,
+        )
+        return replace(
+            baseline,
+            image_size=TICKET31_IMAGE_SIZE,
+            max_slices=source_preprocessing.max_slices,
+            max_series=source_preprocessing.max_series,
+            channels=(64, 128, 256),
+            model_id=RESNET18_MODEL_ID,
+            pooling_id=pooling_id,
+            encoder_id=RESNET18_ENCODER_ID,
+            encoder_weights_sha256=RESNET18_SHA256,
+            head_hidden_size=32,
+            preprocessing_config=resnet_preprocessing,
+        )
     if variant == TICKET38_DINOV2_VARIANT:
         if pooling_id != DINOV2_POOLING_ID:
             raise ValueError("Ticket 38 freezes plane-stratified series pooling")
@@ -130,6 +158,9 @@ __all__ = [
     "MECHANICS_BASELINE_VARIANT",
     "TICKET19_ENCODER_CHANNELS",
     "TICKET19_VARIANT",
+    "TICKET31_IMAGE_SIZE",
+    "TICKET31_REPRESENTATION_ID",
+    "TICKET31_RESNET18_VARIANT",
     "TICKET38_DINOV2_VARIANT",
     "TICKET39_ENCODER_LEARNING_RATE",
     "TICKET39_RESNET18_FINETUNE_VARIANT",

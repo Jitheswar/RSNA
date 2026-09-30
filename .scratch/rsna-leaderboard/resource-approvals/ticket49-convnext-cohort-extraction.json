@@ -1,0 +1,31 @@
+{
+  "approval_status": "approved_by_project_owner",
+  "approved_by": "Project owner via existing conversation-wide authorization: approved for anything everything; no matter what 1st place",
+  "authorization_interpretation": "Applies existing zero-spend campaign authorization to this exact separate CPU extraction after the passing pilot. No Ticket 49-specific words claimed; no GPU expansion or Ticket 39 amendment.",
+  "checkpoint_rights_basis": "Exact already admitted public checkpoint under Ticket 48 private experiment authorization; does not grant additional underlying dataset or final redistribution rights.",
+  "checkpoint_sha256": "77b619e187de71bce58721689da0c009e84cc20677293d7d43105307e34d868a",
+  "decision": "approved",
+  "final_candidate_selection": false,
+  "head_training_authorized": false,
+  "plan_path": "/home/ch.jitheswar/RSNA/artifacts/private/ticket49-convnext-feature-cohort/plan.json",
+  "plan_sha256": "ca2adc77d18f78652f640fd08adced9476321870a6304159d61e071470877f62",
+  "publication": false,
+  "resources": {
+    "code_watchdog_seconds_per_job": 10740,
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_allocated_node_seconds": 21600,
+    "maximum_concurrent_jobs": 2,
+    "maximum_launches_per_partition": 1,
+    "memory_gib_per_job": 64,
+    "nodes_per_job": 1,
+    "partition": "cluster1-cpu",
+    "partition_count": 2,
+    "tasks_per_job": 1,
+    "walltime_seconds_per_job": 10800
+  },
+  "schema_version": "rsna-ticket49-resource-approval-v1",
+  "scope": "ticket49-convnext-cohort-extraction"
+}

@@ -1,0 +1,23 @@
+{
+  "approved_by": "Project owner via existing conversation-wide authorization: approved for anything everything; no matter what 1st place",
+  "authorization_interpretation": "Applies the existing zero-spend campaign authorization to this exact independent CPU verification after both extraction jobs completed. No Ticket 49-specific words claimed. This adds at most 0.25 CPU node hours; extraction plus verification maximum is 6.25 node hours below the 24-node-hour ceiling. Does not expand GPU capacity or authorize training.",
+  "decision": "approved",
+  "final_candidate_selection": false,
+  "publication": false,
+  "request_sha256": "eb32a3596b3aadd966a6ec988f007f00642abd9be4786c0cf569b5a0a30567f5",
+  "resources": {
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_concurrent_jobs": 1,
+    "maximum_launch_attempts": 1,
+    "memory_gib": 64,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "tasks": 1,
+    "walltime_seconds": 900
+  },
+  "schema_version": "rsna-ticket49-verification-approval-v1",
+  "scope": "ticket49-convnext-cohort-verification"
+}

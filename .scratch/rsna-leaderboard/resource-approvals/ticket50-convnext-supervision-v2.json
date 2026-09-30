@@ -1,0 +1,26 @@
+{
+  "approved_by": "Project owner via existing conversation-wide authorization: approved for anything everything; no matter what 1st place",
+  "authorization_interpretation": "Applies existing zero-spend campaign authorization to this exact separate CPU matched-head plan after complete feature verification. No Ticket 50-specific approval words claimed; no Ticket 39 amendment or GPU capacity expansion.",
+  "candidate_promotion": false,
+  "checkpoint_rights_scope": "already admitted Ticket 48/49 private experiment",
+  "decision": "approved",
+  "network_during_execution": false,
+  "new_weight_download": false,
+  "plan_sha256": "924aa958c9fc0fc50b709a0b5057c1272833d69aaceb0c100b870ee861bb47d9",
+  "publication": false,
+  "resources": {
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_concurrent_jobs": 1,
+    "maximum_launch_attempts": 1,
+    "memory_gib": 64,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "tasks": 1,
+    "walltime_seconds": 7200
+  },
+  "schema_version": "rsna-ticket50-resource-approval-v1",
+  "scope": "ticket50-convnext-supervision"
+}

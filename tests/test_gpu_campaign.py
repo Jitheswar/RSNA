@@ -28,10 +28,27 @@ from rsna_knee.gpu_campaign import (
     initialize_gpu_campaign_ledger,
     record_gpu_submission_result,
     record_gpu_allocation,
+    record_gpu_backend_allocation,
     reserve_gpu_campaign_request,
     reconcile_gpu_unallocated_attempt,
     reconcile_gpu_unallocated_from_scontrol,
 )
+
+
+@pytest.mark.parametrize("schema", ["rsna-ticket33-kaggle-gpu-evidence-v1", "rsna-kaggle-gpu-allocation-evidence-v1"])
+def test_kaggle_inference_allocation_charges_both_assigned_gpus(tmp_path: Path, schema: str) -> None:
+    ledger = tmp_path / "ledger.json"
+    initialize_gpu_campaign_ledger(ledger, budget_hours=20, reserved_comparison_hours=0)
+    digest = "d" * 64
+    reserve_gpu_campaign_request(ledger, request_checksum=digest, experiment_id="public-inference-preflight", wall_time_minutes=10, retry_allowed=False, remaining_attempts=1, gpu_count=2)
+    begin_gpu_submission_attempt(ledger, request_checksum=digest, attempt_number=1, submitted_epoch=100)
+    kernel = "owner/private-inference"
+    record_gpu_submission_result(ledger, request_checksum=digest, attempt_number=1, job_id=kernel, exit_code=0, submission_wait=False)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"schema_version": schema, "status": "completed", "request_checksum": digest, "kernel_id": kernel, "scope": {"external_spend_usd": 0}}))
+    result = record_gpu_backend_allocation(ledger, request_checksum=digest, attempt_number=1, backend_run_id=kernel, allocated_start_epoch=110, allocated_end_epoch=160, exit_code=0, evidence_path=evidence, evidence_sha256=hashlib.sha256(evidence.read_bytes()).hexdigest())
+    assert result["actual_allocated_seconds"] == 100
+    assert result["reserved_seconds"] == 0
 from rsna_knee.training import PREFLIGHT_SCHEMA_VERSION
 from rsna_knee.pretrained import (
     RESNET18_ARTIFACT_BYTES,
@@ -509,6 +526,112 @@ def test_scontrol_reconciliation_closes_cancelled_pending_job_when_sacct_is_down
     assert entry["queue_wait_seconds"] == 120
     assert entry["attempts"][0]["scheduler_evidence_source"] == "scontrol"
     assert ledger["reserved_comparison_seconds"] == 18 * 3600
+
+
+def test_scontrol_reconciliation_closes_externally_terminalized_pending_job(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "campaign-ledger.json"
+    request_checksum = "f" * 64
+    initialize_gpu_campaign_ledger(ledger_path, reserved_comparison_hours=18.0)
+    reserve_gpu_campaign_request(
+        ledger_path,
+        request_checksum=request_checksum,
+        experiment_id="comparison-fold-external-terminal-scontrol",
+        wall_time_minutes=30,
+        retry_allowed=False,
+        remaining_attempts=1,
+        comparison_reserve_release_seconds=30 * 60,
+    )
+    begin_gpu_submission_attempt(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        submitted_epoch=100,
+    )
+    record_gpu_submission_result(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        job_id="54321",
+        exit_code=0,
+        submission_wait=False,
+    )
+
+    prior_controller = tmp_path / "prior-pending-scontrol.txt"
+    prior_controller.write_text(
+        "JobId=54321 JobState=PENDING Reason=Resources RunTime=00:00:00 "
+        "SubmitTime=1970-01-01T00:01:40Z NodeList=(null)\n",
+        encoding="utf-8",
+    )
+    prior_observation = tmp_path / "prior-pending-observation.json"
+    prior_observation.write_text(
+        json.dumps(
+            {
+                "schema_version": "rsna-slurm-scontrol-pending-observation-v1",
+                "request_checksum": request_checksum,
+                "job_id": "54321",
+                "state": "PENDING",
+                "elapsed_seconds": 0,
+                "node_list": None,
+                "observed_at_epoch": 150,
+                "controller_record_path": str(prior_controller),
+                "controller_record_sha256": hashlib.sha256(
+                    prior_controller.read_bytes()
+                ).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller_path = tmp_path / "terminal-scontrol.txt"
+    controller_path.write_text(
+        "JobId=54321 JobState=CANCELLED Reason=Resources RunTime=00:00:00 "
+        "SubmitTime=1970-01-01T00:01:40Z EndTime=1970-01-01T00:03:40Z "
+        "NodeList=(null)\n",
+        encoding="utf-8",
+    )
+    evidence_path = tmp_path / "external-terminal-evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "rsna-slurm-scontrol-unallocated-external-v1",
+                "request_checksum": request_checksum,
+                "job_id": "54321",
+                "job_state": "CANCELLED",
+                "elapsed_seconds": 0,
+                "node_list": None,
+                "submitted_epoch": 100,
+                "ended_epoch": 220,
+                "controller_submit_time": "1970-01-01T00:01:40Z",
+                "controller_end_time": "1970-01-01T00:03:40Z",
+                "controller_record_path": str(controller_path),
+                "controller_record_sha256": hashlib.sha256(
+                    controller_path.read_bytes()
+                ).hexdigest(),
+                "prior_pending_observation_path": str(prior_observation),
+                "prior_pending_observation_sha256": hashlib.sha256(
+                    prior_observation.read_bytes()
+                ).hexdigest(),
+                "terminalized_without_agent_cancel": True,
+                "absent_from_queue_after_terminal": True,
+                "sacct_status": "unavailable_connection_refused",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    entry = reconcile_gpu_unallocated_from_scontrol(
+        ledger_path,
+        request_checksum=request_checksum,
+        attempt_number=1,
+        job_id="54321",
+        scheduler_evidence_path=evidence_path,
+    )
+
+    assert entry["status"] == "failed"
+    assert entry["actual_allocated_seconds"] == 0
+    assert entry["attempts"][0]["scheduler_terminal_state"] == "CANCELLED"
+    assert read_gpu_campaign_ledger(ledger_path)["reserved_comparison_seconds"] == 18 * 3600
 
 
 def test_scontrol_reconciliation_rejects_started_or_unrelated_gpu_job(
