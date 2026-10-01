@@ -2,6 +2,25 @@
 
 This register records exact model experiments and their terminal candidate disposition. A one-fold result is development evidence and does not by itself promote a candidate.
 
+## Ticket 55 — completed matched long ResNet and fixed blend
+
+[Ticket 55](issues/55-test-matched-long-resnet-report-head.md) closes as
+**inconclusive/no promotion**. Diagnosed training recovery **7978** completed
+`0:0`, **290 CPU-node seconds**. Independent verifier **7981** completed `0:0`,
+**60 CPU-node seconds**; path-only verifier failure **7980** cost **6 seconds**
+and remains preserved. All six original prefixes and **116** final predictions
+replay exactly; all 4,228 feature files and seven paired comparisons were checked.
+Total new CPU allocation **356 node seconds**, zero GPU/spend.
+
+Report ResNet AUC **0.686730** vs short **0.660737**, delta **+0.025993**, paired
+95% interval **[-0.011717,+0.062958]**, all folds positive. Fixed 50/50 report-head
+blend AUC **0.705751**, delta vs long ResNet **+0.019021**, interval
+**[-0.009373,+0.050577]**, one negative fold. Report-supervision and image-feature
+controls are positive; duration and blend advantage remain uncertain. No weight,
+budget or intermediate checkpoint was chosen from the results. Same-cohort D4
+comparison, final candidate and leaderboard gain remain unverified.
+[Evidence](../../docs/evidence/ticket-55-resnet-recovery.md).
+
 ## October 1 current continuation — public meniscus preparation
 
 [Ticket 53](issues/53-admit-public-meniscus-specialist.md) is selected for one
@@ -257,7 +276,8 @@ one declining fold: **inconclusive/no promotion**. Positive report and image
 controls do not establish D4 complementarity or a competition gain.
 [Evidence](../../docs/evidence/ticket-54-long-convnext-report-head.md).
 
-**Ticket 55:** the fixed 7,500-step ResNet comparison and one **50/50** report-head
+**Ticket 55 original attempt (superseded by the completed recovery above):**
+the fixed 7,500-step ResNet comparison and one **50/50** report-head
 blend were registered before long predictions. Original plan
 `49c1e99220ff4df1b8bcc23253114caa6354b8d9d0c7cf749afaa483d214fedd`, job **7977**,
 failed `1:0` after **32 CPU-node seconds**, zero GPU/spend. Its first 1,500-step

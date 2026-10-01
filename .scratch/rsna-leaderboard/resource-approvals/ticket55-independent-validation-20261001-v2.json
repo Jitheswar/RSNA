@@ -1,0 +1,33 @@
+{
+  "schema_version": "rsna-campaign-autonomous-decision-v1",
+  "decision": "approved",
+  "recorded_at_utc": "2026-10-01T06:19:58.313689+00:00",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "parent_plan_sha256": "8e6899d7af4688e1512686559ff9c38bc94673cc2364d8264fb7e95588928e49",
+  "validator_sha256": "009b67bc30b5a00d096a4c28d5bf6d75423ac90f5a881d41f218b1fae776daa2",
+  "resources": {
+    "partition": "cluster1-cpu",
+    "nodes": 1,
+    "tasks": 1,
+    "cpus_per_task": 16,
+    "memory_gib": 64,
+    "walltime_seconds": 600,
+    "code_watchdog_seconds": 480,
+    "gpu_count": 0,
+    "exclusive": false,
+    "maximum_launch_attempts": 1,
+    "requeue": false,
+    "external_spend_usd": 0
+  },
+  "basis": "Diagnosed path-only recovery of the independent verifier. Reuse completed training, unchanged replay tolerance, folds, budget and seven comparisons.",
+  "new_exact_owner_numeric_approval_claimed": false,
+  "gpu_ledger_cap_changed": false,
+  "new_gpu_request": false,
+  "candidate_promotion": false,
+  "stage_attempt_number": 2,
+  "maximum_stage_attempts": 2,
+  "recovery_from_job_id": 7980,
+  "original_decision_sha256": "8a70cdd1cbe2220940e3eb45c4717e813d0fea94962f6aebaac38557407ee1f7",
+  "failure_diagnosis_sha256": "32a7c47031b04d131ba49a4714bfc1418c03da4e165457fc174be9252d99d2ae"
+}

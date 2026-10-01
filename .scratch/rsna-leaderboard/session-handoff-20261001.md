@@ -7,6 +7,25 @@ private leaderboards**; neither has been achieved. Best confirmed account score:
 **0.936**. Leader in the independent API check at **05:13 UTC**: **rhoskeri / 0.961**.
 Refresh live observations before acting.
 
+## Resumed continuation — October 1, 06:21 UTC
+
+Ticket 55 is now **resolved, inconclusive/no promotion**. Training recovery
+**7978** completed all six 7,500-step runs, all original prefixes match exactly,
+and independent verifier **7981** reproduced **116** final predictions and all
+seven paired comparisons. Report ResNet AUC **0.686730**; fixed half blend
+**0.705751**, improvement interval **[-0.009373,+0.050577]**, one negative fold.
+New CPU allocation **356 node seconds**, including verifier path failure **7980**;
+zero GPU/spend. Preserve both original failures and completed recovery evidence.
+Root: `artifacts/private/ticket55-resnet-long-report-head-v2/`.
+[Completed evidence](../../docs/evidence/ticket-55-resnet-recovery.md).
+
+Exact frontier **56739912 / 354194017** remains **PENDING at 06:18:35 UTC**.
+Fresh authenticated leaderboard observation at **06:12:27 UTC** retains leader
+**rhoskeri / 0.961**. Best confirmed account score remains **0.936**. No CPU job
+is currently live; the exact-scoring observer is running and the old continuation
+coordinator stays stopped. Ticket 53 v4 still awaits terminal scoring reconciliation.
+These observations supersede the operational snapshots below; refresh before use.
+
 ## Resume in this order
 
 1. Read `AGENTS.md`, `CONTEXT.md`, this handoff and the relevant ticket below.
@@ -16,10 +35,11 @@ Refresh live observations before acting.
    notebook v3**. If terminal, verify source identity and reconcile through the
    existing observer/accounting helpers before another GPU request. If pending,
    retain its reservation and use admitted CPU work.
-3. Immediate CPU work: [Ticket 55](issues/55-test-matched-long-resnet-report-head.md).
-   Its original request failed on metadata after an exact 1,500-step reproduction.
-   Repair and four regression tests are committed; recovery **v2 is not frozen or
-   launched**. Follow [failure evidence and recovery steps](../../docs/evidence/ticket-55-resnet-recovery.md).
+3. [Ticket 55](issues/55-test-matched-long-resnet-report-head.md) is now complete.
+   Preserve its six final runs and independently verified inconclusive disposition.
+   Do not repeat its consumed training or validation requests. Further CPU work
+   needs a new prospective hypothesis and resource decision; the fixed blend does
+   not pass its declared improvement gate.
 4. Next GPU work: [Ticket 53](issues/53-admit-public-meniscus-specialist.md), immutable
    paired request **v4**. Launch after scoring is terminal/reconciled, all GPU
    backends are clear, and fresh quota/scaling/resource-decision gates pass.
@@ -118,12 +138,13 @@ in the separate SDK environment; keep credentials out of outputs.
   **inconclusive/no promotion**. Long reference AUC **0.601455**; report-minus-reference
   and image controls positive. Preserve the failed four-thread replay probe;
   tolerance stayed **1e-6**. Private root: `artifacts/private/ticket54-convnext-long-report-head/`.
-- [Ticket 55](../../docs/evidence/ticket-55-resnet-recovery.md): job **7977** failed
-  `1:0` after **32 allocated CPU-node seconds**, `KLEF-C-NODE1`. First reference-only
-  1,500-step weights/predictions matched exactly. Historical absent report sequence
-  `null` was compared with the canonical empty hash. Repair permits that equivalence
-  only with zero report exposures and retains strict report-bearing identity.
-  Four regression tests pass. No long ResNet or fixed-blend result exists yet.
+- [Ticket 55](../../docs/evidence/ticket-55-resnet-recovery.md): original job **7977**
+  failed on absent-report provenance, **32 CPU-node seconds**. Diagnosed recovery
+  **7978** completed, **290 seconds**; independent verifier **7981** completed,
+  **60 seconds**, after path-only failure **7980**, **6 seconds**. Every original
+  prefix and all 116 final predictions replay exactly. Report ResNet **0.686730**;
+  fixed half blend **0.705751**, paired interval crosses zero and one fold declines.
+  The branch is **inconclusive/no promotion**. No GPU/spend or scoring action.
 
 ## Prepared GPU comparison: Ticket 53 v4
 
