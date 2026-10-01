@@ -1,5 +1,13 @@
 {
-  "budget_seconds": 72000,
+  "budget_amendments": [
+    {
+      "new_budget_seconds": 129600,
+      "old_budget_seconds": 72000,
+      "path": "/home/ch.jitheswar/RSNA/.scratch/rsna-leaderboard/resource-approvals/cap-amendment-20261001.json",
+      "sha256": "df57f378f9fc8ab15b0593a0f6280086f9dab5f9f003111723d0d0febe37d57a"
+    }
+  ],
+  "budget_seconds": 129600,
   "created_at_utc": "2026-09-25T18:28:07Z",
   "initial_reserved_comparison_seconds": 64800,
   "requests": [
@@ -662,16 +670,22 @@
       "wall_time_seconds": 28800
     },
     {
-      "actual_allocated_seconds": 0,
+      "actual_allocated_seconds": 382,
       "actual_allocation_known": true,
       "attempts": [
         {
-          "allocated_seconds": null,
+          "allocated_seconds": 382,
+          "allocated_wall_seconds": 191,
+          "allocation_confirmed": true,
+          "allocation_evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/public-frontier-adoption/gpu-inference-preflight-v2/failure-accounting.json",
+          "allocation_evidence_sha256": "675e1cbb4e5233fbb7112f9a42647b9218d736fd9c63c7e367056a5f044b1e3b",
           "attempt_number": 1,
-          "exit_code": null,
+          "backend_run_id": "jitheswar/rsna-public-frontier-gpu-preflight-attributed",
+          "exit_code": 1,
           "job_id": "jitheswar/rsna-public-frontier-gpu-preflight-attributed",
           "queue_wait_seconds": null,
-          "status": "submitted",
+          "quota_used_wall_seconds": 190.75299999999697,
+          "status": "failed",
           "submission_exit_code": 0,
           "submitted_epoch": 1790783282
         }
@@ -684,11 +698,144 @@
       "max_attempts": 1,
       "queue_wait_seconds": 0,
       "request_checksum": "2fc03daf3c41e160e248eb2645ff1d4aaf9266170fb892122be0786afa3c49fc",
-      "reserved_seconds": 3600,
+      "reserved_seconds": 0,
+      "retry_allowed": false,
+      "status": "failed",
+      "unverified_allocation_charge_seconds": 0,
+      "wall_time_seconds": 1800
+    },
+    {
+      "actual_allocated_seconds": 726,
+      "actual_allocation_known": true,
+      "attempts": [
+        {
+          "allocated_seconds": 726,
+          "allocated_wall_seconds": 363,
+          "allocation_confirmed": true,
+          "allocation_evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/public-frontier-adoption/gpu-inference-preflight-v3/visible-run-validation-and-accounting.json",
+          "allocation_evidence_sha256": "8e2dda02f6790593d4ef89279ce99442af691889223d05ffcfb37e4203d7c7b8",
+          "allocation_interval_known": false,
+          "attempt_number": 1,
+          "exit_code": 0,
+          "job_id": "jitheswar/rsna-public-frontier-gpu-preflight-attributed",
+          "queue_wait_seconds": null,
+          "quota_used_wall_seconds": 362.0040000000008,
+          "status": "completed",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790784580
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-09-30T16:09:40Z",
+      "experiment_id": "public-frontier-visible-gpu-v3-source-cache-repair-20260930",
+      "gpu_count": 2,
+      "max_attempts": 1,
+      "queue_wait_seconds": 0,
+      "request_checksum": "7a24c3010d53b233c12c85656aece36c27c4cf5e5dcbd5cdd010e440036c5adb",
+      "reserved_seconds": 0,
+      "retry_allowed": false,
+      "status": "completed",
+      "unverified_allocation_charge_seconds": 0,
+      "wall_time_seconds": 1800
+    },
+    {
+      "actual_allocated_seconds": 514,
+      "actual_allocation_known": true,
+      "attempts": [
+        {
+          "allocated_seconds": 514,
+          "allocated_wall_seconds": 257,
+          "allocation_confirmed": true,
+          "allocation_evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/public-frontier-adoption/scored-baseline-v1/visible-run-validation-and-accounting.json",
+          "allocation_evidence_sha256": "bcc51635c75a2405a3be2340c20a2383a366d6a7be12380f2c3c63643d539e34",
+          "allocation_interval_known": false,
+          "attempt_number": 1,
+          "exit_code": 0,
+          "job_id": "jitheswar/rsna-public-frontier-gpu-preflight-attributed",
+          "queue_wait_seconds": null,
+          "quota_used_wall_seconds": 256.762999999999,
+          "status": "completed",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790785518
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-09-30T16:25:18Z",
+      "experiment_id": "public-frontier-full-workload-visible-save-v1-20260930",
+      "gpu_count": 2,
+      "max_attempts": 1,
+      "queue_wait_seconds": 0,
+      "request_checksum": "654ed14f70611d5f2b17cb3a2878ed165445f0762b39b47f2058d442d9abf4ff",
+      "reserved_seconds": 0,
+      "retry_allowed": false,
+      "status": "completed",
+      "unverified_allocation_charge_seconds": 0,
+      "wall_time_seconds": 1200
+    },
+    {
+      "actual_allocated_seconds": 161,
+      "actual_allocation_known": true,
+      "attempts": [
+        {
+          "allocated_end_epoch": 1790816089,
+          "allocated_seconds": 161,
+          "allocated_start_epoch": 1790815928,
+          "allocation_confirmed": true,
+          "allocation_evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/ticket39-resnet18/analysis-request-v3/terminal-controller-accounting.json",
+          "allocation_evidence_sha256": "a03652c9259080e00b96b4d5fd85565e68c95338119c04a6f99bdfc9fdc36d77",
+          "attempt_number": 1,
+          "exit_code": 0,
+          "job_id": "7966",
+          "queue_wait_seconds": 90,
+          "status": "completed",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790815838
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-10-01T00:50:38Z",
+      "experiment_id": "ticket39-final-analysis-gpu-replay-v3-20261001",
+      "gpu_count": 1,
+      "max_attempts": 1,
+      "queue_wait_seconds": 90,
+      "request_checksum": "e183b80d8693e8c65c8d9a49d2059be719f3eb45881b2e11c695ab6eb7b1959a",
+      "reserved_seconds": 0,
+      "retry_allowed": false,
+      "status": "completed",
+      "unverified_allocation_charge_seconds": 0,
+      "wall_time_seconds": 1800
+    },
+    {
+      "actual_allocated_seconds": 0,
+      "actual_allocation_known": true,
+      "attempts": [
+        {
+          "allocated_seconds": null,
+          "attempt_number": 1,
+          "exit_code": null,
+          "job_id": "56739912",
+          "queue_wait_seconds": null,
+          "status": "submitted",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790816210
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-10-01T00:56:50Z",
+      "experiment_id": "ticket51-exact-frontier-scoring",
+      "gpu_count": 2,
+      "max_attempts": 1,
+      "queue_wait_seconds": 0,
+      "request_checksum": "3490b9fcba9381e4778c70f4e2a4597ff660c7eb7e74dc3f8b0f446ea763317c",
+      "reserved_seconds": 57600,
       "retry_allowed": false,
       "status": "submitting",
       "unverified_allocation_charge_seconds": 0,
-      "wall_time_seconds": 1800
+      "wall_time_seconds": 28800
     }
   ],
   "reserved_comparison_seconds": 0,

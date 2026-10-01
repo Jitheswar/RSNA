@@ -6,7 +6,7 @@
 
 **Parent:** [RSNA leaderboard campaign with zero external spend](../spec.md)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Execution constraints:** Follow the approved spec: zero external spend; significant work through Slurm; existing CPU ceilings; one active or pending GPU request and 20 allocated GPU-hours across the first campaign, including failures and retries; 2 TB soft storage budget; exact resource and delivery approvals where required. Questions go in visible chat. Synthetic checks establish software behavior only. No project-imposed candidate or submission-count cap.
 
@@ -16,8 +16,8 @@
 
 ## Acceptance criteria
 
-- [ ] Phase A: preserve the existing scored fallback as an immutable candidate, verify its exact artifact/runtime identity and complete offline submission contract, and keep it usable while experimental branches remain open.
-- [ ] Maintain separate states for fallback readiness and final-freeze readiness. Phase A completion does not resolve this whole ticket or unblock final delivery.
+- [x] Phase A: preserve the existing scored fallback as an immutable candidate, verify its exact artifact/runtime identity and complete offline submission contract, and keep it usable while experimental branches remain open.
+- [x] Maintain separate states for fallback readiness and final-freeze readiness. Phase A completion does not resolve this whole ticket or unblock final delivery.
 - [ ] Track every selected/triggered branch and scientific variant with selection time, status, supplying dependencies, evidence, decision owner and explicit promotion/rejection rationale. A previously activated branch cannot disappear or be relabeled never-selected to clear the gate.
 - [ ] Before phase B, require all registered selected/triggered branches to have terminal promotion/rejection decisions. Ticket closure, a provisional promising result, a running experiment or pending OOF analysis is not a substitute for its decision.
 - [ ] At the October 11 modeling cutoff, incomplete or unavailable work requires an explicit rejection from this delivery with a not-evaluated/incomplete reason; do not fabricate a scientific failure or promote partial evidence. If any branch still lacks a decision, final freeze remains blocked.
@@ -31,3 +31,33 @@
 ## Completion evidence
 
 Record the demonstration, focused boundary checks, exact artifact identities, measured scope, unresolved limitations and any required branch disposition. A ready-for-agent label authorizes preparation within the spec; it does not establish resource approval or successful scientific performance.
+
+
+## Comments
+
+### September 30 — phase A integrity/readiness complete; phase B open
+
+Fresh authenticated read-only observations confirm the 0.498 historical fallback
+and 0.936 public baseline remain COMPLETE at their exact saved source versions.
+Current remote source code still matches both local snapshots. `load_candidate`
+verified all 40 historical candidate artifacts; the exact 75-file delivery
+payload digest and offline wheel/runtime pins passed a current integrity scan.
+The retained CSV's schema, bounds and archived input-order/hash proof remain
+valid. No inference, upload, scoring, cap change, final freeze or selection was
+performed by this audit. Exact evidence is
+`artifacts/private/ticket41-readiness-audit-v1/audit.json` and
+`historical-output-contract-check.json`.
+
+The final-freeze register now explicitly consolidates selected public baseline,
+frontier/scoring and Ticket 39 branches. Ticket 39's actual preserved state has
+all three folds complete but final analysis unverified, rather than its older
+queued-job comments. Its resource-scope replay amendment remains pending;
+Ticket 40 remains unselected under the owner's explicit instruction. Prior
+inconclusive comparisons are preserved without inventing final dispositions.
+Phase B and its boundary tests remain outstanding; this ticket is not resolved.
+
+2026-09-30: The newly registered private CPU duration branch, Ticket 52, is now terminal: primary advancement gate failed, inconclusive/no promotion, all saved outputs independently replayed. Its closure is recorded in the final-freeze register. Outstanding Ticket 39 analysis/resource scope and Ticket 51 scoring/budget decisions still prevent Phase B; no final selection occurred.
+
+### October 1 readiness update
+
+Ticket 39 now has a verified complete analysis and terminal **inconclusive/no-promotion** disposition; its hidden-scale delivery gate remains unverified and no candidate is admitted. The owner approved Ticket 51 and standing autonomous campaign decisions. Exact frontier submission 56739912/source 354194017 is accepted and initially PENDING under a persistent observer. Its result, remaining candidate review and delivery/rights checks still precede phase B. The 0.936 and 0.498 scored fallbacks remain preserved. No first-place or final-freeze claim.

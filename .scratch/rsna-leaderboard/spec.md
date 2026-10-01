@@ -31,7 +31,7 @@ The first campaign has a 20 allocated GPU-hour budget, one GPU request at a time
 4. As a competition owner, I want delivery complete before October 15, so that queue delays and packaging problems have a bounded recovery window.
 5. As a competition owner, I want no arbitrary submission-count cap, so that justified candidates can be evaluated within the official rules and remaining resources.
 6. As a competition owner, I want the existing scored candidate preserved, so that an unsuccessful experiment does not remove the fallback.
-7. As a competition owner, I want questions asked directly in visible chat, so that I can answer without inaccessible asynchronous widgets.
+7. As a competition owner, I want campaign decisions handled autonomously within the competition rules and zero-spend constraint, without repeated approval questions, as authorized on October 1.
 8. As a researcher, I want the current near-chance baseline recorded accurately, so that improvements are compared with real evidence.
 9. As a researcher, I want reference labels kept distinct from report-derived labels, so that weak supervision cannot masquerade as ground truth.
 10. As a researcher, I want prepared image membership distinguished from header inventory, so that corpus size claims match the images actually used.
@@ -97,6 +97,14 @@ The first campaign has a 20 allocated GPU-hour budget, one GPU request at a time
 70. As a competition owner, I want a final record of completed, inconclusive and unrun work, so that the campaign's outcome remains honest even if the ambition is not achieved.
 
 ## Implementation Decisions
+
+### October 1 owner authorization and current resource boundary
+
+The owner answered **“yes”** to the exact Ticket 51 20→36 GPU-hour extension and Ticket 39 30-minute GPU replay proposals, then instructed **“approve anything as long as we win 1st place and fits kaggle comp dont ask me”**. This supersedes earlier requirements to pause for routine campaign decisions. Preserve concrete scientific/resource plans and decision evidence; act autonomously when the action fits Kaggle rules and the existing $0 spending constraint. First place remains an objective requiring actual final private leaderboard evidence.
+
+The current ledger cap is **129,600 GPU seconds (36 hours)**. The 57,600-second increase is committed to one exact Ticket 51 scoring attempt. Job 7966 completed Ticket 39 analysis before that scoring reservation; its full 161-second controller allocation is charged. Existing unknown hidden allocations retain their full conservative charges. One active or pending GPU request across backends, CPU/storage ceilings, frozen experiment identities and protection of prior artifacts remain applicable. Any subsequent resource change must have a concrete, justified campaign decision recorded under this owner authorization; it must not silently erase accounting or bypass official limits.
+
+Authorization: [owner instructions](resource-approvals/campaign-owner-autonomy-20261001.json), [exact scoring approval](resource-approvals/ticket51-frontier-scoring-20261001.json), [applied cap amendment](resource-approvals/cap-amendment-20261001.json).
 
 ### Existing workflow and interfaces
 

@@ -115,3 +115,83 @@ This register records exact model experiments and their terminal candidate dispo
 - **Controls:** ConvNeXt report versus its gold-only `0.603156` gives `+0.056791` with interval `[+0.015940,+0.096772]`, all three folds positive. Feature-zero controls and within-fold permutations show image signal, on the repeatedly reused 58-study development cohort. Gold/report pair initialization and gold exposure match; all gold and report exposure hashes match their fixed ResNet counterparts. All 116 held-out checkpoint predictions replay exactly.
 - **Compute:** CPU jobs `7934` pilot, `7935/7936` extraction, `7937` independent verification, `7938` training/analysis all completed `0:0`, no GPUs and zero external spend. Allocated node seconds: `36 + 1529 + 1499 + 38 + 85 = 3187` (0.8853 node hours). Private output validation sealed all features and the pooled bank. This experiment leaves the 72,000-GPU-second ledger unchanged.
 - **Evidence:** `artifacts/private/ticket50-convnext-supervision/analysis.md` and `analysis.json`; exact training v2 plan SHA-256 `924aa958c9fc0fc50b709a0b5057c1272833d69aaceb0c100b870ee861bb47d9`. Tickets 48/49 retain checkpoint admission, feature source identities, complete verification and actual allocation evidence. Preparation v1 was superseded before execution for an analysis-schema lookup repair; scientific choices were unchanged.
+
+
+## September 30 — current readiness audit and remaining selected branches
+
+This is a retrospective consolidation of existing selected runs, not a claim
+that registration occurred before their original execution. Source plans and
+approvals retain their original selection timestamps; no timestamps or branch
+decisions are inferred from file modification times. Earlier detailed entries
+remain authoritative for their recorded outcomes.
+
+**Fallback readiness:** verified separately from final freeze. Fresh authenticated
+observations confirm submission **56515942 COMPLETE / 0.498**, exact source
+script **352323130**, notebook version **1**, and submission **56705536 COMPLETE /
+0.936**, exact source script **354125287**, notebook version **2**. Both current
+remote code-cell sets still match their preserved local notebooks; both are
+private, internet-off and terminal. The 0.936 result is a scored provisional
+public baseline, not final candidate selection.
+
+Read-only local verification accepted all **40 candidate artifacts**, all **75
+historical delivery payload files** and the exact offline runtime pins for the
+0.498 fallback. Payload digest remains
+`b78c5f717832b0f4712a8528bfb6695c74cf2d33403b06d5060277d4b4aef2d5`.
+The retained three-study CSV still matches its recorded hash, exact schema,
+finite bounds and archived input-order proof, with zero decode failures or
+fallbacks. This is an integrity recheck of preserved evidence, not another
+inference or hidden-scale runtime claim. Private audit and exact remote/source
+observations: `artifacts/private/ticket41-readiness-audit-v1/`.
+
+**Final-freeze readiness:** blocked. Completed/inconclusive branch evidence is
+not rewritten as a terminal promotion or scientific failure. Outstanding branch
+and delivery decisions remain visible:
+
+| Selected branch | Current authoritative state | Final-freeze consequence |
+| --- | --- | --- |
+| Tickets 29/30/35, diagnosis/admission/preparation | Completed supplying evidence; frozen sources/folds/labels retained | Supplies comparisons; no standalone model promotion |
+| Tickets 31/32, initial ResNet | Completed; provisional/inconclusive, no final promotion | Earlier short-budget result retained; final disposition remains separate |
+| Ticket 33, GPU compatibility/recovery | Approved Kaggle demonstration complete; original Slurm accounting unknown and conservatively charged | Hardware evidence only; no candidate decision |
+| Tickets 34/36, report supervision | Complete; Ticket 36 advanced to separate review, paired interval crosses zero | Separate candidate decision remains open; later Ticket 44 does not delete this branch |
+| Ticket 37, local extractor | Terminal rejection under its frozen admission policy | Outputs remain inadmissible; no downstream expansion |
+| Ticket 38, frozen DINOv2 | Complete original three-fold comparison; not selected/promoted, uncertainty crosses zero | Preserve exact old comparison; any new budget/representation experiment is separately registered |
+| Ticket 39, layer4 fine-tuning | All three GPU fold runs complete, but final analysis attempts 7856/7858 failed; exact GPU replay proposal awaits resource-scope approval | Selected branch remains open. No completed comparison or promotion is claimed |
+| Ticket 40, adjacent context | Never selected or executed; original Ticket 39 instruction explicitly excludes starting it | No activation inferred from broad campaign objective |
+| Ticket 44, 1,500-step ResNet heads | Complete, image signal established; report increment inconclusive, no promotion | Experimental result retained; not a final candidate choice |
+| Tickets 48–50, ConvNeXt and fixed half blend | Complete, inconclusive/no promotion under prespecified gate | No encoder or blend promotion inferred from secondary report benefit |
+| Ticket 45, public ensemble | Exact scored baseline 0.936 complete; hidden VM timing unknown | Provisional scored route; local evidence/rights/final-selection review remains separate |
+| Tickets 46/47, four-reader frontier | Complete CPU asset audit and visible inference; saved full-workload version 3 verified | Visible reproducibility is established; no measured score or final promotion |
+| Ticket 51, exact frontier scoring | Fully prepared, needs separate 20-to-36 GPU-hour budget decision | Selected follow-up remains unscored; no active GPU request |
+
+Ticket 39's frozen plan is
+`artifacts/private/ticket39-resnet18/ticket39-run-plan-v2.json`, SHA-256
+`19ac1c8a6c5310615862e82e5384f1929f102e25a81a70bb08f88cbd35e5c18e`.
+Its current `ticket39-execution-status.json` says all GPU stages completed and
+reconciled. CPU replay differed from saved CUDA scores by
+`6.085634231567383e-05`, failing the unchanged `1e-6` gate. The pending exact
+one-GPU, 1,800-second attempt-3 proposal does not authorize itself. Historical
+queued-job comments in Ticket 39 are superseded by this preserved current
+execution state; there is no live Ticket 39 job.
+
+Current ledger: **69,348 of 72,000 GPU seconds charged, zero reserved, 2,652
+remaining**. Pending approvals are not live jobs or verified waits. Neither
+phase-A readiness nor ticket closure unblocks final selection while selected
+branches or their final dispositions remain open. Phase B has not run.
+
+## Ticket 52 — registered before execution, 2026-09-30
+
+One private CPU duration experiment is selected for development evaluation: three frozen DINOv2 gold-only heads at 1,500 steps, exact 100-step source replay gate, preserved 1,500-step ResNet primary control, short DINOv2 secondary control and zero-image ablation. Plan SHA-256 `377d95efe7e86f1e342a8a5878ea61fef48da9b85de257c471932df06ddad3f0`. The exact one-job, sixteen-CPU, 64-GiB, one-hour, zero-GPU resource admission applies the existing broad campaign authorization without expanding Ticket 39 or the GPU cap. Reused development folds, unresolved DINOv2 release rights and no final selection remain explicit. Result pending.
+
+### Ticket 52 terminal disposition
+
+Job 7953 completed `0:0`, 39 CPU wall seconds, zero GPU/spend. All three source and final checkpoint replays are exact; 277 frozen files and all 58 OOF outputs independently verified. Long DINOv2 AUC 0.609957 versus long ResNet gold-only 0.628390, paired delta −0.018433 with interval [−0.084528, +0.041067]; two negative folds. **Inconclusive/no promotion**, primary advancement gate failed. Its improvement over the short DINOv2 arm does not select a candidate or reopen the original Ticket 38 outcome. [Complete evidence](../../docs/evidence/ticket-52-dinov2-duration.md). No live CPU or GPU request remains.
+
+## October 1 — actual approvals, completed analysis and active scoring
+
+This entry supersedes the September 30 pending-approval snapshot. Owner authorization is retained in `resource-approvals/campaign-owner-autonomy-20261001.json`; exact Ticket 39/Ticket 51 proposals were approved and subsequent Kaggle-compliant campaign decisions may proceed autonomously with $0 spend.
+
+**Ticket 39 terminal disposition:** experiment comparison completed; **inconclusive/no promotion**. Job 7966 completed 0:0 and 161 GPU seconds are charged from full controller start/end. Same-device checkpoint replay is exact across all 58 predictions and all three fold checkpoints. Fine-tuned0.518355 versus original short frozen 0.464313; paired delta +0.054042, interval [+0.001902,+0.106931]. Within-fold permutation p_upper 0.052895 and zero-image interval crossing zero fail to establish measurable image signal. Independent checkpoint/membership/source checks and metric recomputation passed. Full hidden-scale three-fold delivery cost remains unverified; no candidate admitted. [Detailed result](../../docs/evidence/ticket-39-fine-tuning.md).
+
+**Ticket 51 active:** exact saved version 3 accepted as submission**56739912**, script**354194017**, after fresh identity/quota/official-limit/concurrency checks. Source, licensing and strict visible-execution gates retain their prior evidence. State initially PENDING, no score. The 36-hour cap amendment was applied only after Ticket 39 reconciliation. Ledger charge 69,509 seconds plus57,600 reserved, leaving 2,491 unreserved. Earlier unknown hidden charges remain intact. Persistent exact-reference monitor records terminal evidence and conservative accounting; no duplicate create call is authorized by an observation failure.
+
+Final freeze is still open pending this measured result and remaining candidate review. The broader owner authorization removes repeated permission questions; it does not replace scientific, rights, runtime or official selection checks. Phase B has not run and final private first place is unverified.

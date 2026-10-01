@@ -6,7 +6,7 @@
 
 **Parent:** [RSNA leaderboard campaign with zero external spend](../spec.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Execution constraints:** Follow the approved spec: zero external spend; significant work through Slurm; existing CPU ceilings; one active or pending GPU request and 20 allocated GPU-hours across the first campaign, including failures and retries; 2 TB soft storage budget; exact resource and delivery approvals where required. Questions go in visible chat. Synthetic checks establish software behavior only. No project-imposed candidate or submission-count cap.
 
@@ -16,14 +16,16 @@
 
 - [x] Freeze one fine-tuning hypothesis, trainable encoder portion, learning schedule, reference/supervision policy, seed, checkpoint rule and all three fold budgets.
 - [ ] If optional weak supervision or an alternative representation supplies this run, add the actual supplying ticket as a blocker before execution; do not gate gold-only fine-tuning on unused branches.
-- [ ] Use independent fold checkpoints and caches for adapted encoders; do not reuse another fold's fine-tuned features or fit to held-out images.
-- [ ] Run through the approved GPU and recovery interfaces, charging attempts to the shared budget and preserving an unchanged scientific identity across permitted retries.
-- [ ] Complete matched OOF comparison against the relevant frozen-encoder candidate, reporting uncertainty, target/fold behavior and any changed exposures.
+- [x] Use independent fold checkpoints and caches for adapted encoders; do not reuse another fold's fine-tuned features or fit to held-out images.
+- [x] Run through the approved GPU and recovery interfaces, charging attempts to the shared budget and preserving an unchanged scientific identity across permitted retries.
+- [x] Complete matched OOF comparison against the relevant frozen-encoder candidate, reporting uncertainty, target/fold behavior and any changed exposures.
 - [ ] Measure full candidate inference cost, model size and actual memory; three fine-tuned folds do not inherit one-encoder inference timing.
-- [ ] Demonstrate checkpoint-to-offline-output reconstruction and failure on mismatched artifacts through the existing lifecycle tests.
-- [ ] Record the promotion/rejection decision and evidence in the final-freeze register; no incomplete fold set qualifies for promotion.
+- [x] Demonstrate checkpoint-to-offline-output reconstruction and failure on mismatched artifacts through the existing lifecycle tests.
+- [x] Record the promotion/rejection decision and evidence in the final-freeze register; no incomplete fold set qualifies for promotion.
 
 ## Completion evidence
+
+October 1: experimental comparison is complete and the branch closes as **inconclusive/no promotion**. Optional supplying branches were unused. Full hidden-scale three-fold delivery cost remains unverified; that delivery criterion was not passed and no deliverable candidate is admitted. The branch disposition does not waive the gate for a future proposed candidate.
 
 Record the demonstration, focused boundary checks, exact artifact identities, measured scope, unresolved limitations and any required branch disposition. A ready-for-agent label authorizes preparation within the spec; it does not establish resource approval or successful scientific performance.
 
@@ -54,3 +56,15 @@ The corrected smoke job `7787` remains the sole pending GPU request. Fresh Slurm
 ### 2026-09-29 06:45 IST execution checkpoint
 
 Job `7787` remains the sole pending GPU request (`PENDING/Resources`), without allocation, restarts, or runtime. Slurm estimates 2026-09-30 18:10:45 Asia/Kolkata; accounting remains unreachable, and no charge is inferred. No new request was submitted. See the execution-status JSON and scheduler-observation JSONL for the latest check.
+
+### 2026-09-30 — current execution-state reconciliation
+
+The preserved execution-status JSON supersedes the older queued-job comments: corrected smoke job **7816** and GPU fold jobs **7845 / 7849 / 7854** all completed and were reconciled. The fold-1 launcher failure **7847** allocated zero GPU seconds. No live Ticket 39 request remains. Scientific configuration and final-step selection are unchanged.
+
+Final analysis is still incomplete. CPU attempts **7856 / 7858** failed (missing cache path, then CPU-versus-CUDA replay discrepancy). The latter maximum error **6.085634231567383e-05** exceeds the unchanged **1e-6** replay gate. No completed paired comparison or promotion is claimed. An exact one-A100, 1,800-second final-analysis attempt-3 amendment is prepared at `artifacts/private/ticket39-resnet18/ticket39-final-analysis-gpu-replay-proposal-v1.json`, SHA-256 `559fe96debdbe6bd18a240dda1d15bb079da5898ac43168ba62847467ea2d41d`; it awaits approval to change final-analysis resource scope. Ticket 40 remains explicitly excluded by the existing owner instruction.
+
+## Answer — October 1
+
+The actual owner approved the exact attempt-3 replay proposal. Job **7966** completed `0:0` on one A100 in **161 allocated GPU seconds**, with a separate 90-second queue wait; controller evidence is retained and the ledger reconciled before frontier scoring. All 58 OOF predictions and six baseline/candidate checkpoint hashes passed independent verification; all three same-device replay errors are zero under the unchanged 1e-6 gate.
+
+Fine-tuned AUC **0.518355** versus short frozen **0.464313**, paired delta **+0.054042**, 95% interval **[+0.001902,+0.106931]**. Two folds improve and one declines. Image-information controls are inconclusive: within-fold permutation p_upper **0.052895**, and full-minus-zero-image interval crosses zero. The branch closes as **inconclusive/no promotion**; no final-delivery candidate is admitted. CPU held-out inference and model/VRAM costs are reported; full hidden-scale delivery runtime remains unverified. No optional weak/representation branch supplied this gold-only run. [Evidence and limits](../../../docs/evidence/ticket-39-fine-tuning.md).

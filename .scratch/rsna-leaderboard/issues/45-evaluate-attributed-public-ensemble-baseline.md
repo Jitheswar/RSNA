@@ -1,7 +1,7 @@
 # 45: Evaluate an attributed public-ensemble baseline
 
 Type: task
-Status: claimed
+Status: resolved
 Labels: ready-for-agent
 Parent: [RSNA leaderboard campaign](../spec.md)
 
@@ -16,8 +16,8 @@ Evaluate the already prepared public ensemble as a stronger scored baseline whil
 - [x] Pin local request/source identity, downloaded remote code/metadata and actual canonical notebook handle. Preserve every failed observation and handle reconciliation.
 - [x] Save and verify the exact full-workload version, retaining the tested model/inference logic and a bounded hidden-test execution limit.
 - [x] Sequentially reserve all GPU work against the 72,000-second shared campaign, one active request at a time; verify free quota and paid scaling disabled. Record measured allocation separately from conservative charges.
-- [ ] Submit the exact verified notebook version through the code-competition API and record its actual submission reference, terminal status, score and any runtime failure. Do not submit the three-row visible CSV as if it covered the hidden test.
-- [ ] Preserve the original scored fallback and record this baseline's provisional disposition without claiming first place or selecting a final candidate.
+- [x] Submit the exact verified notebook version through the code-competition API and record its actual submission reference, terminal status, score and any runtime failure. Do not submit the three-row visible CSV as if it covered the hidden test.
+- [x] Preserve the original scored fallback and record this baseline's provisional disposition without claiming first place or selecting a final candidate.
 
 ## Execution evidence
 
@@ -46,3 +46,12 @@ The independent user service `rsna-public-ensemble-scoring-56705536.service` pol
 The first local helper invocation exposed a missing NumPy dependency in the isolated Kaggle SDK environment before any API call or ledger mutation. The operational repair keeps existing environments separate: SDK Python performs authenticated observation; repository Python applies validated accounting only after terminal evidence. No package installation or scientific configuration change was made. The repaired helper observed **56705536 PENDING** at **12:09:31 UTC** and reported `ledger_changed=false`. The original monitoring service remains live.
 
 **25 focused tests passed** for campaign and terminal-accounting boundaries, including exact identity, both assigned GPUs, full unknown exposure, unchanged headroom, refusal of pending evidence, artifact integrity and no double charge. No scoring attempt was added or retried. A terminal COMPLETE status without a valid score or with an error description must still be treated as a delivery failure in the scientific disposition; accounting termination alone does not establish model success.
+
+
+## Answer
+
+Authenticated submission **56705536** is **COMPLETE**, public score **0.936**, private score unavailable, empty error description. The exact source URL still points to script version **354125287** of saved notebook version 2. A fresh authenticated observation at **2026-09-30 16:04 UTC** reconfirmed these facts and the already reconciled ledger. No duplicate scoring submission was issued.
+
+Terminal evidence is `artifacts/private/public-notebook-adoption/scored-baseline-v1/terminal-scoring-evidence.json`; reconciliation observations and the unchanged accepted request remain beside it. With hidden VM allocation timing unavailable, the full **57,600 GPU-second** scoring reservation was conservatively charged. Waiting duration and visible code runtime were not substituted for hidden allocation evidence.
+
+**Disposition: scored public baseline, provisional; final selection pending.** The earlier submission **56515942**, public score **0.498**, remains preserved. The new public score is evidence for this account's stronger baseline; it does not prove final private rank, first place, or independent local OOF improvement. Ticket 47's separately bounded visible inference can now proceed after exact resource and source gates.

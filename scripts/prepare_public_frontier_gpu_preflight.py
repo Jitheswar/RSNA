@@ -92,7 +92,12 @@ _frontier_sampling_thread.start()
     code += '''try:
     for index,source in UPSTREAM_CELLS:
         print('UPSTREAM_CELL_START',index,flush=True)
-        exec(compile(source,f'upstream-cell-{index}','exec'),globals())
+        # CoAt launchers export helpers with inspect.getsource. Preserve the
+        # exact original cell text for those child-worker source exports.
+        import linecache
+        filename=f'<rsna-upstream-cell-{index}>'
+        linecache.cache[filename]=(len(source),None,source.splitlines(keepends=True),filename)
+        exec(compile(source,filename,'exec'),globals())
         print('UPSTREAM_CELL_COMPLETE',index,flush=True)
     work=Path('/kaggle/working')
     audit=json.loads((work/'btkd_v559_complete.json').read_text())
