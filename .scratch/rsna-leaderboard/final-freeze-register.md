@@ -2,6 +2,45 @@
 
 This register records exact model experiments and their terminal candidate disposition. A one-fold result is development evidence and does not by itself promote a candidate.
 
+## October 1 current continuation — public meniscus preparation
+
+[Ticket 53](issues/53-admit-public-meniscus-specialist.md) is selected for one
+bounded paired development comparison. Actual private CPU asset/load preflight
+v1 completed: eight prediction-bearing files, 233 FP32 tensors, 42.493 seconds,
+zero GPU/spend. One fixed 10% Medial Meniscus overlay preserves all 23 anchor
+code cells and requires eleven other columns to match exactly. Twelve focused
+tests pass; GPU inference, paired development results and predictive gain remain
+unverified. Actual real-MRI CPU preflight also passed: all 58 studies and 273
+selected slot-series, 72.203 seconds, zero decode failures/fallbacks, zero GPU.
+The retained 471,453,696-byte cache and mask preserve their bytes after unlink.
+Exact paired request **v4** binds these admitted pixel/mask hashes, checksum
+`0e490a080a5c51c1aeaaab4e67da5673129d47ebec22a48173eecf0e3fa78ed6`.
+Draft v3 was superseded before launch; the model and vote remain unchanged.
+
+No GPU launch, cap amendment or final promotion has occurred. Proposed next
+resource decision is 5,400 GPU seconds and a 36→38-hour cap under standing
+authorization, after reconciling exact accepted frontier **56739912**, still
+PENDING at **04:33:19 UTC**. The existing 0.936 and 0.498 fallbacks remain.
+This entry supersedes older operational snapshots only for the current next
+action. [Complete evidence](../../docs/evidence/ticket-53-public-meniscus.md).
+
+## Ticket 54 — fixed 7,500-step ConvNeXt report heads
+
+[Ticket 54](issues/54-test-longer-convnext-report-head.md) completed and closes
+as **inconclusive/no promotion**. One CPU job **7975**, `0:0`, **256 allocated
+node seconds**, zero GPU/spend. Six final runs, all original 1,500-step prefixes
+and all 116 final predictions passed exact replay with frozen 16-thread settings.
+A failed four-thread verification probe is retained; the 1e-6 gate was unchanged.
+
+Report OOF development AUC **0.691065** vs short **0.659947**, delta
+**+0.031119**, paired 95% interval **[-0.004120,+0.067897]**, one negative fold.
+Matched long report-minus-reference **+0.089610**, interval
+**[+0.044308,+0.138018]**, all folds positive; image-ablation controls also show
+development image signal. Every fold exposed all admitted reports with 15,000
+report draws and matched gold exposure. These are reused development results,
+not a measured complement to D4 or a competition score. No automatic promotion,
+blend, submission or final selection. [Evidence](../../docs/evidence/ticket-54-long-convnext-report-head.md).
+
 ## Ticket 44 — full weak-cohort exposure, 1,500 steps
 
 - **Status:** six completed CPU training runs; complete three-fold matched comparison; **inconclusive_no_promotion**. Final freeze remains blocked.

@@ -1,0 +1,30 @@
+{
+  "authorization_path": "/home/ch.jitheswar/RSNA/.scratch/rsna-leaderboard/resource-approvals/campaign-owner-autonomy-20261001.json",
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Test underexposure of already admitted report-supervised frozen features while the sole GPU scoring request is pending.",
+  "candidate_promotion": false,
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "gpu_ledger_cap_changed": false,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "new_gpu_request": false,
+  "new_weight_download": false,
+  "plan_sha256": "1b77479d88d1a3686a14fc292449456c522dd689b579fb07a9ddda5c38abb593",
+  "recorded_at_utc": "2026-10-01T04:45:42.611027+00:00",
+  "resources": {
+    "code_watchdog_seconds": 1200,
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_concurrent_jobs": 1,
+    "maximum_launch_attempts": 1,
+    "memory_gib": 64,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "requeue": false,
+    "tasks": 1,
+    "walltime_seconds": 1800
+  },
+  "schema_version": "rsna-campaign-autonomous-decision-v1"
+}

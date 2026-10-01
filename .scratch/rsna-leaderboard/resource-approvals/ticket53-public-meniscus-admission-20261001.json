@@ -1,0 +1,19 @@
+{
+  "authorization_path": ".scratch/rsna-leaderboard/resource-approvals/campaign-owner-autonomy-20261001.json",
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Standing owner authorization for justified Kaggle-compliant zero-spend campaign decisions without repeated questions.",
+  "cpu_request_sha256": "4d8bb0998db39516dd665da68a0883aec5b21ef026d4d6c4bfa33a37c86de28f",
+  "cpu_validation_sha256": "f9b1ed81f2ffa6fc51e2f934a4d9a99ebfae564041e045a18b6378a3385e153d",
+  "decision": "Executed the specified zero-GPU private CPU admission; prepared one fixed paired development request.",
+  "decision_made_by": "campaign agent under standing authorization",
+  "development_request_sha256": "aa15ee646939a2ee98779cfdcdf8da593100b3d3109522ca9e058eb9ba3580d3",
+  "external_spend_usd": 0,
+  "final_selection": false,
+  "gpu_launch_performed": false,
+  "gpu_ledger_cap_changed": false,
+  "gpu_seconds_used_this_step": 0,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "next_resource_decision": "After terminal scoring reconciliation, refresh live resource gates and record/apply the concrete 36-to-38-hour cap proposal before the one 5400-GPU-second development request.",
+  "recorded_at_utc": "2026-10-01T03:57:41.810056+00:00",
+  "schema_version": "rsna-campaign-autonomous-decision-v1"
+}
