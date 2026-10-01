@@ -9,6 +9,15 @@ Refresh live observations before acting.
 
 ## Resumed continuation — October 1, 06:21 UTC
 
+Update **06:45 UTC**: [Ticket 56](issues/56-measure-report-supervised-encoder-adaptation-cost.md)
+also completed, job **7982**, **28 CPU-node seconds**, zero GPU/spend. Cached
+frozen-prefix adaptation is **2.59x** faster with identical real updates. Its
+cost scenario passes; full-cohort extraction/training and predictive benefit
+remain unverified. Next CPU action is
+[Ticket 57](issues/57-materialize-frozen-resnet-prefix-cohort.md): freeze complete
+unfitted activations with a fresh resource/storage decision. No CPU job is live.
+Exact D4 scoring was still **PENDING at 06:36:44 UTC**; observer stays running.
+
 Ticket 55 is now **resolved, inconclusive/no promotion**. Training recovery
 **7978** completed all six 7,500-step runs, all original prefixes match exactly,
 and independent verifier **7981** reproduced **116** final predictions and all
@@ -37,9 +46,10 @@ These observations supersede the operational snapshots below; refresh before use
    retain its reservation and use admitted CPU work.
 3. [Ticket 55](issues/55-test-matched-long-resnet-report-head.md) is now complete.
    Preserve its six final runs and independently verified inconclusive disposition.
-   Do not repeat its consumed training or validation requests. Further CPU work
-   needs a new prospective hypothesis and resource decision; the fixed blend does
-   not pass its declared improvement gate.
+   [Ticket 56](issues/56-measure-report-supervised-encoder-adaptation-cost.md) is
+   also complete. Next CPU work is [Ticket 57](issues/57-materialize-frozen-resnet-prefix-cohort.md),
+   with a new exact plan/resource decision. Do not repeat consumed requests;
+   the fixed blend does not pass its declared improvement gate.
 4. Next GPU work: [Ticket 53](issues/53-admit-public-meniscus-specialist.md), immutable
    paired request **v4**. Launch after scoring is terminal/reconciled, all GPU
    backends are clear, and fresh quota/scaling/resource-decision gates pass.

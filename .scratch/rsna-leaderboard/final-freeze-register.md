@@ -2,6 +2,18 @@
 
 This register records exact model experiments and their terminal candidate disposition. A one-fold result is development evidence and does not by itself promote a candidate.
 
+## Ticket 56 — CPU adaptation cost pilot
+
+[Ticket 56](issues/56-measure-report-supervised-encoder-adaptation-cost.md) resolved
+as **eligible for separate full-route planning**. Job **7982** completed `0:0`,
+**28 CPU-node seconds**, zero GPU/spend. Four training reports, 232 real slices,
+native/cached logits and final updates identical. Median update **1.315271 →
+0.508122 s**, unchanged earlier encoder weights and normalization buffers.
+No fitted candidate/checkpoint or AUC. Registered cost scenario **2.305 node hours**
+with 2x allowance, **37.586 GB** activation payload, subject to full-cohort I/O
+and final evaluation. [Evidence](../../docs/evidence/ticket-56-cpu-adaptation-cost.md).
+Next CPU preparation: [Ticket 57](issues/57-materialize-frozen-resnet-prefix-cohort.md).
+
 ## Ticket 55 — completed matched long ResNet and fixed blend
 
 [Ticket 55](issues/55-test-matched-long-resnet-report-head.md) closes as
