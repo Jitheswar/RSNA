@@ -234,3 +234,36 @@ This entry supersedes the September 30 pending-approval snapshot. Owner authoriz
 **Ticket 51 active:** exact saved version 3 accepted as submission**56739912**, script**354194017**, after fresh identity/quota/official-limit/concurrency checks. Source, licensing and strict visible-execution gates retain their prior evidence. State initially PENDING, no score. The 36-hour cap amendment was applied only after Ticket 39 reconciliation. Ledger charge 69,509 seconds plus57,600 reserved, leaving 2,491 unreserved. Earlier unknown hidden charges remain intact. Persistent exact-reference monitor records terminal evidence and conservative accounting; no duplicate create call is authorized by an observation failure.
 
 Final freeze is still open pending this measured result and remaining candidate review. The broader owner authorization removes repeated permission questions; it does not replace scientific, rights, runtime or official selection checks. Phase B has not run and final private first place is unverified.
+
+## October 1 — session transfer after CPU work
+
+[Current handoff](session-handoff-20261001.md) records the resume order and exact
+live-state snapshot. It supersedes older service/status instructions. Submission
+**56739912** remains **PENDING** in the observer's **05:56:06 UTC** observation;
+its observer is active, the old continuation coordinator is stopped, and no CPU
+job is live. Ledger remains **69,509 charged / 57,600 reserved / 129,600 cap**.
+
+**Ticket 53:** actual private CPU bundle admission and all 58 real-MRI cache
+preprocessing checks passed, zero GPU/spend. Paired request **v4** is prepared,
+unlaunched and unreserved, with no cap change applied. Predictive benefit remains
+unmeasured. Execute only after terminal scoring reconciliation and fresh resource
+gates. [Evidence](../../docs/evidence/ticket-53-public-meniscus.md).
+
+**Ticket 54:** six matched 7,500-step ConvNeXt heads completed, job **7975**,
+**256 allocated CPU-node seconds**, zero GPU/spend. Original prefixes and 116
+final predictions reproduce exactly at 16 threads. Report AUC **0.691065** versus
+short **0.659947**, paired delta **+0.031119**, interval **[-0.004120,+0.067897]**,
+one declining fold: **inconclusive/no promotion**. Positive report and image
+controls do not establish D4 complementarity or a competition gain.
+[Evidence](../../docs/evidence/ticket-54-long-convnext-report-head.md).
+
+**Ticket 55:** the fixed 7,500-step ResNet comparison and one **50/50** report-head
+blend were registered before long predictions. Original plan
+`49c1e99220ff4df1b8bcc23253114caa6354b8d9d0c7cf749afaa483d214fedd`, job **7977**,
+failed `1:0` after **32 CPU-node seconds**, zero GPU/spend. Its first 1,500-step
+weights/predictions were exact; an absent-report metadata mismatch stopped the
+run. Repair and four regression tests passed. Original attempt consumed;
+separate diagnosed **v2** recovery is **not frozen or launched**. Six prefix gates,
+final runs, independent replay and comparisons remain open. No long ResNet,
+blend benefit, promotion or final selection is claimed.
+[Failure evidence and recovery](../../docs/evidence/ticket-55-resnet-recovery.md).
