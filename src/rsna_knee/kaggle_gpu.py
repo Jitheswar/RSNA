@@ -594,15 +594,17 @@ def _run_kaggle_cpu_preflight(
     )
     checks = dict(base.checks)
     details = dict(base.details)
+    visible_vram_bytes = runtime.get("visible_vram_bytes")
+    available_vram_bytes = runtime.get("initial_vram_available_bytes")
     checks["real_t4_cuda"] = bool(
         runtime.get("accelerator") == KAGGLE_ACCELERATOR
         and runtime.get("visible_gpu_count") == KAGGLE_VISIBLE_GPU_COUNT
         and "t4" in str(runtime.get("visible_device_name", "")).casefold()
     )
     checks["assigned_vram_measured"] = bool(
-        isinstance(runtime.get("visible_vram_bytes"), int)
-        and isinstance(runtime.get("initial_vram_available_bytes"), int)
-        and runtime.get("initial_vram_available_bytes") > 0
+        isinstance(visible_vram_bytes, int)
+        and isinstance(available_vram_bytes, int)
+        and available_vram_bytes > 0
     )
     details["kaggle_gpu_preflight"] = {
         "accelerator": KAGGLE_ACCELERATOR,

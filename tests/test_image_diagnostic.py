@@ -14,6 +14,7 @@ from rsna_knee.image_diagnostic import (
     _check_inputs,
     _check_slurm_context,
     _example_summary,
+    _example_tensors,
     _measure_tree,
     _pixel_and_geometry_summary,
     admit_mock_gpu_request,
@@ -410,6 +411,25 @@ def test_pixel_and_numerical_gates_accept_actual_real_inference_record_shapes() 
     assert pixel_summary["anatomical_plane_series_counts"] == {"sagittal": 8}
     assert example_summary["minimum_valid_slice_count_per_study"] == 3
     assert all(checks.values())
+
+
+@pytest.mark.parametrize("operation", ("summary", "tensors"))
+def test_real_image_diagnostic_rejects_feature_only_examples(operation: str) -> None:
+    example = TrainingExample(
+        study_instance_uid="feature-only-study",
+        images=None,
+        features=np.zeros((1, 1, 4), dtype=np.float32),
+        slice_mask=np.ones((1, 1), dtype=bool),
+        series_mask=np.ones(1, dtype=bool),
+        targets=np.zeros(12, dtype=np.float32),
+        supervision_mask=np.ones(12, dtype=bool),
+    )
+
+    with pytest.raises(DiagnosticError, match="requires packed images"):
+        if operation == "summary":
+            _example_summary((example,), expected_ids=(example.study_instance_uid,))
+        else:
+            _example_tensors((example,))
 
 
 def test_two_step_checkpoint_interval_captures_step_250_between_epoch_boundaries(tmp_path) -> None:

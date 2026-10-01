@@ -10,6 +10,7 @@ import resource
 import shutil
 import subprocess
 import time
+from typing import Mapping, cast
 
 import numpy as np
 import torch
@@ -74,7 +75,9 @@ def freeze() -> dict:
               t36.FOLD_MANIFEST_PATH, t36.INTEGRATION_PATH, t36.TICKET30_ARTIFACT,
               COMPARATOR / "plan.json", COMPARATOR / "analysis-recovery-v1/comparison.json",
               COMPARATOR / "learning-controls-v1/evidence.json"]
-    comparator_paths = {arm: [] for arm in ["reference-only", "report-supervision"]}
+    comparator_paths: dict[str, list[str]] = {
+        arm: [] for arm in ["reference-only", "report-supervision"]
+    }
     for arm in comparator_paths:
         for fold in range(3):
             path = COMPARATOR / arm / f"fold-{fold}/run.json"
@@ -206,8 +209,10 @@ def run(expected_sha: str) -> dict:
         raise ValueError("pooled bank feature lineage differs")
     uid_index = {uid: index for index, uid in enumerate(uids)}
     gold = {member.study_instance_uid: member for member in manifest.gold_memberships}
-    predictions = {arm: {} for arm in ["reference-only", "report-supervision"]}
-    zero_predictions = {arm: {} for arm in predictions}
+    predictions: dict[str, dict[str, list[float]]] = {
+        arm: {} for arm in ["reference-only", "report-supervision"]
+    }
+    zero_predictions: dict[str, dict[str, list[float]]] = {arm: {} for arm in predictions}
     run_records = []
     optimization = plan["optimization"]
     parameters = {key: optimization[key] for key in ["successful_steps", "batch_size", "initialization_seed",
@@ -226,10 +231,10 @@ def run(expected_sha: str) -> dict:
         targets = torch.zeros((len(uids), 12), dtype=torch.float32)
         mask = torch.zeros_like(targets, dtype=torch.bool)
         for uid in training_uids + heldout_uids + weak_uids:
-            values = gold[uid].reference_labels if uid in gold else admitted.by_study[uid].targets
-            for target, value in enumerate(values):
-                if value is not None:
-                    targets[uid_index[uid], target] = float(value)
+            label_values = gold[uid].reference_labels if uid in gold else admitted.by_study[uid].targets
+            for target, target_value in enumerate(label_values):
+                if target_value is not None:
+                    targets[uid_index[uid], target] = float(target_value)
                     mask[uid_index[uid], target] = True
         matched = []
         heldout_indices = [uid_index[uid] for uid in heldout_uids]
@@ -278,7 +283,7 @@ def run(expected_sha: str) -> dict:
         for key in ["initial_head_state_sha256", "gold_exposure_sequence_sha256"]:
             if matched[0][key] != matched[1][key]:
                 raise ValueError(f"matched gold/report pair differs: {key}")
-    resnet = {arm: {} for arm in predictions}
+    resnet: dict[str, dict[str, list[float]]] = {arm: {} for arm in predictions}
     for arm in resnet:
         for path in plan["comparator_paths"][arm]:
             resnet[arm].update(read(Path(path))["predictions"])
@@ -319,9 +324,16 @@ def run(expected_sha: str) -> dict:
         "Fixed 1,500-step matched runs use the same repeatedly reused 58-study development cohort. These are OOF development results; no competition score or final candidate is established.", "",
         "| Comparison | Baseline AUC | Candidate AUC | Delta | Paired 95% interval |",
         "| --- | ---: | ---: | ---: | --- |"]
-    for name, value in comparisons.items():
-        interval = value["paired_study_bootstrap"]["macro_auc"]
-        lines.append(f"| {name} | {value['baseline']['pooled_macro_auc']} | {value['candidate']['pooled_macro_auc']} | {value['delta']['pooled_macro_auc']} | {interval['lower']} to {interval['upper']} |")
+    for name, comparison in comparisons.items():
+        bootstrap = cast(Mapping[str, object], comparison["paired_study_bootstrap"])
+        interval = cast(Mapping[str, object], bootstrap["macro_auc"])
+        baseline_metrics = cast(Mapping[str, object], comparison["baseline"])
+        candidate_metrics = cast(Mapping[str, object], comparison["candidate"])
+        delta_metrics = cast(Mapping[str, object], comparison["delta"])
+        lines.append(
+            f"| {name} | {baseline_metrics['pooled_macro_auc']} | {candidate_metrics['pooled_macro_auc']} "
+            f"| {delta_metrics['pooled_macro_auc']} | {interval['lower']} to {interval['upper']} |"
+        )
     lines.extend(["", f"Disposition: **{disposition}**. Candidate promotion remains false.", "",
                   "The full evidence includes per-target support, undefined bootstrap outcomes, all fold deltas, descriptor-preserving feature ablations, 10,000 within-fold permutations, complete report-pool exposure and exact held-out checkpoint replay.", ""])
     with (ROOT / "analysis.md").open("x") as handle:

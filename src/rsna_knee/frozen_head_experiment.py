@@ -91,7 +91,9 @@ def train_head(
     head = build_head(initialization_seed)
     initial_hash = _model_state_sha256(head)
     optimizer = torch.optim.Adam(head.parameters(), lr=learning_rate)
-    gold_sequence, weak_sequence, losses = [], [], []
+    gold_sequence: list[str] = []
+    weak_sequence: list[str] = []
+    losses: list[float] = []
     source_counts = {kind: {"sample_exposures": 0, "supervised_entry_exposures": 0}
                      for kind in ["reference", "weak"]}
     attempts = skipped = 0

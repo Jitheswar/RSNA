@@ -407,7 +407,7 @@ def _load_report_evidence(
     if not image_admission_matches:
         raise SupervisionComparisonError("public report admission evidence disagrees with the private run")
     full_admission = _mapping(evidence.get("full_fold_supervision_admission"), "full-fold supervision evidence")
-    full_admission_fields = (
+    full_admission_fields: tuple[str, ...] = (
         "schema_version",
         "fold",
         "fold_manifest_checksum",

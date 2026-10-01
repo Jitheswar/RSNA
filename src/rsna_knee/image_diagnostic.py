@@ -887,6 +887,15 @@ def _pixel_and_geometry_summary(loaded: Sequence[LoadedStudy]) -> tuple[dict[str
     return summary, private_detail
 
 
+def _example_images(examples: Sequence[TrainingExample]) -> list[np.ndarray]:
+    images: list[np.ndarray] = []
+    for item in examples:
+        if item.images is None:
+            raise DiagnosticError("real-image diagnostic requires packed images")
+        images.append(item.images)
+    return images
+
+
 def _example_summary(examples: Sequence[TrainingExample], *, expected_ids: Sequence[str]) -> dict[str, object]:
     if tuple(item.study_instance_uid for item in examples) != tuple(expected_ids):
         raise DiagnosticError("training examples do not preserve the frozen study order")
@@ -895,7 +904,7 @@ def _example_summary(examples: Sequence[TrainingExample], *, expected_ids: Seque
         np.stack([item.targets * item.supervision_mask for item in examples]), axis=0
     ).astype(int)
     negatives = mask_counts.astype(int) - positives
-    finite_pixels = all(np.isfinite(item.images).all() for item in examples)
+    finite_pixels = all(np.isfinite(images).all() for images in _example_images(examples))
     valid_studies = 0
     valid_slice_count = 0
     valid_series_count = 0
@@ -926,7 +935,7 @@ def _example_summary(examples: Sequence[TrainingExample], *, expected_ids: Seque
 
 def _example_tensors(examples: Sequence[TrainingExample]) -> tuple[torch.Tensor, ...]:
     return (
-        torch.from_numpy(np.stack([item.images for item in examples])),
+        torch.from_numpy(np.stack(_example_images(examples))),
         torch.from_numpy(np.stack([item.slice_mask for item in examples])),
         torch.from_numpy(np.stack([item.series_mask for item in examples])),
         torch.from_numpy(np.stack([item.targets for item in examples])),

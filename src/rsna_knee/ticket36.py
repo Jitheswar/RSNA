@@ -13,6 +13,7 @@ import math
 import os
 import resource
 import shutil
+import sys
 import tempfile
 import time
 from dataclasses import replace
@@ -1016,6 +1017,13 @@ def freeze_ticket36_plan() -> Mapping[str, object]:
         * 4
     )
     checkpoint_bytes = 6 * 50_000_000
+    soft_budget_bytes = 2_000_000_000_000
+    projected_bytes_estimate = (
+        current_measured_bytes
+        + feature_bytes
+        + checkpoint_bytes
+        + (2 * config.max_series * config.max_slices * RESNET18_FEATURE_DIM * 4)
+    )
     storage_estimate = {
         "current_measured_roots_bytes": current_measured_bytes,
         "source_archive_bytes_counted_once": storage_ledger.get("source_archive_bytes"),
@@ -1031,14 +1039,11 @@ def freeze_ticket36_plan() -> Mapping[str, object]:
         * RESNET18_FEATURE_DIM
         * 4,
         "maximum_concurrent_jobs": 2,
-        "soft_budget_bytes": 2_000_000_000_000,
-        "projected_bytes_estimate": current_measured_bytes
-        + feature_bytes
-        + checkpoint_bytes
-        + (2 * config.max_series * config.max_slices * RESNET18_FEATURE_DIM * 4),
+        "soft_budget_bytes": soft_budget_bytes,
+        "projected_bytes_estimate": projected_bytes_estimate,
         "measurement_ledger_path": str((RUN_ROOT / "private/storage-ledger.json").resolve()),
     }
-    if int(storage_estimate["projected_bytes_estimate"]) > int(storage_estimate["soft_budget_bytes"]):
+    if projected_bytes_estimate > soft_budget_bytes:
         raise Ticket36Error("Ticket 36 projected storage exceeds the campaign soft budget")
     plan: dict[str, object] = {
         "schema_version": TICKET36_PLAN_SCHEMA,
@@ -1540,19 +1545,19 @@ def materialize_feature_batch(batch_index: int) -> Mapping[str, object]:
             raise Ticket36Error("Ticket 36 report feature batch differs from complete Ticket 35 inputs")
     evidence_path = FEATURE_ROOT / f"batch-{batch_index:03d}.json"
     if evidence_path.exists():
-        evidence = _read_json(evidence_path, "completed Ticket 36 feature batch evidence")
-        _verify_checksum_payload(evidence, "batch_evidence_sha256", "Ticket 36 feature batch evidence")
-        rows = evidence.get("features")
-        expected_uids = set(cast(Sequence[str], batch.get("study_uids", ())))
+        completed_evidence = _read_json(evidence_path, "completed Ticket 36 feature batch evidence")
+        _verify_checksum_payload(completed_evidence, "batch_evidence_sha256", "Ticket 36 feature batch evidence")
+        rows = completed_evidence.get("features")
+        completed_uids = set(cast(Sequence[str], batch.get("study_uids", ())))
         if (
-            evidence.get("schema_version") != TICKET36_FEATURE_BATCH_SCHEMA
-            or evidence.get("batch_index") != batch_index
-            or evidence.get("batch_identity_sha256") != _json_sha256(batch)
-            or evidence.get("feature_identity_fingerprint") != plan.get("feature_identity_fingerprint")
-            or evidence.get("study_count") != len(expected_uids)
+            completed_evidence.get("schema_version") != TICKET36_FEATURE_BATCH_SCHEMA
+            or completed_evidence.get("batch_index") != batch_index
+            or completed_evidence.get("batch_identity_sha256") != _json_sha256(batch)
+            or completed_evidence.get("feature_identity_fingerprint") != plan.get("feature_identity_fingerprint")
+            or completed_evidence.get("study_count") != len(completed_uids)
             or not isinstance(rows, list)
             or {str(_mapping(row, "Ticket 36 batch feature row").get("study_instance_uid")) for row in rows}
-            != expected_uids
+            != completed_uids
         ):
             raise Ticket36Error("existing Ticket 36 feature batch evidence has a different identity")
         for row_value in cast(Sequence[object], rows):
@@ -1577,7 +1582,7 @@ def materialize_feature_batch(batch_index: int) -> Mapping[str, object]:
                 != expected_kind
             ):
                 raise Ticket36Error("completed Ticket 36 feature file checksum changed")
-        return evidence
+        return completed_evidence
 
     if kind == "report_only":
         expected_uids = tuple(cast(Sequence[str], batch.get("study_uids", ())))
@@ -2702,7 +2707,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             result = run_ticket36_comparison()
     except (Ticket36Error, Ticket34Error, Ticket35Error, PreflightError, OSError, ValueError) as exc:
-        print(f"Ticket 36 failed: {exc}", file=os.sys.stderr)
+        print(f"Ticket 36 failed: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
     return 0

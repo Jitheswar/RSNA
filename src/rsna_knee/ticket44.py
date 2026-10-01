@@ -256,6 +256,8 @@ def _run_fold_arm(arm: str, fold: int, studies: Mapping, fold_manifest, integrat
         resume_from=latest if latest.is_file() else None,
         execution_attempt_id=attempt,
     )
+    if result.final_checkpoint_path is None:
+        raise Ticket44Error("completed training did not produce a final checkpoint")
     load_training_checkpoint(result.final_checkpoint_path, model=result.model, expected_config=config, expected_fold=fold)
     after = resource.getrusage(resource.RUSAGE_SELF)
     compute = {
