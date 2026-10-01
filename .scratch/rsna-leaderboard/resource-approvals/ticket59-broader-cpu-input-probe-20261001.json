@@ -1,0 +1,30 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Seek an accessible fatal preprocessing input using exact unchanged public-source fragments on a label-blind broader real-MRI cohort, after Gold58 GPU success failed to reproduce the hidden symptom. No model changes or inference; preserve trace and input identities.",
+  "candidate_promotion": false,
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "gpu_ledger_cap_changed": false,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "new_gpu_request": false,
+  "plan_sha256": "dc7834a855ffc29112b9fb3b1f65d0c28f649dee29f6f68ad1b387f9b8981a8e",
+  "recorded_at_utc": "2026-10-01T08:53:20.123989+00:00",
+  "resources": {
+    "code_watchdog_seconds": 3540,
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_concurrent_jobs": 1,
+    "maximum_launch_attempts": 1,
+    "maximum_pixel_cache_bytes": 3221225472,
+    "maximum_raw_mri_bytes": 34359738368,
+    "memory_gib": 32,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "requeue": false,
+    "tasks": 1,
+    "walltime_seconds": 3600
+  },
+  "schema_version": "rsna-campaign-autonomous-decision-v1"
+}

@@ -339,3 +339,19 @@ No CPU/GPU job is live. The old continuation coordinator remains stopped.
 Both scored fallbacks **0.936/0.498** are intact. Public leader **0.961** was
 last authenticated at 08:00:31 UTC. Final candidate, two selections and either
 first-place rank remain unestablished; refresh transient observations on resume.
+
+
+## October 1 — full-input diagnostic continuation supersedes the idle snapshot
+
+[Ticket 59](issues/59-diagnose-hidden-frontier-execution-failure.md) remains open.
+Broader **7992** completed `0:0`, **264 CPU-node seconds**, 256 studies / 48,870
+original DICOMs, zero failed decode/fallback events. The full original input scan
+now runs **7995 / 7996**, 2,204 / 2,203 disjoint studies, unchanged public DINO
+preprocessing, two bounded nonexclusive CPU jobs and zero GPU/model execution.
+Campaign plan `a2d7f3624f1798fc3ca591e9db6f83ca171bb97793cca43d19e2ca4c0c84c1b8`.
+Full-corpus result and hidden-failure reproduction remain pending. No ranked
+cause, recipe repair, candidate promotion or final selection. Unlaunched v1 was
+preserved after correcting its transcribed storage record; executed v2 measures
+directly. Best confirmed account **0.936**, leader **0.961** at **08:56:47 UTC**.
+GPU ledger unchanged; full unknown hidden charge and both fallbacks remain.
+[Evidence](../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).

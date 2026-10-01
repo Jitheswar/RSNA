@@ -1,10 +1,10 @@
 # RSNA campaign session handoff — October 1, 2026
 
-Authoritative update after completed work at **08:40 UTC**. Goal: first place
+Authoritative update after the completed broader probe and launched full scan. Goal: first place
 on **both public and final private leaderboards**; neither is established.
 Best confirmed account result **0.936**, submission **56705536**, script
 **354125287 / v2**. Previous **0.498** fallback **56515942** is preserved.
-Last authenticated public leader at **08:00:31 UTC**: **rhoskeri / 0.961**.
+Last authenticated public leader at **08:56:47 UTC**: **rhoskeri / 0.961**.
 No final selection has been performed. Refresh live observations before acting.
 
 ## Resume order
@@ -18,10 +18,13 @@ No final selection has been performed. Refresh live observations before acting.
    **57,600 GPU seconds** are fully charged. Do not repeat the consumed scoring
    request or infer a root cause from status `COMPLETE`.
 3. Continue [Ticket 59](issues/59-diagnose-hidden-frontier-execution-failure.md).
-   Phase 1 still lacks a red-capable hidden-failure loop. The unchanged-anchor
-   Ticket 53 Gold58 run passed, so it is not a reproduced hidden error. A
-   bounded broader real-MRI CPU input probe is the next useful diagnostic
-   preparation; freeze a concrete request/resource decision before execution.
+   Phase 1 still lacks a red-capable hidden-failure loop. Gold58 GPU and the
+   256-study CPU input probe passed. Full-source scan **7995 / 7996** is running
+   at `artifacts/private/public-frontier-adoption/full-cpu-input-probe-v2/`.
+   Inspect actual job state, partition outputs and exact terminal observers;
+   never relaunch consumed plans. After both terminate, independently verify
+   disjoint membership, complete input coverage, source/decision identities,
+   actual events and CPU accounting before deciding on any further probe.
    Do not rank causes, relax guards or claim a repair before reproducing the
    actual symptom. A recovered runtime needs a distinct validation/scoring plan.
 4. Preserve completed CPU experiments 55–58 and their no-promotion results.
@@ -60,6 +63,32 @@ Fit plan `81da4c9de7b400ab232df49166ba2d668167e806e40502b76d0123036cf6f388`;
 validation `57a44ce3b24dccd7841d2b062ae1dc0a012e3a0408786f3d1fccdbfaa11502df`.
 No D4 complementarity or leaderboard improvement. [Evidence](../../docs/evidence/ticket-58-report-layer4-adaptation.md).
 
+## Ticket 59 active continuation
+
+Broader CPU probe **7992** completed `0:0`, **264 node seconds**: all 256 studies,
+48,870 original DICOMs / 1,446 header series / 1,195 selected slot-series,
+zero decode failures or failed/fallback events. Only unchanged DINO preprocessing
+ran; no model/GPU/CoAt or hidden-input branch. Result SHA-256
+`14bf8e3c7adc62851051c2b721c2ae8e5c167399ed56b2a4d95360c109562197`.
+Official owned-submission download observations returned no output/traceback.
+
+The separate full scan covers **all 4,407 original training MRI study UIDs**,
+disjoint 2,204 / 2,203 partitions, jobs **7995 / 7996**, one attempt each.
+Campaign plan SHA-256
+`a2d7f3624f1798fc3ca591e9db6f83ca171bb97793cca43d19e2ca4c0c84c1b8`.
+Exact source fragments/pixel rules stay unchanged. Per-partition decisions and
+accepted launches are in `partition-0/` and `partition-1/`; generic observers
+`rsna-ticket59-full7995-observer.service` / `rsna-ticket59-full7996-observer.service`
+retain actual terminal controller evidence. Maximum raw/cache allowance is
+832 GiB across both jobs, with directly measured 603,970,359,296-byte starting
+project footprint. No full result or hidden-runtime repair yet.
+
+**Do not use unlaunched full-scan v1.** Its larger manually transcribed storage
+figure was incorrectly labelled measured; v1 and correction receipt are preserved.
+The executed v2 preparer measures storage directly; scientific rules/resources
+were unchanged. No GPU ledger change or scoring retry. Preserve all extracted
+private inputs for possible minimal replay. [Evidence](../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).
+
 ## Standing authorization and resource state
 
 Owner: **“approve anything as long as we win 1st place and fits kaggle comp dont
@@ -73,7 +102,8 @@ Record concrete agent decisions; do not label them new exact numeric owner appro
   standing-authorized 36→38-hour amendment is concrete and retained. Its sole
   free-quota increment 1,263.767 wall seconds is rounded to 1,264 wall / 2,528
   GPU seconds; allocation interval unknown. Preserve all prior unknown charges.
-- No current campaign CPU or GPU allocation. One pending/active GPU request
+- Two current CPU jobs **7995 / 7996**, each 16 CPUs / 64 GiB / three hours,
+  watchdog 10,560 seconds; no GPU allocation. One pending/active GPU request
   across backends; at most two nonexclusive Slurm CPU jobs, each <=16 CPUs /
   64 GiB / six hours. Use narrower exact decisions where recorded. No paid scaling.
 - Storage soft ceiling 2 TB. Science freeze October 11, internal delivery before
