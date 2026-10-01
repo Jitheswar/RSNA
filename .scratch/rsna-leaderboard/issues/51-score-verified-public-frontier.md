@@ -1,7 +1,7 @@
 # 51: Score the verified public frontier recipe
 
 Type: task
-Status: claimed
+Status: resolved
 Labels: ready-for-agent
 Parent: [RSNA leaderboard campaign](../spec.md)
 Blocked by: 47
@@ -51,12 +51,42 @@ This is a campaign resource decision; final candidate selection is separate.
   saved-version identity; admit one 57,600-second reservation after all pass.
 - [x] Submit the exact verified saved version through the code API; preserve
   accepted reference and script-version identity. Never submit the visible CSV.
-- [ ] Poll only the accepted reference; retain terminal score/error evidence
+- [x] Poll only the accepted reference; retain terminal score/error evidence
   and account for hidden exposure conservatively when allocation is unknown.
-- [ ] Record the measured comparison and disposition without equating public
+- [x] Record the measured comparison and disposition without equating public
   score to private rank or bypassing final-candidate selection gates.
 
 ## Comments
+
+### October 1 — terminal execution failure, 07:12 UTC
+
+Exact submission **56739912 / saved source 354194017 / v3** is terminal
+`COMPLETE` with **no public or private score** and the error that the notebook
+hit an unhandled exception while rerunning. `COMPLETE` is the API's terminal
+status; it does not mean successful prediction/scoring. Authenticated exact
+status and matching saved-source listing were independently refreshed at
+**07:26:41 UTC**. Latest notebook-session logs still describe the successful
+three-study visible execution and do not supply the hidden exception trace.
+
+The entire **57,600 GPU-second** reservation was conservatively charged,
+because hidden allocation timing is unavailable. Charge after reconciliation:
+**127,109 GPU seconds**, zero pending reservation, no retry of this consumed
+request. Best confirmed account score remains **0.936**, submission 56705536.
+There is no frontier score comparison, candidate promotion or first-place claim.
+
+## Answer
+
+The exact authorized scoring action and terminal accounting are complete;
+disposition **failed hidden execution / no score / no promotion**. Preserve
+the immutable source, original submission and both scored fallbacks. Diagnose
+under [Ticket 59](59-diagnose-hidden-frontier-execution-failure.md); another
+scoring action requires reproduced evidence, an independently checked repair
+and a separate concrete runtime/resource decision. The old continuation
+coordinator is stopped; previous comments describing it as active are historical.
+The separately registered Ticket 53 development experiment is not a retry or
+a competition submission.
+
+## Historical comments
 
 September 30: preparation is complete. No scoring request or cap change has
 been issued. Ticket 47 is resolved; the remaining prerequisite is the separate

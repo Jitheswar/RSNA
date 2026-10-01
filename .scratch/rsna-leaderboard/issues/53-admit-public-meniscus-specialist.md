@@ -1,7 +1,7 @@
 # 53: Admit and measure one public meniscus specialist overlay
 
 Type: task
-Status: claimed
+Status: resolved
 Labels: ready-for-agent
 Parent: [RSNA leaderboard campaign](../spec.md)
 
@@ -14,7 +14,7 @@ the eleven other target columns exactly. Do not select among blend weights.
 The specialist-containing Roman v24 scored 0.943, without an isolated gain;
 availability and architecture diversity do not establish complementarity.
 
-## Current authorized step
+## Initial authorized step (completed)
 
 Prepare and execute one private **CPU-only** file/provenance/strict-load check
 of public dataset `renta0426/rsna-knee-public0033-meniscus-bag-v1/2`, version
@@ -33,14 +33,14 @@ pending exact submission **56739912**.
   failure is fatal and eleven unchanged columns are checked.
 - [x] Run the real Gold58 native MRI preprocessing on CPU; verify series
   coverage, no decode failures, and retained pixels/masks after unlink.
-- [ ] Before GPU execution, reconcile the pending scoring reference and record
+- [x] Before GPU execution, reconcile the pending scoring reference and record
   a justified bounded resource decision under standing authorization.
-- [ ] Measure paired development predictions and throughput; record reused
+- [x] Measure paired development predictions and throughput; record reused
   Gold58 development limitations and reject an unhelpful overlay.
-- [ ] Only consider scoring when actual complementarity and runtime support
+- [x] Only consider scoring when actual complementarity and runtime support
   the resource use; preserve both existing scored fallbacks.
 
-## Comments
+## Historical preparation comments
 
 October 1: preparation uses `scripts/prepare_public_meniscus_cpu_preflight.py`.
 The checkpoint/runtime remain the publisher's work. Its manifest explicitly
@@ -109,3 +109,37 @@ unchanged; v3 was superseded before launch. Actual GPU parity and predictive
 gain remain unverified. Exact accepted frontier **56739912** remains PENDING
 at **04:33:19 UTC**; its reservation and the one-GPU-request boundary remain
 intact. [Concrete CPU decision](../resource-approvals/ticket53-real-mri-cpu-admission-20261001.json).
+
+## Answer — October 1, 08:30 UTC
+
+**Reject the registered overlay; no promotion or competition submission.** The
+single fixed vote reduced pooled macro AUC **0.951479 → 0.951179**, delta
+**−0.000300**, paired 95% interval **[−0.001226,+0.000348]** (2,000 defined
+resamples, seed 20261001). Medial Meniscus fell **0.974760 → 0.971154**,
+delta **−0.003606**, interval **[−0.014709,+0.004181]**. All three subgroup
+fold macro deltas were zero; eleven other target columns remained identical.
+The reused 58-study result is development evidence, not untouched OOF.
+
+Private paired notebook `jitheswar/rsna-d4-meniscus-paired-development` saved
+version **1** completed at **07:57:52 UTC**, **1,244.793 s** code time,
+two T4s, no fitting/scoring. Exact source/private/offline settings, CPU-admitted
+pixel/mask hashes, strict specialist state, all four CoAt readers and **27**
+finite prediction artifacts were independently verified. **Zero fallback events**.
+The requested dataset version 2 is established by actual matching payload bytes;
+the metadata API canonicalizes its source slug and does not separately report
+the numeric mounted version. Source identity limitations remain explicit.
+
+Exact frontier **56739912** was first reconciled as terminal hidden-rerun error,
+no score, charging its full unknown **57,600 GPU seconds**. Standing owner
+authorization then supported the concrete **36→38-hour** cap amendment and one
+bounded 5,400-second paired reservation. The sole run's fresh quota increment
+was **1,263.767 s**: rounded **1,264 wall / 2,528 GPU seconds** charged, with
+no invented allocation interval. Ledger now **129,637 / 136,800 charged**,
+zero reserved, **7,163 seconds** remaining. Both scored fallbacks are preserved.
+
+Independent analysis job **7990** completed `0:0`, **10 CPU-node seconds**.
+Sealed `final-disposition.json` SHA-256
+`ae504b28fc25291b94b342fa3b19282dcc1a9d1a68e20c3c3dc4050291960232`.
+No weight search or repeat is justified. This successful accessible run does
+not reproduce the hidden scoring failure tracked in Ticket 59.
+[Complete evidence](../../../docs/evidence/ticket-53-public-meniscus.md).

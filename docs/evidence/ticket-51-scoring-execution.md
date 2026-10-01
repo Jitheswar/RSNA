@@ -1,6 +1,29 @@
 # Ticket 51 scoring execution and recovery
 
-One exact code-scoring attempt is prepared for `jitheswar/rsna-public-frontier-gpu-preflight-attributed`, saved version **3**, output `submission.csv`. [Issue 51](../../.scratch/rsna-leaderboard/issues/51-score-verified-public-frontier.md) binds the existing source/evidence proposal and the requested **20→36 GPU-hour** campaign extension. The October 1 owner-approved extension is applied and exact submission **56739912** is accepted (script **354194017**); scoring is pending under the persistent observer. No retry or final selection has been performed.
+Exact submission **56739912**, script **354194017**, saved version **3** of
+`jitheswar/rsna-public-frontier-gpu-preflight-attributed`, is terminal with a
+generic hidden-rerun error and **no public or private score**. The exact response
+was captured at **2026-10-01 07:12:39 UTC** and independently refreshed at
+**07:26:41 UTC**. Status `COMPLETE` does not mean successful scoring. The full
+unknown **57,600 GPU seconds** are conservatively charged; no retry or final
+selection occurred. [Issue 51](../../.scratch/rsna-leaderboard/issues/51-score-verified-public-frontier.md)
+is resolved as failed execution, with diagnosis in
+[Ticket 59](../../.scratch/rsna-leaderboard/issues/59-diagnose-hidden-frontier-execution-failure.md).
+
+The latest notebook log belongs to the successful three-study visible run; it
+contains no hidden traceback. The later unchanged-anchor Gold58 development
+run also succeeded, with no fallbacks, and does not reproduce the hidden error.
+Both scored fallbacks remain preserved (0.936 and 0.498). Fresh authenticated
+leaderboard observation at **08:00:31 UTC** retains **rhoskeri / 0.961**; this
+account's best confirmed score remains **0.936**. Neither first place is established.
+
+The exact-scoring observer terminated after reconciliation. The old continuation
+coordinator stays deliberately stopped to avoid overlapping campaign controllers.
+The October 1 standing authorization subsequently supported Ticket 53's concrete
+38-hour cap amendment and completed development request; current ledger is
+**129,637 charged / 136,800 cap / zero reserved / 7,163 remaining**. Earlier
+unknown hidden charges are intact. The instructions below preserve the original
+request and its historical operational observations; they do not authorize a retry.
 
 The [submission command](../../scripts/score_public_frontier.py) defaults to a read-only check. It rehashes the reviewed local source/output evidence and checks the authenticated current notebook version, whole source, attachments, pinned container, private setting, internet disabled and T4 machine. It also refreshes free quota, paid scaling, official capacity, duplicate-source/intention evidence and live competition submissions. SDK duration strings lose whole days, so resource admission uses the typed durations' `total_seconds()`.
 

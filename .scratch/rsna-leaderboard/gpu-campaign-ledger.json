@@ -7,7 +7,7 @@
       "sha256": "df57f378f9fc8ab15b0593a0f6280086f9dab5f9f003111723d0d0febe37d57a"
     }
   ],
-  "budget_seconds": 129600,
+  "budget_seconds": 136800,
   "created_at_utc": "2026-09-25T18:28:07Z",
   "initial_reserved_comparison_seconds": 64800,
   "requests": [
@@ -810,17 +810,23 @@
     },
     {
       "actual_allocated_seconds": 0,
-      "actual_allocation_known": true,
+      "actual_allocation_known": false,
       "attempts": [
         {
           "allocated_seconds": null,
+          "allocation_confirmed": false,
+          "allocation_timing_missing": true,
           "attempt_number": 1,
+          "conservative_exposure_charge_seconds": 57600,
           "exit_code": null,
           "job_id": "56739912",
           "queue_wait_seconds": null,
-          "status": "submitted",
+          "status": "completed",
           "submission_exit_code": 0,
-          "submitted_epoch": 1790816210
+          "submitted_epoch": 1790816210,
+          "terminal_backend_status": "COMPLETE",
+          "terminal_evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/public-frontier-adoption/scored-baseline-v1/terminal-scoring-evidence.json",
+          "terminal_evidence_sha256": "4884fda6e2b4de60aa967d5373d947998b0b1e4f5cf284612f8c3982b5a710c8"
         }
       ],
       "comparison_reserve_release_active": false,
@@ -831,11 +837,54 @@
       "max_attempts": 1,
       "queue_wait_seconds": 0,
       "request_checksum": "3490b9fcba9381e4778c70f4e2a4597ff660c7eb7e74dc3f8b0f446ea763317c",
-      "reserved_seconds": 57600,
+      "reserved_seconds": 0,
       "retry_allowed": false,
-      "status": "submitting",
-      "unverified_allocation_charge_seconds": 0,
+      "status": "completed",
+      "terminal_accounting": {
+        "basis": "Exact authenticated terminal submission; full reservation charged because VM allocation timing is unavailable",
+        "conservative_charge_seconds": 57600,
+        "evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/public-frontier-adoption/scored-baseline-v1/terminal-scoring-evidence.json",
+        "evidence_sha256": "4884fda6e2b4de60aa967d5373d947998b0b1e4f5cf284612f8c3982b5a710c8",
+        "job_id": "56739912",
+        "recorded_at_utc": "2026-10-01T07:12:42Z"
+      },
+      "unverified_allocation_charge_seconds": 57600,
       "wall_time_seconds": 28800
+    },
+    {
+      "actual_allocated_seconds": 2528,
+      "actual_allocation_known": true,
+      "attempts": [
+        {
+          "allocated_seconds": 2528,
+          "allocated_wall_seconds": 1264,
+          "allocation_confirmed": true,
+          "allocation_evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/public-meniscus-adoption/paired-development-v4/visible-run-validation-and-accounting.json",
+          "allocation_evidence_sha256": "9e8c8fa5a441cb3409eac0d81f0fab84050eae138de9b203d6da317cb6d2b8f0",
+          "allocation_interval_known": false,
+          "attempt_number": 1,
+          "exit_code": 0,
+          "job_id": "jitheswar/rsna-d4-meniscus-paired-development",
+          "queue_wait_seconds": null,
+          "quota_used_wall_seconds": 1263.7669999999998,
+          "status": "completed",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790840184
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-10-01T07:36:24Z",
+      "experiment_id": "ticket53-fixed-meniscus-paired-development-v4",
+      "gpu_count": 2,
+      "max_attempts": 1,
+      "queue_wait_seconds": 0,
+      "request_checksum": "0e490a080a5c51c1aeaaab4e67da5673129d47ebec22a48173eecf0e3fa78ed6",
+      "reserved_seconds": 0,
+      "retry_allowed": false,
+      "status": "completed",
+      "unverified_allocation_charge_seconds": 0,
+      "wall_time_seconds": 2700
     }
   ],
   "reserved_comparison_seconds": 0,

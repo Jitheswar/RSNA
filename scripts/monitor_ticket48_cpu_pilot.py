@@ -13,6 +13,11 @@ root = Path(sys.argv[1]).resolve()
 job_id = sys.argv[2]
 if not job_id.isdecimal():
     raise ValueError("exact numeric Slurm job required")
+accepted_path = root / "accepted-launch.json"
+if accepted_path.exists():
+    accepted = json.loads(accepted_path.read_text())
+    if str(accepted.get("job_id")) != job_id:
+        raise ValueError("observer job differs from the actual accepted launch")
 evidence = root / f"controller-{job_id}"
 evidence.mkdir(mode=0o700, exist_ok=True)
 while True:
@@ -20,7 +25,9 @@ while True:
                             capture_output=True, text=True, timeout=15)
     text = result.stdout.strip()
     match = re.search(r"\bJobState=(\S+)", text)
-    state = match.group(1) if match else "unavailable"
+    identity = re.search(r"\bJobId=(\d+)\b", text)
+    state = (match.group(1) if match and identity and identity.group(1) == job_id
+             and result.returncode == 0 else "unavailable")
     observation = {"job_id": job_id, "state": state,
                    "observed_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
                    "returncode": result.returncode, "stderr": result.stderr.strip()}

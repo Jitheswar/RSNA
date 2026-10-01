@@ -299,3 +299,43 @@ separate diagnosed **v2** recovery is **not frozen or launched**. Six prefix gat
 final runs, independent replay and comparisons remain open. No long ResNet,
 blend benefit, promotion or final selection is claimed.
 [Failure evidence and recovery](../../docs/evidence/ticket-55-resnet-recovery.md).
+
+
+## October 1, 08:40 UTC — authoritative completed continuation
+
+This entry supersedes earlier pending/live operational snapshots. Exact frontier
+**56739912 / script 354194017 / v3** is terminal with a generic hidden-rerun
+error and **no score**. Its full unknown **57,600 GPU seconds** are charged.
+Latest saved logs belong to the successful visible run, not hidden inference.
+[Ticket 59](issues/59-diagnose-hidden-frontier-execution-failure.md) remains in
+Phase 1: no reproduced hidden failure, ranked cause or verified repair. No retry.
+
+**Ticket 53: reject fixed overlay/no promotion.** The actual private two-T 4,
+58-study run completed all 27 finite prediction artifacts and all four CoAt
+readers, zero fallbacks, exact CPU-admitted native-cache agreement. Macro AUC
+**0.951479→0.951179**, paired delta **−0.000300**, interval
+**[−0.001226,+0.000348]**. Medial Meniscus also worsens; eleven other columns
+unchanged and subgroup fold deltas zero. Analysis 7990 completed 0:0, 10 CPU-node
+seconds. No clean-OOF or hidden-scale claim. [Evidence](../../docs/evidence/ticket-53-public-meniscus.md).
+
+**Ticket 57: verified unfitted cohort.** Jobs 7983/7984/7985 completed 0:0,
+all 4,228 studies/187,272 slices, native feature error 0.0,2,558 CPU-node seconds,
+zeroGPU/spend. [Evidence](../../docs/evidence/ticket-57-frozen-resnet-prefix-cohort.md).
+
+**Ticket 58: inconclusive/no promotion.** All six matched 1,500-update runs
+completed, actual original-DICOM replay verifies 116 final and 58 warm-parent
+predictions exactly, unchanged earlier encoder/normalization state and source
+exclusions. Five paired comparisons recompute identically. Adaptation AUC
+**0.689232** vs matched head **0.691387**, delta **−0.002155**, interval
+**[−0.022304,+0.019717]**, one negative fold. Both image controls are positive;
+no adaptation/duration advantage or D 4 complementarity established. Cost+fit+
+verifier 7986/7989/7991 total 2,483 CPU-node seconds, zeroGPU/spend.
+[Evidence](../../docs/evidence/ticket-58-report-layer 4-adaptation.md).
+
+The separate standing-authorized Ticket 53 resource decision amended cap
+**36→38 GPU hours** and charges actual rounded quota increment **2,528 GPU seconds**.
+Ledger **129,637 charged / 136,800 cap / zero reserved / 7,163 remaining**.
+No CPU/GPU job is live. The old continuation coordinator remains stopped.
+Both scored fallbacks **0.936/0.498** are intact. Public leader **0.961** was
+last authenticated at 08:00:31 UTC. Final candidate, two selections and either
+first-place rank remain unestablished; refresh transient observations on resume.

@@ -1,9 +1,62 @@
-# Ticket 53 public meniscus admission and paired development preparation
+# Ticket 53 public meniscus: reject the fixed development overlay
 
-The public0033 specialist passed an actual CPU bundle and strict-load check.
-Actual CPU preprocessing of all 58 MRI studies also passed. Its predictive
-value remains unmeasured. The campaign objective remains first
+The single registered 10% Medial Meniscus vote lowered development macro AUC.
+**Reject this overlay; no promotion, weight search or scoring request.** The
+campaign objective remains first
 place on both public and final private leaderboards; neither rank is established.
+
+## Completed paired result — October 1
+
+| Development comparison | Anchor | Fixed overlay | Paired delta | 95% study-bootstrap interval |
+| --- | ---: | ---: | ---: | --- |
+| Twelve-target macro AUC | 0.951479 | 0.951179 | −0.000300 | [−0.001226, +0.000348] |
+| Medial Meniscus AUC (26 positive / 32 negative) | 0.974760 | 0.971154 | −0.003606 | [−0.014709, +0.004181] |
+
+All 2,000 resamples are defined, seed 20261001. All three subgroup fold macro
+deltas are zero; these are subgroup evaluations, not fold-specific retraining.
+Eleven other columns are exactly unchanged. The 58 reference studies and public
+parent selection have been reused: these results are development evidence,
+not clean OOF, an untouched generalization estimate or a competition score.
+
+Private offline notebook `jitheswar/rsna-d4-meniscus-paired-development`, saved
+version **1**, completed at **07:57:52 UTC**, code time **1,244.793 seconds**
+on two T4s, **21.462 seconds per development study** including shared setup.
+All 23 anchor cells remain byte-identical. Independent validation confirmed the
+actual CPU-admitted pixel/mask hashes, the disk-cache branch, strict specialist
+weights/runtime, all four CoAt readers and **27 finite component prediction
+artifacts**. There were **zero fallback events**. Specialist inference itself
+took **72.669 seconds**. Peak reserved parent GPU memory was **7.288 GB** and
+**7.074 GB**; parent peak RSS **8,372,340 KiB**. These measurements do not
+establish hidden-scale throughput or whole-VM memory.
+
+The exact accepted source is private, offline and pinned to the reviewed
+container. The metadata API canonicalizes explicit dataset `/2` to its slug;
+actual mounted manifest/payload hashes verify version-2 contents. Its numeric
+mounted-version association was not separately observed. Raw source captures
+and the corrected interpretation remain retained. A first validator assumed
+twelve raw specialist columns; the actual contract has two meniscus columns.
+That local validator correction did not change the executed GPU recipe.
+
+Before this launch, exact frontier submission **56739912** was terminal with
+a hidden-rerun error and no score; its full unknown **57,600 GPU seconds**
+were conservatively charged. Standing owner authorization supported the concrete
+**36→38-hour** cap amendment and one **5,400-GPU-second** reservation. The sole
+paired run's normalized free-quota increment was **1,263.767 wall seconds**:
+rounded **1,264 wall / 2,528 GPU seconds** charged, zero reserved afterward.
+No controller epoch interval is invented. Ledger: **129,637 charged / 136,800
+cap**, **7,163 seconds** unreserved, $0 external spend.
+
+Independent analysis job **7990** completed `0:0`, **10 CPU-node seconds**,
+and recomputed the one fixed vote and registered paired comparisons. Private
+root: `artifacts/private/public-meniscus-adoption/paired-development-v4/`.
+`final-disposition.json` SHA-256:
+`ae504b28fc25291b94b342fa3b19282dcc1a9d1a68e20c3c3dc4050291960232`.
+The 0.936 and 0.498 scored fallbacks remain preserved. This successful accessible
+run does **not** reproduce the hidden scoring failure in Ticket 59.
+
+## Historical admission and prospective preparation
+
+The following sections preserve what was known before prediction execution.
 
 The private notebook `jitheswar/rsna-public-meniscus-cpu-preflight`, saved version
 **1**, completed at **2026-10-01 03:35:40 UTC**. The accepted request pins
@@ -59,7 +112,7 @@ The v1 preparation missed an annotation import; local contract execution caught
 and corrected it before any remote launch. Only draft v2 was executed, as saved
 remote version 1. [Autonomous CPU decision](../../.scratch/rsna-leaderboard/resource-approvals/ticket53-real-mri-cpu-admission-20261001.json).
 
-## Frozen next experiment
+## Historical frozen experiment
 
 One paired Gold58 inference request is prepared, without launch, at
 `artifacts/private/public-meniscus-adoption/paired-development-v4/`. Request

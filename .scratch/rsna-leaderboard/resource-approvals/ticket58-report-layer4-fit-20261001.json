@@ -1,0 +1,28 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Complete the registered six-run matched warm-head/layer4 comparison after actual full-bank loading, random-read, gradient/scope and exact frozen-logit checks. Measured conservative projection5676.86s fits one3h CPU allocation; probe weights are discarded.",
+  "candidate_promotion": false,
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "gpu_ledger_cap_changed": false,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "new_gpu_request": false,
+  "plan_sha256": "81da4c9de7b400ab232df49166ba2d668167e806e40502b76d0123036cf6f388",
+  "recorded_at_utc": "2026-10-01T07:55:59.411658+00:00",
+  "resources": {
+    "code_watchdog_seconds": 10560,
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_concurrent_jobs": 1,
+    "maximum_launch_attempts": 1,
+    "memory_gib": 64,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "requeue": false,
+    "tasks": 1,
+    "walltime_seconds": 10800
+  },
+  "schema_version": "rsna-campaign-autonomous-decision-v1"
+}
