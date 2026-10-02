@@ -62,9 +62,14 @@ resource-admission claim.
 - [x] Prove correct unequal-mask four-real/eight-rank loss and gradient reduction.
 - [x] Prove ordinary Adam and fresh CPU checkpoint replay in synthetic preflight.
 - [x] Verify original pool/sampler selection and feasible lossless attachment layout.
+- [x] Pin real64-study source/cache selection and original-pool order without held-out overlap.
 - [ ] Freeze real64-MRI source/targets/masks, initial state and CPU reference request.
 - [ ] Admit the complete route and schedule one bounded CPU preparation in a free slot.
 - [ ] Verify private pinned attachment, fresh quota/vacancy and exact TPU runtime/source.
 - [ ] Run the one fixed TPU pilot, preserving all compile/precision/state/replay failures.
 - [ ] Independently reproduce native CPU delivery and account the entire allocation.
 - [ ] If mechanics pass, prepare a separate full-training feasibility proposal.
+
+## Comments
+
+October3 IST: real source-selection metadata b08d52294efac12435fb49717ffac8b6f51bfb53c22fb1dc7658fb834e2ea8ce pinned under artifacts/private/ticket75-real-mri-selection-v1. Complete original T73/old scientific input closure and seven metadata hashes checked;64 training studies/no held-out overlap. Original source/cache hashes, pool order, full-pool input fingerprints and supervision admission retained. No MRI/target arrays or initial state exported, no CPU reference request/resource admission.17new schema/selection/bundle guards and mypy90 PASS. New tpu_pilot_inputs and freeze script now metadata-hash-bound; preserve them. CPU worker and combined T73/T74/pilot route ownership remain pending. Evidence docs/evidence/ticket-75-real-mri-selection-contracts.md.
