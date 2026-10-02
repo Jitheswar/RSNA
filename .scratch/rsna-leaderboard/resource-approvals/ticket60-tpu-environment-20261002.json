@@ -1,0 +1,19 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Verify an actually provisioned PyTorch/XLA TPU and exact synchronized calculation before any training/resource proposal.",
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "new_exact_owner_numeric_approval_claimed": false,
+  "request_sha256": "5fa413ef63f1dd2cf5ddb4a88f2d33077b6ffc28f9af6769a1b17c7b67d3113f",
+  "resources": {
+    "automatic_retry": false,
+    "code_watchdog_seconds": 540,
+    "conservative_tpu_quota_reservation_seconds": 600,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_launch_attempts": 1,
+    "maximum_session_seconds": 600,
+    "requested_machine_shape": "TpuV5E8"
+  },
+  "schema_version": "rsna-campaign-autonomous-decision-v1"
+}

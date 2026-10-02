@@ -40,7 +40,21 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    rescoring, candidate promotion or final selection has occurred. Preserve the
    exact failed **56739912 / 354194017 / v3** request and full unknown charge.
    Another scoring request requires a distinct justified plan.
-6. Independently verify results, update evidence/tracker/freeze register, run
+6. Observe the separate bounded TPU environment request, kernel **136722939 /v1**,
+   `jitheswar/rsna-tpu-environment-admission-v1`, root
+   `artifacts/private/ticket60-tpu-environment-v1/`, latest **QUEUED** at
+   **01:52:11 UTC**. Exact requested source/private/offline settings pass;
+   actual hardware remains unverified. One 600-second server bound, 540-second
+   code watchdog, GPU off, no attachments/models/MRI/training, zero spend.
+   Existing launch intent is consumed: never push it again. Observer
+   `rsna-ticket60-tpu-environment-v1-observer.service` preserves exact terminal.
+   On terminal, run Kaggle SDK Python with
+   `scripts/verify_ticket60_tpu_environment.py`, reconcile outputs/quota and
+   conservatively charge 600 seconds in the new TPU ledger if unresolved.
+   [Ticket 60](issues/60-establish-actual-tpu-training-capacity.md) and
+   [evidence](../../docs/evidence/ticket-60-tpu-environment.md). A passing
+   allocation only enables a separately frozen real-MRI full-backbone pilot.
+7. Independently verify results, update evidence/tracker/freeze register, run
    relevant checks, commit/push private `origin/master` and verify equal heads.
    Mark the goal achieved only after both actual first-place ranks are proven.
 
@@ -77,7 +91,8 @@ Standing owner authorization remains **“approve anything as long as we win
 1st place and fits kaggle comp dont ask me”**, zero external spend. Agent
 decisions are recorded as such, not claimed as new numeric owner approvals.
 GPU ledger unchanged: **129,637 charged / 136,800 cap / zero reserved / 7,163
-remaining seconds**. Only full CoAt **8014** remains active, CPU-only; at most two concurrent
+remaining seconds**. Full CoAt **8014** remains active, CPU-only, and one TPU
+environment request is queued with **600 TPU seconds reserved**. At most two concurrent
 nonexclusive CPU jobs, each <=16 CPUs /64 GiB /six hours. No additional MRI
 extraction or large retained pixel banks in the CoAt probe. Preserve all prior
 unknown GPU charges. Old continuation coordinator remains stopped.

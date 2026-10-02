@@ -383,3 +383,19 @@ hidden-rerun error/no score; private rank unavailable. Both scored fallbacks and
 full unknown GPU charges preserved. Ledger **129,637 charged /136,800 cap /
 zero reserved /7,163 remaining**. [Current handoff](session-handoff-20261002.md),
 [evidence](../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).
+
+## October 2 — bounded TPU allocation admission
+
+[Ticket 60](issues/60-establish-actual-tpu-training-capacity.md) launched one
+private offline environment notebook **136722939 /v1**. Latest **01:53:48 UTC**
+status **QUEUED**, actual hardware unverified. The exact source, TPU-on/GPU-off,
+`TpuV5E8`, private/offline settings and empty inputs match the request. One
+600-second server bound/540-second code watchdog, one attempt, no MRI/report/
+model attachments, inference, training, competition submission or external
+spend. Separate TPU ledger reserves **600 seconds**; GPU ledger unchanged.
+The local CPU missing-XLA negative check rejects the runtime and saves a receipt.
+No predictive result, fitted candidate, promotion or final selection follows.
+See [evidence](../../docs/evidence/ticket-60-tpu-environment.md). The source
+integrity scan **8014** remains live; its first **962** records are COMPLETE,
+with zero preparation errors or sampler/sparse fallbacks, an interim observation
+that does not replace terminal verification.
