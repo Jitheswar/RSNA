@@ -20,7 +20,8 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    `557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985`.
    Original first full stage **8032** completes `0:0`, 1,000 updates,
    **6,685 CPU-node seconds**. Resumed fold-0/stage-1 **8036** and full
-   fold-1/stage-0 **8035** are live under v2, exact resources. Recovery control **8034** now
+   fold-1/stage-1 **8039** are live under v2, exact resources. Fold-1 first
+   stage **8035** completed its exact 1,000-update boundary successfully. Recovery control **8034** now
    completes `0:0`, **995 CPU-node seconds**, all three final 7,500-update heads
    and 58 gold predictions. Independent initial/state/Adam/source-exposure audit
    passes; no AUC read. Receipt `control/independent-state-validation.json`. Control **8033 failed `1:0`**
@@ -28,13 +29,17 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    held-out studies alongside gold. The failure is diagnosed and preserved,
    **1,551 CPU-node seconds**. Never retry either consumed v1 request. V1 source
    and coordinator remain preserved/stopped. [Diagnosis and recovery evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).
-3. **`rsna-ticket64-comparison-coordinator-v2.service`** advances fits, except
-   the active Ticket 66 scheduling handoff below. It is temporarily held while
-   both Slurm fits continue; do not manually recreate it while
-   `rsna-ticket66-cpu-handoff-v1.service` owns the handoff.
-   `coordinator-state.json` under v2 records the schedule. It waits for exact
-   successful recovery control, then extends completed folds/fills the second
-   CPU slot. The inherited original v1 fold-0/stage-0 **8032** can never be
+3. **`rsna-ticket67-biomedclip-cohort-v1.service`** now owns combined CPU
+   scheduling, PID **293555**. Original
+   **`rsna-ticket64-comparison-coordinator-v2.service`** is temporarily held.
+   Ticket 67 itself advances the exact unchanged registered fitting stages
+   through frozen worker launches while materializing one feature partition
+   at a time. Do not manually recreate the original fit coordinator while
+   Ticket 67 owns scheduling. Both current fits continue, with at most two
+   pending+active owner CPU jobs. Original coordinator is restored on exit.
+   `coordinator-state.json` under Ticket 67 records current scheduling; the
+   old v2 snapshot is historical during delegation. Exact completed recovery
+   control is required before unchanged fitting stages advance. The inherited original v1 fold-0/stage-0 **8032** can never be
    relaunched. Its successful terminal and durable step 1,000/hash are required
    before v2 stage 1. Full fold 0 resumes the original v1 training directory
    and scientific identity; all new receipts live under v2. Full folds 1/2
@@ -76,7 +81,7 @@ fallback preserved. Private score/rank and final selections remain unavailable.
 6. Observe the separate TPU environment request **136722939 /v1**,
    `jitheswar/rsna-tpu-environment-admission-v1`, root
    `artifacts/private/ticket60-tpu-environment-v1/`. Last observed **QUEUED**
-   at **08:34:55 UTC**; actual hardware remains unverified. One 600-second
+   at **09:36:54 UTC**; actual hardware remains unverified. One 600-second
    server/540-second code watchdog, private/offline, GPU off, no attachments,
    training or spend. Existing intent is consumed: never push again. Observer
    `rsna-ticket60-tpu-environment-v1-observer.service` retains terminal.
@@ -100,25 +105,38 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    Complete the goal only after both actual first-place ranks are proven.
 
 9. [Ticket 66](issues/66-measure-biomedclip-vision-mri-parity-and-cost.md)
-   runtime acquisition/source/import checks pass; MRI pilot is frozen,
-   **not executed yet**. Root `artifacts/private/ticket66-biomedclip-mri-pilot-v1/`,
-   pilot `36a7524de3929e18d229102ed292c7a10e6bd49bcdeaa510eddce9ac1e63ff90`.
-   Live unit **`rsna-ticket66-cpu-handoff-v1.service`**, PID **225672**,
-   handoff `f70715bc6bf524324ef11c1e817ce784f50afd78e8ef2833c6f405641fde817f`.
-   Holds only future fit scheduling while **8035 /8036** run. After one exact
-   successful stage frees a slot, admits one **960-second /16-CPU /64-GiB**
-   offline pilot plus fresh-process original-DICOM replay under a combined
-   900-second watchdog, then immediately recreates the exact fit coordinator.
-   Two pending+active owner CPU jobs maximum. No manual pilot/fit launch while
-   handoff owns scheduling; no consumed-request restart. Six-hour slot-wait
-   cap, one-hour accepted queue cap, 4,560-second calendar reserve. Eleven guards
-   pass. Preserve frozen pilot/controller/verifier/runtime sources. On terminal
-   inspect `pilot-result.json`, `independent-validation.json` and successful
-   `terminal-verification.json` before a separate full-extraction decision.
-   Actual model coverage/output/cost remain pending; no fitting/AUC/promotion
-   is admitted. If the unit stops, inspect authoritative unit/terminal and
-   `fitting-scheduler-resumed.json` before any manual recovery. Both live
-   original fit jobs must remain intact.
+   is **resolved**: **8037 completed 0:0**, **217 CPU-node seconds**, strict
+   151 FP32 vision tensors, eight original-MRI studies /344 outputs
+   independently exact, maximum error **0**. Median slice **0.038754 s**,
+   maximum **0.069421 s**, peak RSS **3,109,085,184 bytes**. The consumed
+   handoff restored unchanged fit scheduling at 08:56:30 UTC immediately
+   after pilot admission; terminal verified at 09:00:11 UTC. Never restart
+   it or edit its frozen runtime/worker/controller/verifier sources.
+   Root `artifacts/private/ticket66-biomedclip-mri-pilot-v1/`, plan
+   `36a7524de3929e18d229102ed292c7a10e6bd49bcdeaa510eddce9ac1e63ff90`.
+   [Actual evidence](../../docs/evidence/ticket-66-biomedclip-mri-admission.md).
+10. [Ticket 67](issues/67-materialize-frozen-biomedclip-cohort.md) claimed:
+    complete unfitted 4,228-study /187,272-slice medical feature bank admitted.
+    Root `artifacts/private/ticket67-biomedclip-cohort-v1/`; immutable plan
+    `e9ae761facc5ca3345925f38c36682ac18ff94e6e92d5c018e8a3eb7a9f5256a`,
+    feature identity
+    `7ba6b06160d908c6e03c2edb38bae73b0d90e50ab27c0eef2bbd1ce6cf3ac230`.
+    Four balanced partitions, each 1,057 studies; slice counts
+    46,824/46,816/46,816/46,816. FP32 microbatch one, whole-field224,
+    official learned512 projection/L2, original masks/descriptors/pixels.
+    One 3-hour/16-CPU/64-GiB attempt per partition plus one 1-hour independent
+    verification; no retry/requeue. Persistent scheduler above currently
+    waits for a slot, every bank component unlaunched at 09:36 UTC.
+    Fourteen focused tests and five launcher checks pass. Preserve frozen
+    four Ticket 67 scripts and matching source snapshots; never duplicate
+    consumed controller/launch intents. On completion inspect exact terminals,
+    `feature-manifest.json`, `verification/independent-validation.json` and
+    `terminal-verification.json`. Verify all4228 feature bytes/source/norms/
+    padding/masks and fixed344 native outputs. Existing all-study native pixel
+    proof plus fixed eight-study native vision proof remain distinct; no new
+    all-study native vision replay claimed. Actual full extraction/accuracy
+    remain pending. Separate paired head-fit admission required afterward.
+    [Admission evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
 
 ## Completed prerequisites
 
@@ -162,9 +180,11 @@ need separate exact recipes/decisions; they are not authorized by Ticket 64.
 GPU ledger unchanged: **129,637 charged /136,800 cap /zero reserved /7,163
 remaining seconds**. Preserve unknown charges. TPU reserves **600 seconds**,
 charged zero/hardware unverified. No external spend. Old continuation
-coordinator remains stopped; Ticket 64 v2 retains the fit schedule but is
-temporarily held by the active Ticket 66 handoff until its sole pilot is admitted.
-Both full fits and the frozen final verifier remain live.
+coordinator remains stopped. Ticket 67 combined scheduler currently owns the
+unchanged Ticket 64 fit schedule while its original coordinator is held. Both
+full fits and the frozen final verifier remain live. Extra medical bank reserve
+**46,800 CPU-node seconds /64,800 calendar seconds** retains prior complete
+route plus review; projects October 10 05:05 UTC, fresh storage **1.849 TB**.
 
 Science freeze October 11, internal delivery before October 15; recorded
 competition final deadline October 22 at 23:59 UTC. Five submissions/day,
@@ -187,8 +207,9 @@ Fresh official rules, pinned MIT notice/config/card and independent full-hash
 receipt retained; six tests pass. Preserve the completed attempt and source.
 The isolated runtime is acquired under separate Ticket 66 decisions. Strict
 official vision loading and fixed eight-study original-MRI parity/cost pilot
-are admitted and waiting for a free slot, not executed yet. Do not occupy a
-third owner CPU slot. Preserve the registered comparison and scheduling handoff.
+now pass independently. Separately admitted full-cohort extraction waits for
+a slot under Ticket 67 combined scheduling. Do not occupy a third owner CPU
+slot. Preserve the unchanged registered comparison and scheduling ownership.
 Other variants retain unresolved gates.
 
 
@@ -200,12 +221,6 @@ and actual terminal reconciliation automatically. Treat only its actual replay
 receipt as proof of final MRI reproducibility. Current matched-control state
 audit is complete, with no AUC inspected; treatment and native replay are pending.
 
-At **06:33 UTC** both jobs have begun successful optimizer updates with finite
-logged losses: full fold 0 **29** and control fold 0 **1,425**. These are progress
-observations only, without held-out scoring or scientific selection. Runtime
-source is frozen; preserve exact remaining stages and watch their terminal.
-
-
 The v2 recovery is frozen; do not edit its worker after preparation/launch.
 Minimal gold-cohort regressions pass **2** tests, recovery coordinator **3**,
 updated independent verifier admission/paths **8**. Runtime source and original
@@ -215,14 +230,10 @@ training directories. Verifier explicitly binds those original files, the
 inherited first-stage receipt and every resumed checkpoint SHA chain.
 
 
-Earlier continuation: 8032/8035 and both coordinators were live. Current
-8032 is complete, 8036/8035 run, final verifier stays live, and the fit scheduler
-is temporarily held by the active Ticket 66 handoff described above. Control
-**8034** is terminal `COMPLETED 0:0`, 995 CPU-node seconds; its original-source
-exposure/initial/encoder/Adam audit passed. Do not relaunch it or repeat completed
-fold 0. No GPU/TPU ledger change or scoring request. Completed fixed control does
-not establish comparative advantage, anchor complementarity or either first rank.
-
-October 2 **07:56 UTC**: full **8032** logged **881** successful updates and
-full **8035** **411**, finite losses. Both run; frozen postfit watcher remains
-`wait_for_fits`. Progress only, no held-out AUC. TPU request remains queued.
+Current snapshot **October 2 09:36 UTC**: **8036 /8039** run, both stage 1,
+Ticket 67 scheduler live/waiting for bank slot and owns unchanged fitting
+schedule; final verifier waits for all fits. TPU remains QUEUED. Control
+**8034** completed successfully; its source exposure/state/Adam audit passed.
+No intermediate AUC, scoring request, accelerator ledger change or promotion.
+Completed representation parity cannot establish anchor complementarity or
+either first-place rank.

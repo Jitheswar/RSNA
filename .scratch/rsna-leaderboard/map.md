@@ -122,11 +122,17 @@ None remains within this planning destination. All seven tickets are resolved. T
   vision loading and fixed eight-study pilot require their next separate
   admission; registered Ticket 64 continues.
 
-- [Ticket 66](issues/66-measure-biomedclip-vision-mri-parity-and-cost.md) claimed:
-  exact isolated OpenCLIP runtime acquired and offline source/import checks
-  pass. Eight label-blind reports /344 slices are frozen for one 16-minute CPU
-  pilot plus fresh original-DICOM replay. Persistent controller holds only
-  future fit scheduling while 8035/8036 run, then admits the pilot and restores
-  scheduling. Eleven guards pass; no model forward or predictive evidence yet.
-  Prior 8032 completed `0:0` /1,000 updates /6,685 CPU-node seconds, then 8036
-  resumed its exact registered checkpoint. Accelerator ledgers unchanged.
+- [Ticket 66](issues/66-measure-biomedclip-vision-mri-parity-and-cost.md) resolved:
+  sole **8037 /0:0**, **217 CPU-node seconds**; all eight original MRI studies
+  /344 outputs independently replay exactly, strict 151 FP32 vision tensors.
+  Median slice **0.038754 s**, maximum **0.069421 s**, peak RSS **3.109 GB**.
+  Exact fit scheduling restored immediately after pilot admission; **8036** and
+  resumed fold-1 stage-1 **8039** continue. Eleven guards pass. No fitted
+  accuracy or rank evidence. [Completed evidence](../../docs/evidence/ticket-66-biomedclip-mri-admission.md).
+
+- [Ticket 67](issues/67-materialize-frozen-biomedclip-cohort.md) claimed:
+  exact 4,228-study /187,272-slice medical feature bank separately admitted,
+  four fixed bounded CPU partitions plus independent validation. Persistent
+  combined scheduler delegates unchanged Ticket 64 stage scheduling and waits
+  while 8036/8039 run, at most two owner CPU jobs. Fourteen guards pass;
+  actual extraction/accuracy remain pending. [Evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).

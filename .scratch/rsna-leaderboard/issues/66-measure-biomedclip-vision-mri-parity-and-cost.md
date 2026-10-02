@@ -1,7 +1,7 @@
 # 66: Measure BiomedCLIP vision MRI parity and cost
 
 **Type:** task
-**Status:** claimed
+**Status:** resolved
 **Assignee:** campaign agent
 **Blocked by:** 65
 
@@ -33,9 +33,9 @@ cost and a separate exact decision.
 
 - [x] Pinned isolated runtime acquired and original official source bytes verified.
 - [x] Selected cohort, native/cache contracts, source/runtime/resource plan frozen.
-- [ ] Sole CPU pilot launched within owner concurrency and terminal reconciled.
-- [ ] Strict state coverage, original-MRI/output parity and cost independently checked.
-- [ ] Exact completion, continuation action and limits documented; no gain inferred.
+- [x] Sole CPU pilot launched within owner concurrency and terminal reconciled.
+- [x] Strict state coverage, original-MRI/output parity and cost independently checked.
+- [x] Exact completion, continuation action and limits documented; no gain inferred.
 
 ## Comments
 
@@ -51,3 +51,18 @@ cost and a separate exact decision.
   Pilot plus independent original-DICOM replay share one 16-minute allocation;
   neither has executed yet. Preserve all frozen sources/consumed intents.
 - Context: [admission evidence](../../../docs/evidence/ticket-66-biomedclip-mri-admission.md).
+
+## Answer
+
+Sole pilot **8037** completed `0:0`, **217 CPU-node seconds**. Strict official
+151-tensor coverage, all original pixels/masks/descriptors and all **344**
+projected outputs from eight studies independently replay exactly, maximum
+error **0**. Median slice inference **0.038754 s**, maximum **0.069421 s**,
+vision load **3.133 s**, peak RSS **3,109,085,184 bytes**. All outputs are
+finite, normalized and image-dependent. The consumed handoff restored the
+unchanged fit scheduler immediately after pilot admission; fold-1 stage 1
+**8039** starts after successful **8035**, alongside **8036**. No fitting,
+AUC, submission, promotion or accelerator use follows from this result.
+
+Ticket 67 separately admits the complete cached-pixel feature cohort, protecting
+existing fitting, storage and review reserves. See [completed evidence](../../../docs/evidence/ticket-66-biomedclip-mri-admission.md).

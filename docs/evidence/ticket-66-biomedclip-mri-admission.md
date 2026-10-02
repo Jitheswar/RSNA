@@ -1,9 +1,10 @@
 # Ticket 66: BiomedCLIP MRI parity and cost admission
 
-The isolated runtime is acquired and offline imports pass. The fixed
-eight-study pilot is frozen; its persistent scheduling controller is confirmed
-live waiting for a free CPU slot. No BiomedCLIP model forward, MRI parity,
-throughput or predictive result is established yet.
+Sole offline CPU pilot **8037** completed `0:0`, **217 CPU-node seconds**.
+Strict official vision loading and independent original-DICOM replay pass
+for all eight studies /344 valid slices with maximum output error **0**.
+This establishes representation parity and measured cost; predictive gain
+and leaderboard improvement remain untested.
 
 ## Actual runtime evidence
 
@@ -47,15 +48,37 @@ No retry, GPU/TPU use, spend, fitting, AUC, public submission or promotion.
 Model-only and native-read-inclusive extrapolations remain distinct measured
 costs; full extraction needs a separate decision after actual evidence.
 
-`rsna-ticket66-cpu-handoff-v1.service` is live, PID **225672**, phase
-`wait_for_cpu_slot`. It temporarily holds only the fit scheduler; both
-**8035 /8036** continue. After an exact successful stage frees a slot, it admits
-the sole pilot and immediately recreates the exact fit coordinator. At most
-two owner CPU jobs include pending requests. A consumed handoff cannot restart.
-Any preparation/launch exception restores scheduling. One-hour queue allowance
-and pilot allocation reserve **4,560 calendar seconds**, before science freeze.
-Eleven selection/handoff tests pass; all live source snapshots and launch hashes
-remain exact. The final Ticket 64 MRI verifier remains active.
+The consumed `rsna-ticket66-cpu-handoff-v1.service` completed successfully.
+After **8035** reached its successful 1,000-update boundary, it admitted
+**8037** and immediately restored the exact fitting coordinator at **08:56:30
+UTC**. Neither live fit was restarted; **8039** continues fold 1 at stage 1
+alongside fold-0 stage-1 **8036**. The handoff reconciled the pilot terminal
+at **09:00:11 UTC**. Eleven selection/handoff guards pass; preserve the
+completed request, frozen runtime, sources and receipts.
+
+## Actual measured outputs and cost
+
+Strict state loading covers **151 FP32 vision tensors**. Official factory
+reference and repeated inference have maximum error **0**; fresh-process
+original-DICOM reconstruction and model inference independently reproduce
+all **344** outputs exactly. Finite unit 512-D vectors vary with image input.
+Pilot elapsed **123.490 s**, independent replay **90.978 s**, combined actual
+allocation **217 s**; peak pilot RSS **3,109,085,184 bytes**. Vision loading
+**3.133 s**, median valid-slice inference **0.038754 s**, maximum **0.069421 s**.
+Native read/packing **52.492 s**, maximum single study **17.789 s**.
+
+A conservative two-times-maximum model-only forecast for **187,272** slices
+is **26,007.616 s /7.224 h**. Repeating native decoding would forecast
+**176,428.721 s /49.008 h**. Ticket 62 already independently verified every
+whole-field pixel and all cache reads, permitting separately admitted extraction
+from those exact inputs without repeating native decoding. Neither forecast
+is an actual full-cohort extraction measurement.
+
+| Actual evidence | SHA-256 |
+| --- | --- |
+| Pilot result | `c9dbfd784df6c0eec731767930f6d165743c3e3605aacb9be0beb7f4fcec86ee` |
+| Independent native replay | `573bb80c773eadb62829784f7f5a88e28b71b9e98ec675e74bda0297dd242f66` |
+| Successful retained terminal | `be031815b4c3408cb469b7a2e25436c1fe7c454c62b18bde2d42ded96cb43a81` |
 
 The preceding full stage **8032** completed `0:0`, **6,685 CPU-node seconds**,
 exactly **1,000 updates**, no intermediate prediction. Job **8036** consumes

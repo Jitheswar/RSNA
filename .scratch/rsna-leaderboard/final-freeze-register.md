@@ -525,3 +525,23 @@ analysis-plus-original-MRI replay. Admission
 Actual service phase `wait_for_fits`, no replay submission yet. Ten final-replay
 and seven watcher tests pass. Source/CPU route and GPU/TPU ledgers remain fixed;
 no first-place evidence. [Evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).
+
+## October 2 — medical pilot complete; full-cohort extraction admitted
+
+Ticket 66 **8037 completed 0:0 /217 CPU-node seconds**, all eight original
+MRI studies /344 model outputs independently exact, strict 151 FP32 tensors.
+Maximum slice inference 0.069421 s, peak RSS 3.109 GB. Unchanged fit scheduler
+restored immediately; full fold-0/fold-1 stage-1 **8036 /8039** run.
+[Actual evidence](../../docs/evidence/ticket-66-biomedclip-mri-admission.md).
+
+Ticket 67 exact four-partition unfitted feature-cohort plan
+`e9ae761facc5ca3345925f38c36682ac18ff94e6e92d5c018e8a3eb7a9f5256a`
+admitted; combined CPU scheduler live waiting for a slot. It temporarily owns
+unchanged registered fit scheduling, with one bank job and two owner CPU jobs
+maximum. Original fit coordinator is held; final verifier stays active.
+Four 3-hour extraction attempts plus one 1-hour independent verifier, no retry,
+labels, accuracy or promotion. Fourteen focused tests pass; cohort outputs
+remain pending. Prior full fitting/delivery/review reserves protected, complete
+calendar projects October 10 05:05 UTC, storage 1.849 TB below 2 TB.
+GPU/TPU budgets unchanged, zero spend; neither first rank achieved.
+[Admission evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
