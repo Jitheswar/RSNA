@@ -121,3 +121,12 @@ None remains within this planning destination. All seven tickets are resolved. T
   inference, fitting, scheduler job, accelerator use or spend. Strict official
   vision loading and fixed eight-study pilot require their next separate
   admission; registered Ticket 64 continues.
+
+- [Ticket 66](issues/66-measure-biomedclip-vision-mri-parity-and-cost.md) claimed:
+  exact isolated OpenCLIP runtime acquired and offline source/import checks
+  pass. Eight label-blind reports /344 slices are frozen for one 16-minute CPU
+  pilot plus fresh original-DICOM replay. Persistent controller holds only
+  future fit scheduling while 8035/8036 run, then admits the pilot and restores
+  scheduling. Eleven guards pass; no model forward or predictive evidence yet.
+  Prior 8032 completed `0:0` /1,000 updates /6,685 CPU-node seconds, then 8036
+  resumed its exact registered checkpoint. Accelerator ledgers unchanged.

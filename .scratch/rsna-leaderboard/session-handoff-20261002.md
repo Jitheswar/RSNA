@@ -18,8 +18,9 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    `41028974908d8ea8c4fe336f86de0263782100c76b9375dc7693bf60ac213eaf`.
    Scientific/checkpoint identity remains original
    `557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985`.
-   Original first full stage **8032** is live under v1; full fold-1/stage-0
-   **8035** is live under v2, exact resources. Recovery control **8034** now
+   Original first full stage **8032** completes `0:0`, 1,000 updates,
+   **6,685 CPU-node seconds**. Resumed fold-0/stage-1 **8036** and full
+   fold-1/stage-0 **8035** are live under v2, exact resources. Recovery control **8034** now
    completes `0:0`, **995 CPU-node seconds**, all three final 7,500-update heads
    and 58 gold predictions. Independent initial/state/Adam/source-exposure audit
    passes; no AUC read. Receipt `control/independent-state-validation.json`. Control **8033 failed `1:0`**
@@ -27,7 +28,10 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    held-out studies alongside gold. The failure is diagnosed and preserved,
    **1,551 CPU-node seconds**. Never retry either consumed v1 request. V1 source
    and coordinator remain preserved/stopped. [Diagnosis and recovery evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).
-3. Only **`rsna-ticket64-comparison-coordinator-v2.service`** advances fits.
+3. **`rsna-ticket64-comparison-coordinator-v2.service`** advances fits, except
+   the active Ticket 66 scheduling handoff below. It is temporarily held while
+   both Slurm fits continue; do not manually recreate it while
+   `rsna-ticket66-cpu-handoff-v1.service` owns the handoff.
    `coordinator-state.json` under v2 records the schedule. It waits for exact
    successful recovery control, then extends completed folds/fills the second
    CPU slot. The inherited original v1 fold-0/stage-0 **8032** can never be
@@ -72,7 +76,7 @@ fallback preserved. Private score/rank and final selections remain unavailable.
 6. Observe the separate TPU environment request **136722939 /v1**,
    `jitheswar/rsna-tpu-environment-admission-v1`, root
    `artifacts/private/ticket60-tpu-environment-v1/`. Last observed **QUEUED**
-   at **07:56:56 UTC**; actual hardware remains unverified. One 600-second
+   at **08:34:55 UTC**; actual hardware remains unverified. One 600-second
    server/540-second code watchdog, private/offline, GPU off, no attachments,
    training or spend. Existing intent is consumed: never push again. Observer
    `rsna-ticket60-tpu-environment-v1-observer.service` retains terminal.
@@ -94,6 +98,27 @@ fallback preserved. Private score/rank and final selections remain unavailable.
 8. Run relevant checks after new changes, update evidence/tracker/freeze
    register, commit/push private `origin/master`, and verify equal heads.
    Complete the goal only after both actual first-place ranks are proven.
+
+9. [Ticket 66](issues/66-measure-biomedclip-vision-mri-parity-and-cost.md)
+   runtime acquisition/source/import checks pass; MRI pilot is frozen,
+   **not executed yet**. Root `artifacts/private/ticket66-biomedclip-mri-pilot-v1/`,
+   pilot `36a7524de3929e18d229102ed292c7a10e6bd49bcdeaa510eddce9ac1e63ff90`.
+   Live unit **`rsna-ticket66-cpu-handoff-v1.service`**, PID **225672**,
+   handoff `f70715bc6bf524324ef11c1e817ce784f50afd78e8ef2833c6f405641fde817f`.
+   Holds only future fit scheduling while **8035 /8036** run. After one exact
+   successful stage frees a slot, admits one **960-second /16-CPU /64-GiB**
+   offline pilot plus fresh-process original-DICOM replay under a combined
+   900-second watchdog, then immediately recreates the exact fit coordinator.
+   Two pending+active owner CPU jobs maximum. No manual pilot/fit launch while
+   handoff owns scheduling; no consumed-request restart. Six-hour slot-wait
+   cap, one-hour accepted queue cap, 4,560-second calendar reserve. Eleven guards
+   pass. Preserve frozen pilot/controller/verifier/runtime sources. On terminal
+   inspect `pilot-result.json`, `independent-validation.json` and successful
+   `terminal-verification.json` before a separate full-extraction decision.
+   Actual model coverage/output/cost remain pending; no fitting/AUC/promotion
+   is admitted. If the unit stops, inspect authoritative unit/terminal and
+   `fitting-scheduler-resumed.json` before any manual recovery. Both live
+   original fit jobs must remain intact.
 
 ## Completed prerequisites
 
@@ -137,7 +162,9 @@ need separate exact recipes/decisions; they are not authorized by Ticket 64.
 GPU ledger unchanged: **129,637 charged /136,800 cap /zero reserved /7,163
 remaining seconds**. Preserve unknown charges. TPU reserves **600 seconds**,
 charged zero/hardware unverified. No external spend. Old continuation
-coordinator remains stopped; Ticket 64 v2 is the only active fit coordinator.
+coordinator remains stopped; Ticket 64 v2 retains the fit schedule but is
+temporarily held by the active Ticket 66 handoff until its sole pilot is admitted.
+Both full fits and the frozen final verifier remain live.
 
 Science freeze October 11, internal delivery before October 15; recorded
 competition final deadline October 22 at 23:59 UTC. Five submissions/day,
@@ -158,10 +185,11 @@ Private root `artifacts/private/ticket65-biomedclip-asset-admission-v1/`, frozen
 plan `076e4f1a3c72e25852f9a129df4a91e30bba6390130e3bbada6f913488854a86`.
 Fresh official rules, pinned MIT notice/config/card and independent full-hash
 receipt retained; six tests pass. Preserve the completed attempt and source.
-Next is separate isolated-runtime strict official vision loading and fixed
-eight-study original-MRI parity/cost pilot. No pilot or installation is admitted
-yet; do not occupy a third owner CPU slot. Keep the registered full-backbone
-comparison. Other variants retain unresolved gates.
+The isolated runtime is acquired under separate Ticket 66 decisions. Strict
+official vision loading and fixed eight-study original-MRI parity/cost pilot
+are admitted and waiting for a free slot, not executed yet. Do not occupy a
+third owner CPU slot. Preserve the registered comparison and scheduling handoff.
+Other variants retain unresolved gates.
 
 
 Independent verifier code is `scripts/validate_ticket64_full_backbone_comparison.py`.
@@ -187,8 +215,9 @@ training directories. Verifier explicitly binds those original files, the
 inherited first-stage receipt and every resumed checkpoint SHA chain.
 
 
-Latest continuation: full stages **8032/8035** are confirmed live, and the fit
-coordinator plus frozen final-verification watcher are confirmed live. Control
+Earlier continuation: 8032/8035 and both coordinators were live. Current
+8032 is complete, 8036/8035 run, final verifier stays live, and the fit scheduler
+is temporarily held by the active Ticket 66 handoff described above. Control
 **8034** is terminal `COMPLETED 0:0`, 995 CPU-node seconds; its original-source
 exposure/initial/encoder/Adam audit passed. Do not relaunch it or repeat completed
 fold 0. No GPU/TPU ledger change or scoring request. Completed fixed control does
