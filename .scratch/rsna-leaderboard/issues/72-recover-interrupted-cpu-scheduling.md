@@ -120,3 +120,29 @@ No current new fit result or interim AUC has been inspected. Final native replay
 still requires all remaining14500 updates, actual new successful terminals,
 complete final states and unchanged fixed comparisons. Older raw-terminal
 limitations and39600-second conservative charge remain explicit.
+
+October2,17:45UTC correction: continuation8111 failed1:0 after349 CPU-node
+seconds, before the optimizer loop. Exact traceback: missing new fold0
+training/configuration.json; the shared trainer requires its original immutable
+configuration alongside a resumed checkpoint. No new checkpoint, training log,
+attempt metadata or optimizer update was produced for fold0. Source configuration
+and all three seeds remain untouched. Coordinator stopped on the actual failed
+terminal, correctly preventing a consumed stage retry; preserve its frozen source.
+Private configuration-failure-diagnosis.json retains exact raw terminal/trace.
+
+Existing job8113 was still reading inputs. The exact old fold1 configuration was
+atomically carried into its new training directory after matching original
+fold/scientific fingerprint/identity/input fingerprints; every byte unchanged,
+no job restart, update, source edit or new attempt performed by the handoff.
+It passed that boundary and now advances beyond3000 under the same accepted job.
+Private configuration-handoff-8113.json binds both paths and exact source bytes.
+Only this existing fold1 job is currently live; fitting scheduler remains stopped.
+
+New additive configuration-carry helper and three guards reproduce the actual
+shared-trainer failure in a tiny deterministic call, then restore exact resumed
+loss history, exposures, all model tensors and Adam update duration versus
+continuous training. Old checkpoint remains at its planned2-step boundary;
+recovery completes4 total, proving no repeated update. This fixes the missing
+execution prerequisite, not the scientific configuration. Distinct continuation
+re-admission is still required for failed fold0 and future scheduling; do not
+restart consumed8111 or the stopped original coordinator.
