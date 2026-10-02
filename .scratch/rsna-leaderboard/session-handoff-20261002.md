@@ -427,6 +427,14 @@ consistency and does not admit fitting continuation or original strict ancestry.
 route and storage allowances retained; adding1800 CPU-node/3600 queue-calendar
 seconds and1GB incremental storage projects1968297304134bytes and protected
 finishOctober10,19:26UTC before conservativeOctober11T00 cutoff. Original
-stage0/1 non-training overhead364.892/382.379seconds yields conservative audit
+fold0/1 non-training overhead364.892/382.379seconds yields conservative audit
 forecast2*(364.892+382.379)+180=1674.543seconds<1740 watchdog; this is source-cost
 projection, not actual audit timing. Launch remains separate once-only action.
+
+October2,16:58UTC: sole independent audit **8108** accepted and actual Slurm
+RUNNING with exact16CPU/64GiB/30minutes/nonexclusive/no requeue/restarts,
+CPU-only allocation. Private running-allocation receipt and durable observer
+rsna-ticket72-audit-8108-observer.service retained. No training or scoring.
+Current checkpoint audit still needs its output and actual successful terminal;
+continuation remains separately gated. Baseline development136806200/v1 remains
+RUNNING/source+kernelspec PASS. No daily competition submission used.

@@ -195,3 +195,5 @@ analysis closure; all frozen source snapshots must remain unchanged.
 - October2,16:49UTC: exact baseline v4 numeric136806200/v1 RUNNING/source+kernelspec PASS, one development attempt/no daily scoring slot consumed. Owner explicitly says preserve daily submissions; recorded in spec and handoff.
 
 - October2,16:57UTC: [T72](issues/72-recover-interrupted-cpu-scheduling.md) bounded independent state audit prepared against immutable copies; complete prior route retained. No fitting, accuracy scoring, ancestry repair or daily submission.
+
+- October2,16:58UTC: independent checkpoint audit8108 RUNNING on an authorized CPU node; exact bounded allocation recorded. Continuation waits for actual successful audit and separate admission. Baseline development136806200/v1 remains active; daily scoring slots preserved.
