@@ -167,3 +167,21 @@ Gold-cohort regression **2**, recovery scheduling **3**, updated independent
 verifier admission/path/shape **8** tests pass. Final scientific comparison,
 independent original-MRI replay and any leaderboard gain remain pending.
 [Diagnosis and recovery](../../../docs/evidence/ticket-64-gold-prediction-recovery.md).
+
+
+October 2: Recovery control **8034 completed `0:0`, 995 CPU-node seconds**,
+all three 7,500-update heads and 58 gold predictions. Independent state audit
+passes at 07:18:32 UTC: strict original identity/config/fold, initial weights,
+unchanged encoders, changed heads, finite complete Adam/loss states and exact
+original target/mask/source exposures; no AUC read. Failed **8033** keeps its
+1,551-second charge. Full **8035** (fold 1/stage 0) is now live beside **8032**,
+exact admitted resources, no third CPU job or intermediate scoring.
+
+The reserved final analysis and independent MRI replay are now handled by
+frozen `rsna-ticket64-final-verification-v1.service`, admission
+`c7c3ece040a5504462d14876526b3cb3b5eba043f382c01d4dcc57c98fa077ec`.
+It waits for all six exact finals, freezes their inputs, then performs analysis
+and native replay within the same reserved 90-minute CPU allocation. It stops
+on failed/ambiguous execution and never retries a consumed launch or promotes
+results. Ten final-replay tests and seven watcher guards pass. Actual final
+comparison/original MRI reproducibility and leaderboard advantage remain pending.

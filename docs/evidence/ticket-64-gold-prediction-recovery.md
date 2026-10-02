@@ -73,3 +73,51 @@ checkpoints/first-stage receipts, v2 receipts and the exact resumed checkpoint
 chain; eight admission/path/shape checks pass. Actual independent original-MRI
 final replay and all-five comparison recomputation still await all six finals.
 The objective remains both actual first-place ranks; no gain or rank is proven.
+
+
+## Completed control and independent state audit
+
+Recovery **8034 completed `0:0`**, **995 allocated CPU-node seconds**, peak RSS
+**2,938,675,200 bytes**. All three control fits are final: 7,500 updates each,
+58 gold predictions plus ablations; fold 0's completed weights were reused.
+Independent state audit at **07:18:32 UTC** reloads all three checkpoints with
+the exact original scientific identity, configuration and fold. Initial warm
+states agree; every control encoder tensor is unchanged, each head changes,
+Adam rate is 1e-4 with 7,500 finite-moment steps, and loss histories are finite.
+Original audited targets/masks and deterministic source draws reconstruct all
+30,000 sample exposures per fold exactly, without held-out contamination.
+No AUC was read or comparative selection made.
+
+Private receipt: `control/independent-state-validation.json`. Retained actual
+terminal hash `6e7a9bfd137d380fdd772561df13e15132c44bc82d630a0a250834f57ad5cfeb`.
+The prior failed control's 1,551 seconds remain recorded; combined control
+attempt allocation is **2,546 CPU-node seconds**. Independent original-MRI
+prediction replay remains necessary. The coordinator subsequently accepted
+full fold-1/stage-0 **8035**, exact 16 CPUs/64 GiB/5.5-hour resources, alongside
+original full fold-0/stage-0 **8032**. Neither treatment fold is final.
+
+## Reserved final analysis and replay automation
+
+`rsna-ticket64-final-verification-v1.service` runs a frozen read-only watcher.
+Admission SHA-256:
+`c7c3ece040a5504462d14876526b3cb3b5eba043f382c01d4dcc57c98fa077ec`.
+Private root `postfit-controller-v1/` holds its three immutable source files,
+source hashes, file lock and current phase. Actual service is running and its
+phase is `wait_for_fits`; no independent replay job has been submitted.
+
+After all six fits and every inherited/v2 stage have exact successful terminals,
+it freezes final record/checkpoint identities and fresh storage. The existing
+**5,400 CPU-node-second** replay reserve covers both the fixed final analysis
+and independently recomputed original-MRI comparisons in one nonexclusive
+16-CPU/64-GiB/90-minute job. No additional CPU route reserve, fitting, rate/
+duration changes, intermediate metrics, GPU request, spend or candidate
+promotion. Two owner CPU slots remain enforced. The watcher stops on failed
+fit evidence or consumed ambiguous replay intent; an observation timeout
+re-polls the same handle. It reconciles the actual final replay terminal/output
+before stopping. Provisional results still require separate anchor/delivery
+review and both real first-place ranks remain unproven.
+
+Tests: **10** final replay admission/shape/analysis checks and **7** watcher
+scheduling/one-attempt/readiness guards pass. The scientific fitting snapshots
+remain unchanged. These checks prove operational guards; they do not prove
+final MRI reproducibility or predictive advantage before the real replay.

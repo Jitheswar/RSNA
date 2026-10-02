@@ -18,8 +18,11 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    `41028974908d8ea8c4fe336f86de0263782100c76b9375dc7693bf60ac213eaf`.
    Scientific/checkpoint identity remains original
    `557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985`.
-   Original first full stage **8032** is live under v1; recovery control **8034**
-   is live under v2. Actual allocations match. Control **8033 failed `1:0`**
+   Original first full stage **8032** is live under v1; full fold-1/stage-0
+   **8035** is live under v2, exact resources. Recovery control **8034** now
+   completes `0:0`, **995 CPU-node seconds**, all three final 7,500-update heads
+   and 58 gold predictions. Independent initial/state/Adam/source-exposure audit
+   passes; no AUC read. Receipt `control/independent-state-validation.json`. Control **8033 failed `1:0`**
    after completing fold-0 training because its final helper selected report-only
    held-out studies alongside gold. The failure is diagnosed and preserved,
    **1,551 CPU-node seconds**. Never retry either consumed v1 request. V1 source
@@ -47,18 +50,25 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    64 GiB /5.5 h, watchdog 19,740 s; control all three folds in two hours.
    Final checkpoints alone produce held-out predictions. Do not change
    duration/rates/weights based on intermediate losses or runtime.
-5. Before disposition, admit and execute the prepared independent original-MRI
-   final prediction replay and registered comparison recomputation. The plan
-   reserves **5,400 CPU-node seconds**, one 16-CPU/64-GiB bounded job; freeze
-   verifier inputs/source/launcher before requesting it. Replay all 58 held-out
-   source studies for both arms within **1e-6**, strict reload all six finals,
-   reconstruct original targets/source exposures, verify treatment encoder
-   updates/control encoder/fixed buffers, and recompute the five registered
-   comparisons. The fit script's `analyze SHA` checks terminals/exposures and
-   computes comparisons but explicitly does not satisfy original-source replay.
-   No final comparison exists yet. Positive primary bootstrap lower bound and
-   all positive fold directions plus image controls permit provisional review
-   only; separate fixed-anchor comparison/offline delivery gates still apply.
+5. Separate **`rsna-ticket64-final-verification-v1.service`** now waits for
+   all six fixed final fits and every inherited/v2 stage's successful terminal.
+   Frozen watcher admission
+   `c7c3ece040a5504462d14876526b3cb3b5eba043f382c01d4dcc57c98fa077ec`, private
+   `v2/postfit-controller-v1/`; actual phase `wait_for_fits`, no replay job yet.
+   It freezes the completed final inputs and fresh storage, then launches **one
+   reserved 5,400-second/16-CPU/64-GiB job**, computing the fixed final analysis
+   and independent original-MRI replay in that same allocation. Every native
+   parent/control/full/ablation output must match within 1e-6; all five stored/
+   native comparisons, original targets/masks/exposures, six final states and
+   actual successful replay terminal are checked. It never repeats consumed
+   launch intents, re-polls transient observations and stops on failed evidence.
+   No manual analysis/replay launch while this watcher is active. Preserve its
+   frozen snapshot; changes require a distinct diagnosed request. Ten final
+   replay tests and seven watcher guards pass; actual replay remains pending.
+   After complete successful receipt, inspect `analysis.json`, native validation
+   and `terminal-verification.json`. Positive primary bootstrap lower bound and
+   positive fold directions plus image controls only permit provisional review;
+   separately admit fixed anchor comparison/offline delivery before promotion.
 6. Observe the separate TPU environment request **136722939 /v1**,
    `jitheswar/rsna-tpu-environment-admission-v1`, root
    `artifacts/private/ticket60-tpu-environment-v1/`. Last observed **QUEUED**
@@ -142,16 +152,13 @@ were downloaded. Keep the registered full-backbone comparison; this note alone
 does not admit a new encoder run. Other variants have unresolved gates.
 
 
-Independent verifier code is now `scripts/validate_ticket64_full_backbone_comparison.py`.
-Its `prepare` rejects unfinished fits and creates no request; eight admission/
-prediction-shape/inherited-path checks pass. After all six fits, run the frozen recovery worker `analyze V2_SHA`
-under its project/source environment, then verifier `prepare`, inspect frozen
-request/launcher, `launch REPLAY_SHA`, and independently reconcile actual replay
-terminal before disposition. No verifier resource request exists yet. It uses
-the admitted original Ticket 62 archive reader, strict final checkpoints, native
-parent/full/control/zero-feature predictions, original source/mask exposures,
-exact Adam duration/rates, all encoder scopes and independent recomputation of
-all five stored/native comparisons. Real final replay remains pending.
+Independent verifier code is `scripts/validate_ticket64_full_backbone_comparison.py`.
+Its `prepare` requires all six final runs and exact terminals before freezing any
+request. It can generate the fixed analysis inside the reserved replay allocation;
+no preliminary CPU analysis job is needed. The frozen watcher runs that workflow
+and actual terminal reconciliation automatically. Treat only its actual replay
+receipt as proof of final MRI reproducibility. Current matched-control state
+audit is complete, with no AUC inspected; treatment and native replay are pending.
 
 At **06:33 UTC** both jobs have begun successful optimizer updates with finite
 logged losses: full fold 0 **29** and control fold 0 **1,425**. These are progress
@@ -166,3 +173,11 @@ checkpoint semantics remain fixed. Final analysis/replay paths are v2 except
 fold-0 head/full final checkpoint files, which remain in their original v1
 training directories. Verifier explicitly binds those original files, the
 inherited first-stage receipt and every resumed checkpoint SHA chain.
+
+
+Latest continuation: full stages **8032/8035** are confirmed live, and the fit
+coordinator plus frozen final-verification watcher are confirmed live. Control
+**8034** is terminal `COMPLETED 0:0`, 995 CPU-node seconds; its original-source
+exposure/initial/encoder/Adam audit passed. Do not relaunch it or repeat completed
+fold 0. No GPU/TPU ledger change or scoring request. Completed fixed control does
+not establish comparative advantage, anchor complementarity or either first rank.

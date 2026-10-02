@@ -66,3 +66,31 @@ def test_replay_rejects_unknown_final_fit():
         replay.final_checkpoint_path("unknown", 0)
     with pytest.raises(ValueError, match="Unknown final fit"):
         replay.final_checkpoint_path("full-backbone", 3)
+
+
+def test_bounded_analysis_generates_only_the_frozen_final_comparison(tmp_path, monkeypatch):
+    monkeypatch.setattr(replay, "FIT", tmp_path)
+    records = [dict(arm="full-backbone", fold=0, checkpoint_sha256="final")]
+    request = dict(analysis_generated_in_replay_allocation=True, fit_plan_sha256="fit", final_run_records=records)
+    called = []
+
+    def generator(checksum):
+        called.append(checksum)
+        (tmp_path / "analysis.json").write_text(json.dumps(dict(
+            status="COMPLETE", plan_sha256=checksum, run_records=records, candidate_promotion=False)))
+
+    assert replay.ensure_final_analysis(request, generator)["run_records"] == records
+    assert called == ["fit"]
+    with pytest.raises(ValueError, match="Unexpected analysis"):
+        replay.ensure_final_analysis(request, generator)
+    assert called == ["fit"], "An ambiguous existing result must not trigger another analysis"
+
+
+def test_bounded_analysis_rejects_a_different_checkpoint_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(replay, "FIT", tmp_path)
+    (tmp_path / "analysis.json").write_text(json.dumps(dict(
+        status="COMPLETE", plan_sha256="fit", run_records=[dict(checkpoint_sha256="other")], candidate_promotion=False)))
+    request = dict(analysis_generated_in_replay_allocation=False, fit_plan_sha256="fit",
+                   final_run_records=[dict(checkpoint_sha256="frozen")])
+    with pytest.raises(ValueError, match="Exact complete final comparison"):
+        replay.ensure_final_analysis(request, lambda _: pytest.fail("Existing analysis must not be rerun"))

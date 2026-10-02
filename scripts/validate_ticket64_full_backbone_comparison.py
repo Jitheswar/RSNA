@@ -71,6 +71,42 @@ def maximum_error(actual, expected):
     return max(float(np.max(np.abs(np.asarray(actual[uid]) - np.asarray(expected[uid])))) for uid in actual)
 
 
+def final_fit_records(checksum):
+    records = []; seen = {arm: set() for arm in ARMS}
+    for fold in range(3):
+        for arm in ARMS:
+            directory = FIT / arm / f"fold-{fold}"
+            path = directory / ("run.json" if arm == ARMS[0] else "stage-7/stage-result.json")
+            record = read(path)
+            require(record["status"] == "COMPLETE" and record["plan_sha256"] == checksum
+                    and record["scientific_plan_sha256"] == SCIENCE_SHA
+                    and record["progress"]["successful_optimizer_steps"] == record["progress"]["attempted_batches"] == 7500,
+                    "Every registered final fit must complete")
+            predictions = record["predictions"]
+            require(len(predictions) == (20 if fold == 0 else 19) and not seen[arm] & set(predictions),
+                    "Exact disjoint final gold prediction counts required")
+            maximum_error(predictions, record["encoded_image_ablation"])
+            seen[arm].update(predictions)
+            checkpoint = final_checkpoint_path(arm, fold)
+            require(Path(record["checkpoint_path"]) == checkpoint and digest(checkpoint) == record["checkpoint_sha256"],
+                    "Exact final checkpoint required")
+            records.append(dict(arm=arm, fold=fold, checkpoint_path=str(checkpoint),
+                                checkpoint_sha256=record["checkpoint_sha256"]))
+    return records
+
+
+def ensure_final_analysis(request, generator):
+    path = FIT / "analysis.json"
+    if request["analysis_generated_in_replay_allocation"]:
+        require(not path.exists(), "Unexpected analysis appeared after immutable replay admission")
+        generator(request["fit_plan_sha256"])
+    analysis = read(path)
+    require(analysis["status"] == "COMPLETE" and analysis["plan_sha256"] == request["fit_plan_sha256"]
+            and analysis["run_records"] == request["final_run_records"] and not analysis["candidate_promotion"],
+            "Exact complete final comparison required")
+    return analysis
+
+
 def prepare():
     require(not ROOT.exists() and not DECISION.exists(), "Immutable verifier request already exists")
     # The coordinator's independent, tensor-free terminal/counter guards are
@@ -83,7 +119,7 @@ def prepare():
             "Original campaign replay reserve differs")
     require(stage_state(FIT / "control", checksum, None, "02:00:00") == "complete",
             "The complete matched control is required before replay admission")
-    inputs = [AUTH, FIT / "plan.json", FIT / "analysis.json"]
+    inputs = [AUTH, FIT / "plan.json"]
     for directory, limit, steps, expected_sha in [(FIT / "control", "02:00:00", None, checksum)] + [
         (stage_location(f, s)[0], "05:30:00", min(7500, (s+1)*1000), stage_location(f, s)[1])
         for f in range(3) for s in range(8)]:
@@ -92,13 +128,15 @@ def prepare():
         inputs.extend([directory / "accepted-launch.json", directory / "stage-result.json",
                        directory / f"controller-{job}/terminal-controller.txt",
                        directory / f"controller-{job}/terminal-observation.json"])
-    analysis = read(FIT / "analysis.json")
-    require(analysis["status"] == "COMPLETE" and analysis["plan_sha256"] == checksum
-            and len(analysis["run_records"]) == 6
-            and {(r["arm"], r["fold"]) for r in analysis["run_records"]} == {(a, f) for a in ARMS for f in range(3)}
-            and not analysis["candidate_promotion"],
-            "Exact complete final comparison is required")
-    for row in analysis["run_records"]:
+    final_records = final_fit_records(checksum)
+    generate_analysis = not (FIT / "analysis.json").exists()
+    if not generate_analysis:
+        analysis = read(FIT / "analysis.json")
+        require(analysis["status"] == "COMPLETE" and analysis["plan_sha256"] == checksum
+                and analysis["run_records"] == final_records and not analysis["candidate_promotion"],
+                "Exact existing final comparison required")
+        inputs.append(FIT / "analysis.json")
+    for row in final_records:
         arm, fold = row["arm"], row["fold"]
         directory = FIT / arm / f"fold-{fold}"
         path = final_checkpoint_path(arm, fold)
@@ -130,6 +168,7 @@ def prepare():
         source_snapshot=str(snapshot), decision_path=str(DECISION), resources=resources,
         authorization_sha256=digest(AUTH), runtime_versions=plan["runtime_versions"],
         storage_observation=usage, maximum_prediction_error=1e-6,
+        analysis_generated_in_replay_allocation=generate_analysis, final_run_records=final_records,
         frozen_files=[dict(path=str(p), sha256=digest(p)) for p in inputs],
         fitting=False, candidate_promotion=False, competition_submission=False)
     write(ROOT / "plan.json", request)
@@ -227,11 +266,12 @@ def run(checksum):
     from rsna_knee.ticket34 import admit_ticket30_fold_supervision
     from rsna_knee.training import _batch_indices, _model_state_sha256, load_training_checkpoint
     from ticket62_mri_pixel_materialize import iter_packed_sources
-    from ticket64_full_backbone_recovery_v2 import original, scientific_identity
+    from ticket64_full_backbone_recovery_v2 import original, scientific_identity, analyze
     config_for_arm, initial_for_arm, terminal = original.config_for_arm, original.initial_for_arm, original.terminal
     from ticket63_full_backbone_training_cost import PARENT, t36
     torch.set_num_threads(16); torch.set_num_interop_threads(1)
     require(torch.version.cuda is None and not torch.cuda.is_available(), "CPU-only replay required")
+    ensure_final_analysis(request, analyze)
     manifest = load_fold_manifest(t36.FOLD_MANIFEST_PATH)
     gold = {m.study_instance_uid: m for m in manifest.gold_memberships}
     require(len(gold) == 58 and not manifest.superseded, "Complete corrected gold membership required")

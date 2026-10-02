@@ -504,3 +504,24 @@ zero spend. Gold-cohort regression **2**, recovery scheduling **3** and updated
 independent verifier **8** tests pass. All six final fits/comparisons and original
 MRI replay remain incomplete; no first-place evidence.
 [Recovery evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).
+
+
+## October 2 — complete matched control; automatic reserved final verification
+
+Recovery control **8034 completed `0:0`, 995 CPU-node seconds**, peak RSS
+2.939 GB. Independent audit verifies all three 7,500-update final heads, exact
+original initialization/identity/config/fold, unchanged encoders, finite Adam/
+loss states, original targets/masks and all 30,000 source exposures per fold.
+All 58 gold predictions/ablations are finite and fold-disjoint. No AUC read,
+comparative selection or candidate promotion. Failed control **8033** retains
+1,551 seconds; total two-attempt control allocation 2,546 node seconds.
+
+Full **8032** and newly accepted **8035** are live, folds 0/1 stage 0, exact
+16 CPUs/64 GiB/5.5-hour resources. Recovery coordinator advances the unchanged
+7,500-update regime. Separate frozen final-verification service waits for all
+six final fits before freezing/launching the one reserved 5,400-second CPU
+analysis-plus-original-MRI replay. Admission
+`c7c3ece040a5504462d14876526b3cb3b5eba043f382c01d4dcc57c98fa077ec`.
+Actual service phase `wait_for_fits`, no replay submission yet. Ten final-replay
+and seven watcher tests pass. Source/CPU route and GPU/TPU ledgers remain fixed;
+no first-place evidence. [Evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).
