@@ -25,7 +25,8 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    Full fold-1/stage-1 **8039** now completes exactly2000 updates /0:0,
    **6,988 CPU-node seconds**, checkpoint
    `1cb772aa30a89533b1f02f0c22f64ff32e41d8d3ae38a26de8f426f60fd90aa4`.
-   Current full fold0/stage2 **8054** runs, target3000. Fold-1 first stage **8035**
+   Full fold0/stage2 **8054** COMPLETE0:0/6833seconds,target3000, checkpoint
+   `9f1344335f752d5ab35d142ac43f384eba182de000a85044edbf0aba103542c0`. Current full fold0/stage3 **8074** runs,target4000. Fold-1 first stage **8035**
    completed its exact 1,000-update boundary successfully. Recovery control **8034** now
    completes `0:0`, **995 CPU-node seconds**, all three final 7,500-update heads
    and 58 gold predictions. Independent initial/state/Adam/source-exposure audit
@@ -40,8 +41,8 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    successfully and exited. Ticket68 advances unchanged registered full stages
    while waiting to launch one medical fit and one native verifier. Do not
    manually restore another coordinator during this ownership interval.
-   Current8054(fold0/stage2) and8072(fold1/stage2) run, each target3000, at most
-   two pending/active owner CPU jobs. T68 fit/native verifier unlaunched.
+   Current8074(fold0/stage3,target4000) and8072(fold1/stage2,target3000) run, at most
+   two pending/active owner CPU jobs. T68 fit8073 COMPLETE0:0/357seconds; native verifier unlaunched.
    State under `artifacts/private/ticket68-biomedclip-head-controller-v1/state.json`;
    original coordinator restored on its exit. Exact completed recovery
    control is required before unchanged fitting stages advance. The inherited original v1 fold-0/stage-0 **8032** can never be
@@ -83,17 +84,16 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    and `terminal-verification.json`. Positive primary bootstrap lower bound and
    positive fold directions plus image controls only permit provisional review;
    separately admit fixed anchor comparison/offline delivery before promotion.
-6. Observe the separate TPU environment request **136722939 /v1**,
-   `jitheswar/rsna-tpu-environment-admission-v1`, root
-   `artifacts/private/ticket60-tpu-environment-v1/`. Last observed **QUEUED**
-   at **10:05:35 UTC**; actual hardware remains unverified. One 600-second
-   server/540-second code watchdog, private/offline, GPU off, no attachments,
-   training or spend. Existing intent is consumed: never push again. Observer
-   `rsna-ticket60-tpu-environment-v1-observer.service` retains terminal.
-   On terminal use Kaggle SDK Python with `scripts/verify_ticket60_tpu_environment.py`;
-   verify exact v1 source, actual TPU XLA/global devices/matmul and quota;
-   conservatively charge 600 s if unresolved. Passing enables separate real-MRI
-   pilot admission only. No GPU launch while this accelerator request queues.
+6. The sole TPU environment probe **136722939/v1** is independently verified
+   COMPLETE12:40:29UTC: real XLA TPU, eight global/addressable devices, no CUDA,
+   exact FP32 matrix result. Full600-second conservative charge recorded, zero
+   reserved. Observer exited; never retry its push or consumed verifier.
+   IndependentSHA `eaad4dd0ed158c9478bc749195593f31b1a3f315d1b3b53031e374289b9e254c`.
+   Fresh authenticated typed quota12:45UTC: GPU57178.249/TPU71883.65 seconds free,
+   paid scaling off; malformed serialized durations never parsed. Accelerators
+   are vacant subject to fresh launch observation. Ticket60's separate real-MRI
+   compile/update/checkpoint/delivery pilot remains unprepared/unlaunched.
+   [Actual environment evidence](../../docs/evidence/ticket-60-tpu-environment.md).
 7. Preserve completed [Ticket 59](issues/59-diagnose-hidden-frontier-execution-failure.md)
    accessible input probes. All original DINO input jobs **7995 /7996** pass
    4,407 studies/819,078 DICOMs with zero decode/fallback events; independent
@@ -150,8 +150,8 @@ fallback preserved. Private score/rank and final selections remain unavailable.
     **additional** warm-head updates. No head transfer or scientific sweep.
     Initial/source preflight and21 guards passed earlier; do not edit any
     four frozen sources or matching old/new snapshots. Combined scheduling
-    controller above is active;8054/8072 occupy both slots, no medical job or
-    predictive result yet. Follow existing handle, never recreate consumed
+    controller above is active;8074/8072 occupy both slots. Sole medical fit8073
+    COMPLETE0:0/357CPU-node seconds. Native verifier waits; no predictive result inspected. Follow existing handle, never recreate consumed
     intents on timeout. Actual all58 medical/ResNet native/source/state/
     checkpoint/sampler/Adam/terminal replay needed before provisional review.
     Exact scored-anchor/offline delivery and actual ranks remain separate.

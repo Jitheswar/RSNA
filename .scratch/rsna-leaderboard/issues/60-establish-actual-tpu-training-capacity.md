@@ -42,7 +42,7 @@ selection follows from either the quota or this first environment test.
 
 - [x] Preserve primary-source TPU quota and scripted-launch concern.
 - [x] Freeze and launch exactly one bounded fail-on-CPU environment request.
-- [ ] Independently inspect actual allocation, calculation, terminal identity,
+- [x] Independently inspect actual allocation, calculation, terminal identity,
   remote privacy/network settings and quota accounting.
 - [ ] If actual TPU exists, measure real whole-backbone training and delivery
   feasibility under a separate complete resource plan.
@@ -64,3 +64,5 @@ CPU run fails with its receipt preserved. The accepted response's `/code/`
 prefix was reconciled read-only with no second push. TPU ledger reserves 600
 seconds, GPU ledger unchanged. See [execution evidence](../../../docs/evidence/ticket-60-tpu-environment.md).
 Actual TPU execution and any dependent training feasibility remain unverified.
+
+October2,12:40UTC: independent exact-version verification passes terminal COMPLETE. Actual XLA TPU, eight global and eight addressable devices, no CUDA; synchronized FP32 16x16 result has every entry16 and sum4096. Conservatively charge the complete600-second bound, releasing its reservation; notebook71.683-second elapsed is not allocation accounting. Fresh typed quota12:45UTC shows free GPU57178.249 and TPU71883.65 seconds, paid scaling off. This establishes environment availability only; the separate real-MRI training/checkpoint pilot remains unlaunched. [Evidence](../../../docs/evidence/ticket-60-tpu-environment.md).

@@ -41,7 +41,7 @@ weight sweep, competition submission, promotion or clean-OOF claim.
   study run, not measured Gold58 cost. Proposed151200 campaign cap is an agent
   proposal under standing autonomy, not a new exact owner numeric approval.
   Current136800 cap/129637 charged/7163 remaining are unchanged.
-- TPU136722939/v1 remains QUEUED; no second accelerator request is launched.
+- TPU136722939/v1 is independently verified COMPLETE12:40UTC, eight actual TPU devices; its full600-second bound is charged and reservation released. No new accelerator request has launched.
 - [Evidence and remaining gates](../../../docs/evidence/ticket-70-exact-scored-anchor.md).
 
 - October2: immutable pinned envelopev2 supersedes unlaunchedv1, requestSHA

@@ -168,3 +168,13 @@ None remains within this planning destination. All seven tickets are resolved. T
   results, all12 targets,2000 paired bootstrap20261002, all-fold directions plus
   zero-image controls. Diagnostics are fixed and cannot become alternate
   candidates. Blocked by actual68/70 receipts; no analysis/gain/promotion yet.
+
+October2,12:40UTC — Ticket60 actual TPU environment independently verified
+COMPLETE136722939/v1: eight global/addressable TPU devices, no CUDA, exact FP32
+matrix result. Full600-second conservative charge, zero reserved. Retained proof
+SHA `eaad4dd0ed158c9478bc749195593f31b1a3f315d1b3b53031e374289b9e254c`.
+Fresh typed free quota12:45UTC GPU57178.249/TPU71883.65, paid scaling off. No MRI
+training/delivery pilot or predictive gain; Ticket60 remains claimed for that
+separate stage. [Evidence](../../docs/evidence/ticket-60-tpu-environment.md).
+
+October2,12:57UTC — sole Ticket68 medical fit8073 completes0:0/357CPU-node seconds. Native MRI replay still awaits CPU slot; no interim predictive read. Full fold0/stage2 8054 completes0:0/6833seconds/exact3000 boundary; successor8074 runs,target4000. Controller owns two slots8074/8072; science unchanged.

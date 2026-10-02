@@ -97,3 +97,5 @@ actual generated launchers were hash-checked and syntax-checked during admission
 Submission target remains **the next 24–48 hours**, conditional on measured gain
 and offline delivery. No submission is queued. If this route fails the fixed
 gates, the longer full-backbone comparison remains the next pending opportunity.
+
+October2,12:57UTC — sole medical fit **8073** completed **0:0**, **357 CPU-node seconds**, no restarts. Controller advances unchanged full stages while the sole original-MRI verifier awaits one of the two CPU slots. No predictive results inspected before native/terminal verification. Current full jobs8074(fold0/stage3,target4000) and8072(fold1/stage2,target3000); do not launch a third owner CPU job.

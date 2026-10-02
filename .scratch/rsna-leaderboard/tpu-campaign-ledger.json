@@ -1,24 +1,36 @@
 {
-  "schema_version": "rsna-tpu-campaign-ledger-v1",
-  "updated_at_utc": "2026-10-02T01:52:25.260675+00:00",
-  "observed_free_quota_seconds": 72000,
-  "charged_seconds": 0,
-  "reserved_seconds": 600,
+  "charged_seconds": 600,
+  "conservative_campaign_remaining_seconds": 71400,
   "external_spend_usd": 0,
+  "latest_typed_free_quota_observation": {
+    "evidence_path": "artifacts/private/ticket60-tpu-environment-v1/typed-terminal-quota.json",
+    "evidence_sha256": "34aa09c491a78537ff93228f16146d9f038f471e7faa9c0eb6a33cd067e1b8bb",
+    "free_tpu_seconds": 71883.65,
+    "observed_at_utc": "2026-10-02T12:45:03.105327+00:00",
+    "paid_scaling_enabled": false
+  },
+  "observed_free_quota_seconds": 72000,
+  "quota_note": "Initial observed nominal allowance72000 is retained. Campaign conservative remaining71400 differs from fresh typed platform free71883.65. Malformed serialized duration literals are retained in ignored evidence and never parsed.",
   "requests": [
     {
-      "ticket": 60,
+      "accounting_basis": "Full reserved bound conservatively charged; notebook elapsed time is not verified allocation duration",
+      "actual_tpu_verified": true,
+      "charged_seconds": 600,
       "handle": "jitheswar/rsna-tpu-environment-admission-v1",
-      "version": 1,
-      "status": "QUEUED",
-      "reserved_seconds": 600,
-      "charged_seconds": 0,
-      "maximum_session_seconds": 600,
+      "independent_verification_sha256": "eaad4dd0ed158c9478bc749195593f31b1a3f315d1b3b53031e374289b9e254c",
       "maximum_attempts": 1,
+      "maximum_session_seconds": 600,
+      "private_evidence_root": "artifacts/private/ticket60-tpu-environment-v1",
+      "receipt_sha256": "dfe06f642a3efe9d37357072ab7cddc3474192748248f266a7db232303dbc5c1",
       "request_sha256": "5fa413ef63f1dd2cf5ddb4a88f2d33077b6ffc28f9af6769a1b17c7b67d3113f",
-      "actual_tpu_verified": false,
-      "private_evidence_root": "artifacts/private/ticket60-tpu-environment-v1"
+      "reserved_seconds": 0,
+      "status": "COMPLETE",
+      "terminal_verified_at_utc": "2026-10-02T12:40:29.170119+00:00",
+      "ticket": 60,
+      "version": 1
     }
   ],
-  "quota_note": "Reservation is a campaign safety bound; requested settings and nominal quota do not prove actual hardware. Preserve malformed GPU quota literal without parsing."
+  "reserved_seconds": 0,
+  "schema_version": "rsna-tpu-campaign-ledger-v1",
+  "updated_at_utc": "2026-10-02T12:51:00.451187+00:00"
 }

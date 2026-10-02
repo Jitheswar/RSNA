@@ -649,3 +649,11 @@ Ten new guards/independent envelope validation pass. Latest historical attachmen
 lineage is inferred from authenticated histories predating the saved baseline;
 historical byte parity and real MRI/remote runtime remain unverified. Freeze
 new envelope builder and snapshots; no cap/reservation/launch/ledger change.
+
+October2,12:40UTC — Ticket60 actual TPU environment independently verified
+COMPLETE136722939/v1: eight global/addressable TPU devices, no CUDA, exact FP32
+matrix result. Full600-second conservative charge, zero reserved. Retained proof
+SHA `eaad4dd0ed158c9478bc749195593f31b1a3f315d1b3b53031e374289b9e254c`.
+Fresh typed free quota12:45UTC GPU57178.249/TPU71883.65, paid scaling off. No MRI
+training/delivery pilot or predictive gain; Ticket60 remains claimed for that
+separate stage. [Evidence](../../docs/evidence/ticket-60-tpu-environment.md).

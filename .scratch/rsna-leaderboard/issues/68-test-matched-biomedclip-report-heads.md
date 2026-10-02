@@ -65,3 +65,5 @@ competition delivery needs a later separate decision; no automatic promotion.
   Combined controller holds original coordinator and advances identical full
   stages. Existing8054/8072 occupy both slots; medical fit/verification still
   unlaunched. No medical predictive result, promotion or scoring yet.
+
+October2,12:57UTC — sole medical fit **8073** completed **0:0**, **357 CPU-node seconds**, no restarts. Controller advances unchanged full stages while the sole original-MRI verifier awaits one of the two CPU slots. No predictive results inspected before native/terminal verification. Current full jobs8074(fold0/stage3,target4000) and8072(fold1/stage2,target3000); do not launch a third owner CPU job.
