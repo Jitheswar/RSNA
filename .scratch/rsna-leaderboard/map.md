@@ -193,3 +193,5 @@ analysis closure; all frozen source snapshots must remain unchanged.
 - October2,16:47UTC: [T68](issues/68-test-matched-biomedclip-report-heads.md) resolved with exact native proof/inconclusive_no_promotion; [T70](issues/70-establish-exact-scored-anchor-predictions.md) v3 failed before code due missing kernelspec, full bound charged; separate unchanged-code v4 admitted; [T71](issues/71-compare-medical-heads-with-scored-anchor.md) v2 mechanically binds v4 with identical fixed science. T72 missing full-fit terminals remains open.
 
 - October2,16:49UTC: exact baseline v4 numeric136806200/v1 RUNNING/source+kernelspec PASS, one development attempt/no daily scoring slot consumed. Owner explicitly says preserve daily submissions; recorded in spec and handoff.
+
+- October2,16:57UTC: [T72](issues/72-recover-interrupted-cpu-scheduling.md) bounded independent state audit prepared against immutable copies; complete prior route retained. No fitting, accuracy scoring, ancestry repair or daily submission.

@@ -1,0 +1,28 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "automatic_retry": false,
+  "complete_route_finish_utc": "2026-10-10T19:26:13.660498+00:00",
+  "cpu_node_seconds": 1800,
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "external_spend_usd": 0,
+  "fitting_continuation_admitted": false,
+  "gpu_seconds": 0,
+  "maximum_launch_attempts": 1,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "original_missing_allocation_charge_seconds": 39600,
+  "plan_sha256": "e5ab5477d6acaa636ab9c7aebb8ba531ad91d017ae4d02c29d8874f87c024d75",
+  "protected_prior_calendar_seconds": 608400,
+  "queue_calendar_seconds": 3600,
+  "retained_review_seconds": 86400,
+  "science_freeze_utc": "2026-10-11T00:00:00+00:00",
+  "storage": {
+    "additional_allowance_bytes": 1000000000,
+    "existing_apparent_bytes": 1340308838007,
+    "projected_apparent_bytes": 1968297304134,
+    "protected_allowance_bytes": 626988466127
+  },
+  "time_limit": "00:30:00",
+  "tpu_seconds": 0,
+  "watchdog_seconds": 1740
+}

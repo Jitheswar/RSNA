@@ -49,3 +49,25 @@ or duration inferred. Original medical verifier8106 independently completed
 COMPLETE0:0/526 CPU-node seconds; T68 is resolved inconclusive_no_promotion.
 Full-fit checkpoint recovery still needs a separate admitted state/source/Adam/
 RNG/exposure audit and continuation route, preserving both19800-second bounds.
+
+October2,16:57UTC: separate checkpoint audit prepared, plan
+ e5ab5477d6acaa636ab9c7aebb8ba531ad91d017ae4d02c29d8874f87c024d75,
+under artifacts/private/ticket72-checkpoint-recovery-audit-v1. Immutable copies
+of the exact4000/3000-step checkpoints preserve old training directories.
+One30-minute CPU-only job/1740-second watchdog/16CPU64GiB/nonexclusive,
+no retry, zero spend and no training or prediction/metric computation. It
+reconstructs every selected original fitted pixel/target/mask fingerprint,
+ordered source exposures, initial model and normalization tensors, complete
+shape-compatible Adam groups/moments, scheduler, sampler and RNG round trip.
+Earlier stages/control still require their actual successful terminals. The
+missing8074/8072 terminals remain explicitly unverified; full39600 CPU-node
+seconds conservatively retained. Audit success only establishes resumable state
+consistency and does not admit fitting continuation or original strict ancestry.
+
+22 focused corruption guards pass. Entire prior scientific/delivery/review
+route and storage allowances retained; adding1800 CPU-node/3600 queue-calendar
+seconds and1GB incremental storage projects1968297304134bytes and protected
+finishOctober10,19:26UTC before conservativeOctober11T00 cutoff. Original
+stage0/1 non-training overhead364.892/382.379seconds yields conservative audit
+forecast2*(364.892+382.379)+180=1674.543seconds<1740 watchdog; this is source-cost
+projection, not actual audit timing. Launch remains separate once-only action.
