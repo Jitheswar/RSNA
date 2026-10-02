@@ -113,3 +113,11 @@ None remains within this planning destination. All seven tickets are resolved. T
   staged and continuous real-MRI model/Adam/scheduler/progress/sampler states
   agree exactly; all encoder stages change with fixed normalization. Actual
   startup/serialization/RSS establish costs for prospectively registered Ticket 64.
+
+- [Ticket 65](issues/65-admit-pinned-biomedclip-assets.md) resolved: sole pinned
+  BiomedCLIP acquisition passed independent full SHA/byte checks and restricted
+  CPU loading, **28.471 s /1.17 GB peak RSS**, 151 finite FP32 vision tensors.
+  Six boundary tests pass; fresh rules and exact MIT notice retained. No MRI
+  inference, fitting, scheduler job, accelerator use or spend. Strict official
+  vision loading and fixed eight-study pilot require their next separate
+  admission; registered Ticket 64 continues.

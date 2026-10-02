@@ -72,7 +72,7 @@ fallback preserved. Private score/rank and final selections remain unavailable.
 6. Observe the separate TPU environment request **136722939 /v1**,
    `jitheswar/rsna-tpu-environment-admission-v1`, root
    `artifacts/private/ticket60-tpu-environment-v1/`. Last observed **QUEUED**
-   at **06:33:21 UTC**; actual hardware remains unverified. One 600-second
+   at **07:56:56 UTC**; actual hardware remains unverified. One 600-second
    server/540-second code watchdog, private/offline, GPU off, no attachments,
    training or spend. Existing intent is consumed: never push again. Observer
    `rsna-ticket60-tpu-environment-v1-observer.service` retains terminal.
@@ -147,9 +147,21 @@ rules/state before delivery. GitHub remains private:
 
 Medical encoder [primary-source research](../../docs/research/medical-image-encoder-options-2026-10-02.md)
 finds conditional ungated MIT BiomedCLIP 224-pixel vision-only 512-D admission.
-MRI evidence concerns article figures, with no knee gain established. No weights
-were downloaded. Keep the registered full-backbone comparison; this note alone
-does not admit a new encoder run. Other variants have unresolved gates.
+MRI evidence concerns article figures, with no knee gain established. Subsequent
+[Ticket 65](issues/65-admit-pinned-biomedclip-assets.md) now separately admits
+and completes the sole pinned asset acquisition, **28.471 seconds /1.17 GB
+peak RSS**, no model construction, MRI read or fitting. Exact checkpoint
+**783,705,670 bytes**, SHA-256
+`52cc993c5c5ff962bd0c60931874bc001e7e9b41666a385530f4a036294576be`;
+restricted loading succeeds, 151 finite FP32 vision tensors, 352 total.
+Private root `artifacts/private/ticket65-biomedclip-asset-admission-v1/`, frozen
+plan `076e4f1a3c72e25852f9a129df4a91e30bba6390130e3bbada6f913488854a86`.
+Fresh official rules, pinned MIT notice/config/card and independent full-hash
+receipt retained; six tests pass. Preserve the completed attempt and source.
+Next is separate isolated-runtime strict official vision loading and fixed
+eight-study original-MRI parity/cost pilot. No pilot or installation is admitted
+yet; do not occupy a third owner CPU slot. Keep the registered full-backbone
+comparison. Other variants retain unresolved gates.
 
 
 Independent verifier code is `scripts/validate_ticket64_full_backbone_comparison.py`.
@@ -181,3 +193,7 @@ coordinator plus frozen final-verification watcher are confirmed live. Control
 exposure/initial/encoder/Adam audit passed. Do not relaunch it or repeat completed
 fold 0. No GPU/TPU ledger change or scoring request. Completed fixed control does
 not establish comparative advantage, anchor complementarity or either first rank.
+
+October 2 **07:56 UTC**: full **8032** logged **881** successful updates and
+full **8035** **411**, finite losses. Both run; frozen postfit watcher remains
+`wait_for_fits`. Progress only, no held-out AUC. TPU request remains queued.

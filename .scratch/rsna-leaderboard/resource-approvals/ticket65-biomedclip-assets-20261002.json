@@ -1,0 +1,40 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "checkpoint_sha256": "52cc993c5c5ff962bd0c60931874bc001e7e9b41666a385530f4a036294576be",
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "final_candidate_selection": false,
+  "fitting_authorized": false,
+  "full_extraction_authorized": false,
+  "gpu_ledger_changed": false,
+  "license": "MIT",
+  "new_exact_owner_numeric_approval_claimed": false,
+  "pilot_execution_authorized": false,
+  "plan_sha256": "076e4f1a3c72e25852f9a129df4a91e30bba6390130e3bbada6f913488854a86",
+  "publication_authorized": false,
+  "resources": {
+    "cpu_threads": 1,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_attempts": 1,
+    "maximum_peak_rss_bytes": 4294967296,
+    "scheduler_jobs": 0,
+    "socket_timeout_seconds": 60,
+    "tpu_count": 0,
+    "virtual_address_limit_bytes": 12884901888,
+    "watchdog_seconds": 900
+  },
+  "rights_basis": "Ungated no-cost public checkpoint; exact Microsoft weight license permits research use. Retain license/copyright. Model-card deployment is out of scope. This private investigation makes no third-party rights grant or final-delivery eligibility claim.",
+  "rights_status": "eligible_for_private_asset_investigation",
+  "schema_version": "rsna-ticket65-resource-decision-v1",
+  "source_revision": "9f341de24bfb00180f1b847274256e9b65a3a32e",
+  "storage": {
+    "asset_allowance_bytes": 799705670,
+    "du_output": "1274305476922\t/home/ch.jitheswar/RSNA\n16397455028\t/home/ch.jitheswar/models/qwen3-8b-b968826d9c46dd6066d109eabc6255188de91218\n",
+    "existing_apparent_bytes": 1290702931950,
+    "projected_apparent_bytes": 1834491103747,
+    "retained_ticket64_allowance_bytes": 542988466127,
+    "soft_limit_bytes": 2000000000000
+  },
+  "tpu_ledger_changed": false
+}
