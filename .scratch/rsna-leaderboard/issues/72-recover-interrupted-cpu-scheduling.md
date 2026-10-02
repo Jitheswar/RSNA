@@ -109,3 +109,14 @@ New coordinator owns both original scheduler locks and uses a shared CPU launch
 lock with Ticket71 to enforce max2 owner pending/active jobs. Old final watcher
 and frozen sources preserved; original missing terminals never fabricated.
 Prepared/admitted; no continuation fitting or new scoring launched yet.
+
+October2,17:28UTC: frozen continuation coordinator owns both original scheduler
+locks and advances only the admitted unconsumed stages. Sole **8111** fold0/
+stage4(target5000 from audited4000 seed) and **8113** fold1/stage3(target4000
+from audited3000 seed) are actual Slurm RUNNING, each16CPU64GiB/nonexclusive/
+5h30/no requeue/restarts/CPU-only. Shared launch lock preserved max2 pending/
+active owner jobs while Ticket71 primary and replay completed in sequence.
+No current new fit result or interim AUC has been inspected. Final native replay
+still requires all remaining14500 updates, actual new successful terminals,
+complete final states and unchanged fixed comparisons. Older raw-terminal
+limitations and39600-second conservative charge remain explicit.
