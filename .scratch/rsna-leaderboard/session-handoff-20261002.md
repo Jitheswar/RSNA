@@ -54,7 +54,25 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    [Ticket 60](issues/60-establish-actual-tpu-training-capacity.md) and
    [evidence](../../docs/evidence/ticket-60-tpu-environment.md). A passing
    allocation only enables a separately frozen real-MRI full-backbone pilot.
-7. Independently verify results, update evidence/tracker/freeze register, run
+7. Full-backbone code and CPU cost pilot are verified independently of TPU:
+   **8016 /COMPLETED /0:0**, **127 CPU-node seconds**, root
+   `artifacts/private/ticket61-cpu-full-backbone-pilot-v1/`. Plan
+   `43adab68e2113441d5bccb04273a935bd43ab8039cbbd0a841f4758b4364bfaa`.
+   Four admitted training reports, 232 valid/512 static padded slices; native
+   initial logits and fresh-process diagnostic checkpoint replay match exactly.
+   Every encoder stage updates, fixed normalization buffers; median **5.955313
+   s/update**, peak producer RSS **17.88 GB**. Actual terminal/accepted plan and
+   independent validation pass. One consumed attempt, do not relaunch.
+   [Ticket 61](issues/61-prepare-fixed-shape-full-backbone-report-training.md),
+   [evidence](../../docs/evidence/ticket-61-full-backbone-cpu-cost.md). The new
+   versioned model/loss preserves prior variants and passes 39 focused tests.
+   **Next useful CPU action:** freeze complete three-fold matched-reference
+   comparison, compact exact-pixel cache/I/O, staged checkpoints and delivery
+   cost; choose full duration prospectively, no intermediate AUC selection.
+   A 2× training-only projection gives 1,500 steps/fold 4.963 h, 7,500 steps
+   24.814 h. Neither is a complete admitted route. CPU work can advance while
+   TPU queues; no dependency on TPU for this alternative.
+8. Independently verify results, update evidence/tracker/freeze register, run
    relevant checks, commit/push private `origin/master` and verify equal heads.
    Mark the goal achieved only after both actual first-place ranks are proven.
 
@@ -103,6 +121,6 @@ selection, nine-hour offline notebook constraints remain. Refresh live official
 state before a delivery decision. GitHub repository must remain private:
 **https://github.com/Jitheswar/RSNA**.
 
-Current focused tests: **30 passed**; typing **82 source files**; syntax checks
+Current focused tests: **39 passed**; typing **83 source files**; syntax checks
 and generated launcher checks pass. Main evidence:
 [Ticket 59](../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).

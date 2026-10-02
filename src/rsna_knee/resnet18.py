@@ -17,6 +17,7 @@ from .preprocessing import SERIES_DESCRIPTOR_COLUMNS
 
 RESNET18_MODEL_ID = "resnet18-frozen-slice-features-v1"
 RESNET18_FINETUNE_MODEL_ID = "resnet18-layer4-finetune-v1"
+RESNET18_FULL_FINETUNE_MODEL_ID = "resnet18-full-backbone-static-v1"
 RESNET18_ENCODER_ID = "torchvision-resnet18-imagenet1k-v1"
 RESNET18_FIXTURE_ENCODER_ID = "ticket31-random-fixture-resnet18-v1"
 RESNET18_FEATURE_DIM = 512
@@ -322,6 +323,7 @@ __all__ = [
     "ANATOMICAL_POOLING_ID",
     "RESNET18_ENCODER_ID",
     "RESNET18_FINETUNE_MODEL_ID",
+    "RESNET18_FULL_FINETUNE_MODEL_ID",
     "RESNET18_FEATURE_DIM",
     "RESNET18_FIXTURE_ENCODER_ID",
     "RESNET18_MODEL_ID",

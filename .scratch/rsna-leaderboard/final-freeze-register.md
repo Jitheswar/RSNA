@@ -2,6 +2,26 @@
 
 This register records exact model experiments and their terminal candidate disposition. A one-fold result is development evidence and does not by itself promote a candidate.
 
+## October 2 — complete full-backbone implementation and CPU cost pilot
+
+[Ticket 61](issues/61-prepare-fixed-shape-full-backbone-report-training.md)
+implements a separate fixed-shape entire-encoder variant and masked loss, with
+39 passing focused lifecycle/training tests and typing for 83 source files.
+Real-MRI CPU pilot **8016** completed `0:0`, **127 allocated node seconds**,
+four admitted training-side reports, **232 valid/512 static padded slices**.
+Native initial logits and independent fresh-process checkpoint replay are
+exact; every encoder stage updates and normalization buffers remain fixed.
+Median **5.955313 seconds/update**, peak RSS **17.88 GB**. Exact accepted
+plan/source/terminal resources and independent targets/masks/replay pass.
+
+2× training-only projections: 1,500 updates/fold **4.963 h**, 7,500 **24.814
+h**. Longer duration needs staged jobs. Full-cohort random I/O, pixel caching,
+checkpoints, complete three-fold comparison, evaluation/final fit and offline
+delivery remain unmeasured. CPU provides an independent next route while the
+TPU environment request queues. No full campaign, provisional candidate,
+promotion, scoring request or first-place claim follows from this cost result.
+[Evidence](../../docs/evidence/ticket-61-full-backbone-cpu-cost.md).
+
 ## Ticket 56 — CPU adaptation cost pilot
 
 [Ticket 56](issues/56-measure-report-supervised-encoder-adaptation-cost.md) resolved
