@@ -164,6 +164,7 @@ Authorization: [owner instructions](resource-approvals/campaign-owner-autonomy-2
 
 ### Candidate selection and delivery
 
+- Owner instruction, October2: **do not waste daily competition submissions**. Reserve scored attempts for a concrete frozen candidate with verified improvement, a justified comparison and passing offline/runtime checks. Use development inference and local checks for debugging; never consume a daily scoring slot merely to smoke-test or repeat an unchanged candidate. This adds no arbitrary candidate-count cap.
 - There is no project-imposed numerical cap on candidates or scored submissions. Each new candidate still needs a hypothesis, immutable identity, applicable local evidence and a reason to use the remaining time. Official submission limits remain binding and must be refreshed before dependent actions.
 - Subject to the current official final-selection allowance, plan up to two final choices. Prefer the strongest admissible validated single model and a complementary simple equal-weight ensemble only if complete paired OOF and full runtime evidence justify it. Otherwise use the strongest admissible alternatives; do not manufacture a second method merely to fill a slot.
 - Tie-break close or inconclusive alternatives using fold/target consistency, robustness, simpler execution and runtime headroom. Preserve the existing scored frozen candidate as the operational fallback; its availability does not establish competitive performance.

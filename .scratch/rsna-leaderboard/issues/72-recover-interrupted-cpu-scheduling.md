@@ -41,3 +41,11 @@ controller/source hashes and empty queue checks. It retains original plan/resour
 - [ ] Obtain actual historical terminal evidence or admit independent checkpoint recovery.
 - [ ] Restore bounded fitting schedules and complete their fixed scientific budgets.
 - [ ] Verify final comparison and native delivery with honest ancestry/accounting.
+
+October2,16:49UTC: historical backend probe confirms sacct database localhost6819
+connection refused; readable slurm_jobcomp.log is empty, slurmctld.log is root-only,
+and noninteractive read access is unavailable. No historical terminal success
+or duration inferred. Original medical verifier8106 independently completed
+COMPLETE0:0/526 CPU-node seconds; T68 is resolved inconclusive_no_promotion.
+Full-fit checkpoint recovery still needs a separate admitted state/source/Adam/
+RNG/exposure audit and continuation route, preserving both19800-second bounds.

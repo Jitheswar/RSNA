@@ -191,3 +191,5 @@ module typing pass. Portable medical adapter is excluded from new45-module
 analysis closure; all frozen source snapshots must remain unchanged.
 
 - October2,16:47UTC: [T68](issues/68-test-matched-biomedclip-report-heads.md) resolved with exact native proof/inconclusive_no_promotion; [T70](issues/70-establish-exact-scored-anchor-predictions.md) v3 failed before code due missing kernelspec, full bound charged; separate unchanged-code v4 admitted; [T71](issues/71-compare-medical-heads-with-scored-anchor.md) v2 mechanically binds v4 with identical fixed science. T72 missing full-fit terminals remains open.
+
+- October2,16:49UTC: exact baseline v4 numeric136806200/v1 RUNNING/source+kernelspec PASS, one development attempt/no daily scoring slot consumed. Owner explicitly says preserve daily submissions; recorded in spec and handoff.

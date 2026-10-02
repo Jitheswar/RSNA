@@ -188,3 +188,14 @@ bytes<2TB. Prior entire downstream route and80GB allowance retained plus
 14400 calendar seconds and1GB incremental envelope/log storage; protected
 finishOctober10,17:46UTC before conservativeOctober11T00 cutoff. Prepared and
 admitted; launch remains a separate once-only action. No scored submission.
+
+October2,16:49UTC — separate v4 once-only launch accepted, actual numeric
+136806200/version1, jitheswar/rsna-exact-scored-anchor-gold58-v4. Fresh exact
+GetKernel/source/settings and recovered kernelspec PASS; actual status RUNNING.
+No competition submission/daily scoring slot used. Ledger cap165600, charged
+144037, reserved14400, remaining7163. Persistent sole observation service
+rsna-ticket70-anchor-v4.service logs into the private v4 root; it closes the
+actual terminal conservatively, never retries. Native MRI/output proof and
+fixed Ticket71 paired analysis remain pending. Owner's October2 instruction:
+**do not waste daily submissions**; scored attempts require verified improvement
+and passing offline/runtime checks, not debugging or an unchanged repeat.
