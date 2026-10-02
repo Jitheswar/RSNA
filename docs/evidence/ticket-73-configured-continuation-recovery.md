@@ -96,3 +96,9 @@ Project type checks also pass across all 87 source files. At the follow-up
 observation, existing8113 had recorded optimizer step3247. New8119 was still
 loading with its exact configuration already present; optimizer progress beyond
 4000 is not yet claimed.
+
+Subsequent actual observation confirms8119 RUNNING after the configuration
+guard, with optimizer step4008 recorded beyond its original4000-step
+checkpoint. The private configuration-recovery-progress.json retains the raw
+controller and counter observation. This proves the recovered training seam is
+working in the actual full model; final stage/native success remains pending.
