@@ -1,0 +1,25 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Exact CPU CoAt pilot passes 64 study complexity order statistics and both extremes with no warnings/failures/fallbacks. Twice measured cost plus 900 seconds fits six-hour bound. Reuse original MRI read-only; preserve exact sampler/renderer and two workers; no model/GPU.",
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "new_exact_owner_numeric_approval_claimed": false,
+  "plan_sha256": "abea8f3b42312c3fba1a43a15ea732af256a19fdaa22c59e5998538da83dc5fa",
+  "resources": {
+    "additional_retained_mri_bytes": 0,
+    "code_watchdog_seconds": 21540,
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_launch_attempts": 1,
+    "memory_gib": 64,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "prep_workers": 2,
+    "requeue": false,
+    "torch_threads_per_worker": 1,
+    "walltime_seconds": 21600
+  },
+  "schema_version": "rsna-campaign-autonomous-decision-v1"
+}

@@ -101,3 +101,37 @@ actual accepted IDs. Both full partitions are active; no full-corpus result,
 hidden failure attribution or repair is established. Inspect their immutable
 outputs/terminal controllers before another action.
 [Evidence](../../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).
+
+
+### October 2 — full DINO corpus verified; residual CoAt seam extended
+
+Both **7995 / 7996** completed `0:0`, **4,974 CPU-node seconds**. Independent
+summary verifies disjoint complete original **4,407-study / 819,078-DICOM /
+569,154,778,424-byte** coverage against original metadata/central directory,
+all **24,371** header series, actual fragments/events/source/decision/terminal
+identities and zero decode/fallback events. Integrity job **8012** completed
+`0:0`, **779 CPU-node seconds**; every retained payload independently matches
+its producer SHA and original archive CRC. Exact terminal/source/plan and full
+partition byte totals pass reconciliation. Validation SHA-256
+**bcc777b9193de735cd7ac7e76d76b8ce2558468a222052e53631e42ceba50844**.
+
+Exact residual CoAt CPU preparation pilot **8013** passed **64** fixed
+label-blind original-slice-count order statistics, including both **67 / 632**
+slice extremes. **148 CPU-node seconds**, native **61–94-window** bags,
+zero failures/warnings/dense/sparse fallbacks. Actual notebook-patched
+`_prepare_bag_task` and admitted source/OpenCV hashes are unchanged. Independently
+checked execution records include producer pixel/sidecar hashes; pixels were not
+independently replayed. No model, GPU, labels/reports or hidden input.
+
+Measured cost supports separate full-corpus CoAt CPU probe **8014**, all **4,407
+studies**, one **16-CPU /64-GiB /six-hour** attempt, two workers, 21,540-second
+watchdog; **21,282.375-second** forecast =2x measured scaled cost +900 s. Source
+MRI reused read-only, exact renderer/sampler preserved, only resource guards
+generalized. Plan **abea8f3b42312c3fba1a43a15ea732af256a19fdaa22c59e5998538da83dc5fa**.
+Actual observer retains terminal evidence. Full outcome pending.
+
+Fresh authenticated **01:08:08 UTC**: Elyra **rank 2,005 /4,808, 0.936**;
+leader **0.961**; exact failed frontier still no score/traceback. Phase 1 remains
+incomplete: no matching hidden reproduction, cause, repair or rescoring. Ledger
+unchanged; zero new GPU/spend. [Current handoff](../session-handoff-20261002.md),
+[evidence](../../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).

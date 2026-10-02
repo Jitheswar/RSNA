@@ -1,5 +1,8 @@
 # RSNA campaign session handoff — October 1, 2026
 
+Latest continuation: [October 2 handoff](session-handoff-20261002.md).
+Use its current job handles and verified outcomes before this historical snapshot.
+
 Authoritative update after the completed broader probe and launched full scan. Goal: first place
 on **both public and final private leaderboards**; neither is established.
 Best confirmed account result **0.936**, submission **56705536**, script

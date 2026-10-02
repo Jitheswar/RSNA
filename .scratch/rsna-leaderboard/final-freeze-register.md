@@ -355,3 +355,31 @@ preserved after correcting its transcribed storage record; executed v2 measures
 directly. Best confirmed account **0.936**, leader **0.961** at **08:56:47 UTC**.
 GPU ledger unchanged; full unknown hidden charge and both fallbacks remain.
 [Evidence](../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).
+
+## October 2 — complete source integrity; expanded CoAt input diagnosis
+
+Original DINO input scan **7995 /7996** completed `0:0`, independent coverage
+checks verify all **4,407 studies /819,078 DICOMs /569,154,778,424 raw bytes**,
+zero decode/fallback events, **4,974 CPU-node seconds**. Separate integrity job
+**8012** completed `0:0`, **779 CPU-node seconds**; all retained payloads match
+independent SHA and original archive CRC. Exact worker/plan and terminal
+reconciliation pass. No model inference or scientific promotion.
+
+Residual CoAt CPU preparation pilot **8013** passes fixed **64** complexity
+order statistics over original inputs, including **67 /632** slice extremes,
+zero failures/warnings/sampler/sparse fallbacks, **148 CPU-node seconds**.
+Actual notebook-patched sampler/renderer and admitted source/OpenCV hashes are
+unchanged; independent summary verifies producer hash records, without pixel
+replay. Separate full **4,407-study** CPU CoAt input scan **8014** is running,
+one nonexclusive **16-CPU /64-GiB /six-hour** attempt; two workers, no GPU/model/
+labels/reports/spend and no new MRI extraction. Its measured 2x cost +900-second
+forecast fits the 21,540-second watchdog. Outcome and matching hidden-error
+reproduction remain pending. **Ticket 59 stays open; no cause, repair, rescoring,
+candidate promotion or final selection.**
+
+Latest authenticated **01:08:08 UTC** snapshot: **Elyra rank 2,005 /4,808,
+0.936**, leader **rhoskeri /0.961**. Exact frontier **56739912** remains generic
+hidden-rerun error/no score; private rank unavailable. Both scored fallbacks and
+full unknown GPU charges preserved. Ledger **129,637 charged /136,800 cap /
+zero reserved /7,163 remaining**. [Current handoff](session-handoff-20261002.md),
+[evidence](../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).

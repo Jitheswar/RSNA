@@ -1,0 +1,22 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Independently hash every retained DICOM and compute CRC against original archive central-directory records, with complete cohort/source/terminal checks. No decoding, model, labels, GPU, network or retry.",
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "new_exact_owner_numeric_approval_claimed": false,
+  "plan_sha256": "8838254220079e484e16f90aa87ef066afc412ef467e45bad3c6606cd5c51237",
+  "resources": {
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_launch_attempts": 1,
+    "memory_gib": 32,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "requeue": false,
+    "walltime_seconds": 3600,
+    "workers": 8
+  },
+  "schema_version": "rsna-campaign-autonomous-decision-v1"
+}
