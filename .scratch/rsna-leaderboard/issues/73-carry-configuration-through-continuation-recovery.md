@@ -35,6 +35,10 @@ resource/calendar/storage decision under standing authorization, zero spend.
 - [x] Capture actual failed terminal/trace and no-update boundary.
 - [x] Preserve live8113 via exact original configuration handoff.
 - [x] Real shared-trainer regression proves missing prerequisite and exact recovery.
-- [ ] Freeze complete configuration/checkpoint migration and recovered execution route.
-- [ ] Admit/launch only distinct bounded unused execution and restore scheduling.
+- [x] Freeze complete configuration/checkpoint migration and recovered execution route.
+- [x] Admit/launch only distinct bounded unused execution and restore scheduling.
 - [ ] Complete full scientific budgets and independent original-MRI final comparison.
+
+## Comments
+
+October 2: v4 plan `9844fd6a7e62f3f1aaf5d0678784f197b8373d702e14c19e669ccde5244a36c8` frozen and admitted. New coordinator accepted fold0 stage4 job8119, actual RUNNING alongside inherited8113. Exact original configuration is present before launch. Fifteen new stages/13500 updates plus existing live1000 preserve the full original budgets. Complete remaining route525600 seconds, projected finishOct8 19:55:50UTC, storage1.972567098522TB. No accelerator/scored attempt.45 guards pass; actual scientific worker unchanged except configuration prerequisite. Final fit/independent comparison remain pending. See [evidence](../../../docs/evidence/ticket-73-configured-continuation-recovery.md).
