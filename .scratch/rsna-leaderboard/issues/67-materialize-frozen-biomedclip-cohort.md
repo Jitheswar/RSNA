@@ -51,3 +51,10 @@ head fitting and later exact anchor/delivery comparison need their own decision.
 - Fourteen focused guards and five launcher checks pass. Actual extraction,
   whole-bank validation and measured cohort cost remain pending.
 - [Admission evidence](../../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
+
+- October2 10:06UTC: **8036** completed `0:0`, exactly2,000 updates,
+  6,857 CPU-node seconds, checkpoint
+  `e9fdceb3af12099a71e250b5aa9028abf5816e17c81919a005b3c2658d7a0668`.
+  Sole first extraction **8041** is RUNNING, first64 studies at216.537 process
+  seconds; **8039** continues. Two-slot limit preserved. Matched-head Ticket68
+  controller waits for complete independent bank proof without taking slots.

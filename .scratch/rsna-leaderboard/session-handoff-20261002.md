@@ -19,9 +19,11 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    Scientific/checkpoint identity remains original
    `557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985`.
    Original first full stage **8032** completes `0:0`, 1,000 updates,
-   **6,685 CPU-node seconds**. Resumed fold-0/stage-1 **8036** and full
-   fold-1/stage-1 **8039** are live under v2, exact resources. Fold-1 first
-   stage **8035** completed its exact 1,000-update boundary successfully. Recovery control **8034** now
+   **6,685 CPU-node seconds**. Resumed fold-0/stage-1 **8036** now completed `0:0`, exactly2,000
+   updates, **6,857 CPU-node seconds**, checkpoint
+   `e9fdceb3af12099a71e250b5aa9028abf5816e17c81919a005b3c2658d7a0668`.
+   Full fold-1/stage-1 **8039** continues. Fold-1 first stage **8035**
+   completed its exact 1,000-update boundary successfully. Recovery control **8034** now
    completes `0:0`, **995 CPU-node seconds**, all three final 7,500-update heads
    and 58 gold predictions. Independent initial/state/Adam/source-exposure audit
    passes; no AUC read. Receipt `control/independent-state-validation.json`. Control **8033 failed `1:0`**
@@ -35,8 +37,8 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    Ticket 67 itself advances the exact unchanged registered fitting stages
    through frozen worker launches while materializing one feature partition
    at a time. Do not manually recreate the original fit coordinator while
-   Ticket 67 owns scheduling. Both current fits continue, with at most two
-   pending+active owner CPU jobs. Original coordinator is restored on exit.
+   Ticket 67 owns scheduling. Current **8039** fit and first medical extraction **8041** continue,
+   with at most two pending+active owner CPU jobs. Original coordinator is restored on exit.
    `coordinator-state.json` under Ticket 67 records current scheduling; the
    old v2 snapshot is historical during delegation. Exact completed recovery
    control is required before unchanged fitting stages advance. The inherited original v1 fold-0/stage-0 **8032** can never be
@@ -81,7 +83,7 @@ fallback preserved. Private score/rank and final selections remain unavailable.
 6. Observe the separate TPU environment request **136722939 /v1**,
    `jitheswar/rsna-tpu-environment-admission-v1`, root
    `artifacts/private/ticket60-tpu-environment-v1/`. Last observed **QUEUED**
-   at **09:36:54 UTC**; actual hardware remains unverified. One 600-second
+   at **10:05:35 UTC**; actual hardware remains unverified. One 600-second
    server/540-second code watchdog, private/offline, GPU off, no attachments,
    training or spend. Existing intent is consumed: never push again. Observer
    `rsna-ticket60-tpu-environment-v1-observer.service` retains terminal.
@@ -126,7 +128,9 @@ fallback preserved. Private score/rank and final selections remain unavailable.
     official learned512 projection/L2, original masks/descriptors/pixels.
     One 3-hour/16-CPU/64-GiB attempt per partition plus one 1-hour independent
     verification; no retry/requeue. Persistent scheduler above currently
-    waits for a slot, every bank component unlaunched at 09:36 UTC.
+    runs first partition **8041**, accepted after8036 completed.
+    First64 studies observed at216.537 process seconds; remaining partitions
+    and independent verifier are unlaunched at10:06UTC.
     Fourteen focused tests and five launcher checks pass. Preserve frozen
     four Ticket 67 scripts and matching source snapshots; never duplicate
     consumed controller/launch intents. On completion inspect exact terminals,
@@ -137,6 +141,30 @@ fallback preserved. Private score/rank and final selections remain unavailable.
     all-study native vision replay claimed. Actual full extraction/accuracy
     remain pending. Separate paired head-fit admission required afterward.
     [Admission evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
+
+11. [Ticket68](issues/68-test-matched-biomedclip-report-heads.md) claimed:
+    four-script medical-head workflow frozen; persistent
+    `rsna-ticket68-biomedclip-heads-v1.service`, PID **324630**, live in
+    `wait_for_complete_bank`. It currently leaves Ticket67 ownership intact.
+    Private root `artifacts/private/ticket68-biomedclip-head-controller-v1/`,
+    admission `ae31e9e0a1cf6e52c75fdd5e79f5e0dd22717c316b93f5d426a61c2bdd51ef67`.
+    No actual medical fitting plan/resource decision/job exists. Preserve
+    matching four repository sources and frozen controller snapshots.
+    Historical Ticket55 uses7500 **total** updates from original random init;
+    Ticket64 uses7500 **additional** updates from those final heads. New
+    medical comparison matches Ticket55 total budget/init/source exposures,
+    reuses its ResNet comparators, and separately replays all58 original-MRI
+    medical+parent outputs and fixed comparisons. Initial-state and source
+    preflight pass; **21** focused tests pass. On complete successful bank
+    receipt and restored original fit coordinator, this waiting controller
+    performs fresh whole-route/storage/review admission, freezes fit plan
+    and two launchers, then takes over unchanged registered fit scheduling
+    while launching one30-minute medical fit and one3-hour native verifier.
+    It restores original coordinator on exit; no retries/requeue/third slot.
+    Future exact fit plan SHA/resource decision must be committed when created.
+    Inspect terminal/source/state/native receipts before any provisional
+    review. Separate scored-anchor/offline delivery admission remains required;
+    no automatic promotion/submission. [Workflow](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
 
 ## Completed prerequisites
 
@@ -181,8 +209,8 @@ GPU ledger unchanged: **129,637 charged /136,800 cap /zero reserved /7,163
 remaining seconds**. Preserve unknown charges. TPU reserves **600 seconds**,
 charged zero/hardware unverified. No external spend. Old continuation
 coordinator remains stopped. Ticket 67 combined scheduler currently owns the
-unchanged Ticket 64 fit schedule while its original coordinator is held. Both
-full fits and the frozen final verifier remain live. Extra medical bank reserve
+unchanged Ticket 64 fit schedule while its original coordinator is held. The
+remaining full fit, first extraction and frozen final verifier remain live. Extra medical bank reserve
 **46,800 CPU-node seconds /64,800 calendar seconds** retains prior complete
 route plus review; projects October 10 05:05 UTC, fresh storage **1.849 TB**.
 
@@ -230,10 +258,11 @@ training directories. Verifier explicitly binds those original files, the
 inherited first-stage receipt and every resumed checkpoint SHA chain.
 
 
-Current snapshot **October 2 09:36 UTC**: **8036 /8039** run, both stage 1,
-Ticket 67 scheduler live/waiting for bank slot and owns unchanged fitting
-schedule; final verifier waits for all fits. TPU remains QUEUED. Control
-**8034** completed successfully; its source exposure/state/Adam audit passed.
-No intermediate AUC, scoring request, accelerator ledger change or promotion.
-Completed representation parity cannot establish anchor complementarity or
-either first-place rank.
+Current snapshot **October2 10:06UTC**: **8036** completed exact2,000
+updates /0:0; **8039** fit and **8041** first extraction run. Ticket67 owns
+unchanged registered fitting scheduling; final verifier waits for all fits.
+Ticket68 waiting controller is live without a fitting resource plan or launch.
+TPU remains QUEUED. No intermediate AUC, scoring request, accelerator ledger
+change or promotion. Submission target next24–48h is conditional on a measured
+gain plus fixed anchor/offline delivery; no submission is queued and neither
+first-place rank is achieved.

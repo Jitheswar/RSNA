@@ -545,3 +545,24 @@ remain pending. Prior full fitting/delivery/review reserves protected, complete
 calendar projects October 10 05:05 UTC, storage 1.849 TB below 2 TB.
 GPU/TPU budgets unchanged, zero spend; neither first rank achieved.
 [Admission evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
+
+## October 2 — first medical extraction active; matched-head workflow prepared
+
+Full **8036** completed `0:0`, exactly2,000 updates, 6,857 CPU-node seconds,
+checkpoint `e9fdceb3af12099a71e250b5aa9028abf5816e17c81919a005b3c2658d7a0668`;
+no intermediate scoring. Sole first bank partition **8041** runs alongside
+**8039**, first64 output studies at216.537 process seconds. Complete bank
+validation remains pending.
+
+Ticket68 waiting-controller admission
+`ae31e9e0a1cf6e52c75fdd5e79f5e0dd22717c316b93f5d426a61c2bdd51ef67`
+frozen/live; exact historical random initialization and original source
+exposures/held-out masks preflight pass, 21 guards. Matching7500 total steps
+from random head initialization reuses verified Ticket55 ResNet comparators;
+not Ticket64's additional warm-head updates. All58 original MRI medical and
+ResNet predictions will independently replay before provisional review.
+No actual medical fitting decision/job/gain/submission exists; complete
+bank receipt and fresh whole-route admission required. Accelerator ledgers
+unchanged. Next24–48h submission target is conditional on gain and offline
+delivery, with no first-place evidence.
+[Workflow](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).

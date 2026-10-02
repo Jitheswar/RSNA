@@ -136,3 +136,11 @@ None remains within this planning destination. All seven tickets are resolved. T
   combined scheduler delegates unchanged Ticket 64 stage scheduling and waits
   while 8036/8039 run, at most two owner CPU jobs. Fourteen guards pass;
   actual extraction/accuracy remain pending. [Evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
+
+- [Ticket 68](issues/68-test-matched-biomedclip-report-heads.md) claimed:
+  matched 7,500-total-step medical head workflow frozen, exact random init
+  and all six original source exposures preflight pass, 21 focused guards.
+  Persistent controller waits for complete independent Ticket67 bank proof;
+  no fitting resource admission or gain yet. First bank partition **8041**
+  is running; full **8036** completed exactly2,000 updates /0:0 while **8039**
+  continues. [Workflow evidence](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).

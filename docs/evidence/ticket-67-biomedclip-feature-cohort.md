@@ -1,9 +1,11 @@
 # Ticket 67: frozen BiomedCLIP feature cohort admission
 
 The complete unfitted feature bank is admitted and its persistent scheduler
-is live. **Extraction has not started:** both owner CPU slots are occupied
-by unchanged Ticket 64 fits **8036 /8039**. Actual full-cohort outputs and
-independent validation remain pending; no accuracy or rank result follows.
+is live. Sole first partition **8041** is **RUNNING**, with 64 studies observed
+complete after 216.537 process seconds. It was admitted only after fit **8036**
+completed its fixed 2,000-update boundary successfully. Fit **8039** continues;
+exactly two owner CPU jobs are live. Actual full-cohort outputs and independent
+validation remain pending; no accuracy or rank result follows.
 
 ## Evidence and fixed representation
 
