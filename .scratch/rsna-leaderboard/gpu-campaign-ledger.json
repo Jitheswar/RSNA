@@ -938,17 +938,19 @@
     },
     {
       "actual_allocated_seconds": 0,
-      "actual_allocation_known": true,
+      "actual_allocation_known": false,
       "attempts": [
         {
           "allocated_seconds": null,
           "attempt_number": 1,
+          "conservative_exposure_charge_seconds": 14400,
           "exit_code": null,
           "job_id": "jitheswar/rsna-exact-scored-anchor-gold58-v4",
           "queue_wait_seconds": null,
-          "status": "submitted",
+          "status": "completed",
           "submission_exit_code": 0,
-          "submitted_epoch": 1790959735
+          "submitted_epoch": 1790959735,
+          "terminal_backend_status": "COMPLETE"
         }
       ],
       "comparison_reserve_release_active": false,
@@ -959,10 +961,17 @@
       "max_attempts": 1,
       "queue_wait_seconds": 0,
       "request_checksum": "ff7ae7ad97578582a5fd7a3b6e4058fb02fb8d3208c64fb3c5d782d596e64b4a",
-      "reserved_seconds": 14400,
+      "reserved_seconds": 0,
       "retry_allowed": false,
-      "status": "submitting",
-      "unverified_allocation_charge_seconds": 0,
+      "status": "completed",
+      "terminal_accounting": {
+        "basis": "Full reservation conservatively charged; notebook elapsed does not prove controller allocation duration",
+        "conservative_charge_seconds": 14400,
+        "evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/ticket70-scored-anchor-gold58-v4/kernel-terminal.json",
+        "evidence_sha256": "586010510856d7e2e861d42dcfe943a01d0cc70ef41e01797881725b5862b427",
+        "recorded_at_utc": "2026-10-02T17:09:45.068387+00:00"
+      },
+      "unverified_allocation_charge_seconds": 14400,
       "wall_time_seconds": 7200
     }
   ],

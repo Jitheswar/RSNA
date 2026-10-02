@@ -38,7 +38,7 @@ controller/source hashes and empty queue checks. It retains original plan/resour
 
 - [x] Exact missing handles and raw last observations captured; no retry.
 - [x] Launch the already-admitted unconsumed medical MRI verification once.
-- [ ] Obtain actual historical terminal evidence or admit independent checkpoint recovery.
+- [x] Obtain actual historical terminal evidence or admit independent checkpoint recovery.
 - [ ] Restore bounded fitting schedules and complete their fixed scientific budgets.
 - [ ] Verify final comparison and native delivery with honest ancestry/accounting.
 
@@ -79,3 +79,33 @@ rsna-ticket72-audit-8108-observer.service retained. No training or scoring.
 Current checkpoint audit still needs its output and actual successful terminal;
 continuation remains separately gated. Baseline development136806200/v1 remains
 RUNNING/source+kernelspec PASS. No daily competition submission used.
+
+October2,17:23UTC: audit8108 COMPLETE0:0/1157 CPU-node seconds; actual worker
+1155.276s<1740 watchdog. Both4000/3000 boundaries pass original full fitted
+pixel/target/mask fingerprints, exposures, initial/normalization tensors,
+complete shape-compatible Adam, scheduler, sampler and RNG round trip.
+Historical8074/8072 terminals remain unverified, full39600-second charge retained.
+
+Fresh unused-stage admission discovered **8081**, fold2/stage0: COMPLETE0:0,
+exact1000 updates,6061.739s worker, native initial parity0.0 and retained raw
+successful terminal. Never repeat these consumed updates. Third seed checkpoint
+SHAa4d912c36a6424da5c029116884b5a947ddcd6413d41f141836d9adb34625322
+is inherited through its actual terminal, distinct from the two audited gaps.
+
+Separate continuation plan c0cafdac0916705cb672be6f2c45e7db75a661841c8efa6706fbc2cf8a5a1eaf
+under artifacts/private/ticket64-full-backbone-comparison-v3 admits all remaining
+**14500 updates** (3500/4500/6500) through16 sole19800-second stages. Original
+7500 additional updates/fold, six matched controls, scientific configuration,
+source admission, seeds, FP32/fixed normalization and final-only comparisons
+remain unchanged. Three immutable seed copies preserve original directories.
+Reuse only unconsumed original stage/native/delivery/review allowances; missing
+allocation charges remain. Full route/review projectsOctober10,19:53UTC and
+1969671511229bytes<2TB.30 focused recovery/scheduling/native guards pass.
+
+Distinct final verifier retains all58 original-MRI/six-state/source/Adam/
+exposure/prediction replay and exact2000-bootstrap fixed comparisons; it records
+recovered ancestry explicitly and never claims the original strict chain passed.
+New coordinator owns both original scheduler locks and uses a shared CPU launch
+lock with Ticket71 to enforce max2 owner pending/active jobs. Old final watcher
+and frozen sources preserved; original missing terminals never fabricated.
+Prepared/admitted; no continuation fitting or new scoring launched yet.

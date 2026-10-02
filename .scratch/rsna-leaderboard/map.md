@@ -197,3 +197,5 @@ analysis closure; all frozen source snapshots must remain unchanged.
 - October2,16:57UTC: [T72](issues/72-recover-interrupted-cpu-scheduling.md) bounded independent state audit prepared against immutable copies; complete prior route retained. No fitting, accuracy scoring, ancestry repair or daily submission.
 
 - October2,16:58UTC: independent checkpoint audit8108 RUNNING on an authorized CPU node; exact bounded allocation recorded. Continuation waits for actual successful audit and separate admission. Baseline development136806200/v1 remains active; daily scoring slots preserved.
+
+- October2,17:23UTC: [T70](issues/70-establish-exact-scored-anchor-predictions.md) resolved with exact original MRI/runtime/full-member/fusion proof; [T71](issues/71-compare-medical-heads-with-scored-anchor.md) fixed analysis fully admitted; [T72](issues/72-recover-interrupted-cpu-scheduling.md) audit passed, third original1000-update fold2 stage verified, separate full14500-update continuation admitted. No daily scoring attempt.

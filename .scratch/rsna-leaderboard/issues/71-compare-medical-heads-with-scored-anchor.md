@@ -52,8 +52,8 @@ offline competition output and current official requirements must pass first.
 ## Acceptance
 
 - [x] One exact scientific protocol declared before medical predictive results.
-- [ ] Exact anchor and medical native/terminal/source/asset receipts verified.
-- [ ] Immutable analysis implementation and full input/resource admission frozen.
+- [x] Exact anchor and medical native/terminal/source/asset receipts verified.
+- [x] Immutable analysis implementation and full input/resource admission frozen.
 - [ ] Independent fixed paired analysis and diagnostics completed.
 - [ ] Provisional disposition recorded without relabeling validation as rank proof.
 
@@ -77,3 +77,12 @@ binds the separately admitted v4 metadata recovery and its independent verifier.
 Every scientific protocol field is identical to v1; no retuning follows the
 now verified inconclusive standalone medical result. Final anchor/input proof,
 analysis CPU admission, primary terminal and independent replay still required.
+
+October2,17:19UTC: exact medical and anchor native/source/terminal/runtime
+chains pass complete final input admission. Original v2 plan and its10% vote
+remain unchanged. Dedicated lifecycle/admission plus two sole1h CPU components
+(3540s watchdog each) reuse the previously protected7200s comparison/replay
+allowance; zero spend, no model fitting/scoring/promotion. Protected full route
+and review projectOctober10,19:49UTC and1968671467335bytes<2TB. Five lifecycle
+guards pass. Primary analysis and independent replay remain unlaunched at this
+admission; every metric/support/vote/gate must reproduce after actual terminals.

@@ -199,3 +199,19 @@ actual terminal conservatively, never retries. Native MRI/output proof and
 fixed Ticket71 paired analysis remain pending. Owner's October2 instruction:
 **do not waste daily submissions**; scored attempts require verified improvement
 and passing offline/runtime checks, not debugging or an unchanged repeat.
+
+## Answer
+
+October2,17:10UTC: v4 actual136806200/version1 COMPLETE/source/settings and
+kernelspec PASS. Independent proof5a9682f7b2efbeeabf47f0f6c441edacb59f338f3e8661bf5dc7b94251a2d670
+passes all58 original MRI/10528 DICOM/7013061052bytes, actual twoT4 CUDA runtime,
+pinned loaded checkpoints, all20 original DINO members, both Raptor arms and
+exact final rank/Gaussian fusion; no fallback/drop. Visible inference1193.581s
+is not hidden-test timing or a VM allocation interval. Full14400GPU-second bound
+charged conservatively; campaigncap165600/charged158437/reserved0/rem7163.
+Exact final prediction SHA326819fa2c3649e08e00ccb62d3ae2888e1bfa3b179545f6e12af1b9f54c5c59,
+output receipt4ee479188170dc0c2a9d66fb19be121765b2d7f56f0ff3abea22c729ae7aff9d.
+Historical attachment lineage remains inferred where no historical asset SHA
+exists; Gold58/public parent remain adaptive. No model promotion, competition
+score or daily submission slot used. Exact anchor predictions now admit only
+the prospectively fixed Ticket71 paired comparison, not automatic delivery.
