@@ -657,3 +657,14 @@ SHA `eaad4dd0ed158c9478bc749195593f31b1a3f315d1b3b53031e374289b9e254c`.
 Fresh typed free quota12:45UTC GPU57178.249/TPU71883.65, paid scaling off. No MRI
 training/delivery pilot or predictive gain; Ticket60 remains claimed for that
 separate stage. [Evidence](../../docs/evidence/ticket-60-tpu-environment.md).
+
+October2,16:20UTC — native medical verifier8106 running through unchangedT68plan.
+Full8072/8074 worker checkpoints complete but backend terminal ancestry missing
+since observer/controller interruption14:04; consumed jobs never retried.
+[Recovery72](issues/72-recover-interrupted-cpu-scheduling.md). T70v3 full MRI/runtime
+proof envelope and launch/output lifecycle frozen, complete resource admission
+f6f5628623c095d06a44c2b4f5cf3e516fb49d78e195c11d78233ddf05a1a452, unlaunched.
+T71 fixed analysis/replay prepared f90bb2ad7a216eb3a235595775ae5d559569b707a0b8b6b5b20369b57cb2934d;
+no final input/resource admission or predictive analysis.103 combined guards and
+module typing pass. Portable medical adapter is excluded from new45-module
+analysis closure; all frozen source snapshots must remain unchanged.

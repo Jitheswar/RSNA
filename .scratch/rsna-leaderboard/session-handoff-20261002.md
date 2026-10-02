@@ -324,3 +324,27 @@ results. Ticket70 pinned v2 preparation verified and unlaunched; TPU remains
 queued and accelerator ledgers unchanged. Goal turn classification: progress
 (completed independent bank, actual matched plan, pinned source envelope),
 not rank completion. Neither first-place rank is verified.
+
+## Authoritative superseding status — October2,16:20UTC
+
+Old Ticket68 coordinator and stage observers stopped around14:04UTC, cause
+unknown.8072/8074 handles are purged; complete worker/checkpoint boundary evidence
+exists, raw successful terminal evidence does not. Do not restart old consumed
+controller or repeat either job. [Ticket72](issues/72-recover-interrupted-cpu-scheduling.md)
+tracks separate checkpoint/scheduling recovery and conservative full allocation
+bounds. Original final watcher remains live and gated on incomplete ancestry.
+
+Previously unlaunched native medical verifier8106 now runs through the unchanged
+frozen launcher/plan, one16CPU64GiB3h allocation; observer active. Exact fit8073
+already COMPLETED0:0/357seconds. No predictive results inspected before native
+terminal proof. There is one remaining CPU slot; controller ownership is stopped,
+not handed back to the old consumed coordinator.
+
+Exact anchor v3 prepared/resource admitted, not yet launched/reserved. Frozen
+lifecycle+output verifier; request255eff3d3ea66deb926a9a4507391322bd19bd66b8a9edd061a470a518cd2924.
+One2T4/2h/14400GPU-second bound, agent approved151200cap under existing autonomy.
+Fresh quota57178.249/paid off; complete routeOct10,13:17UTC and1966290751150bytes.
+Ticket71 immutable protocol prepared f90bb2ad7a216eb3a235595775ae5d559569b707a0b8b6b5b20369b57cb2934d;
+final input/resource admission absent, no metrics run. Preserve allnew snapshots.
+TPU whole-backbone pilot design is preparation only; no training launch, quota
+reservation, predictive gain or either first rank is established.

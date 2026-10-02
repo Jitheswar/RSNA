@@ -62,3 +62,11 @@ offline competition output and current official requirements must pass first.
 - October2: protocol fixed with Ticket68 at `wait_for_complete_bank`, fitting
   plan admittedFalse/fitting launchedFalse; Ticket70 is prepared and unlaunched.
   No predictions inspected or labels scored for this decision.
+
+October2,16:20UTC — fixed analysis and separate independent replay implemented;
+103 combined Ticket70/71 guards pass and analysis module typing passes. Prepared
+immutable protocol planf90bb2ad7a216eb3a235595775ae5d559569b707a0b8b6b5b20369b57cb2934d
+under artifacts/private/ticket71-scored-anchor-analysis-v1. Forty-five static
+local dependency modules are frozen; portable medical adapter remains editable.
+Final input/native/terminal receipts and CPU resource admission remain absent;
+no prediction/label analysis has run. No candidate/scoring/promotion follows.

@@ -178,3 +178,14 @@ training/delivery pilot or predictive gain; Ticket60 remains claimed for that
 separate stage. [Evidence](../../docs/evidence/ticket-60-tpu-environment.md).
 
 October2,12:57UTC — sole Ticket68 medical fit8073 completes0:0/357CPU-node seconds. Native MRI replay still awaits CPU slot; no interim predictive read. Full fold0/stage2 8054 completes0:0/6833seconds/exact3000 boundary; successor8074 runs,target4000. Controller owns two slots8074/8072; science unchanged.
+
+October2,16:20UTC — native medical verifier8106 running through unchangedT68plan.
+Full8072/8074 worker checkpoints complete but backend terminal ancestry missing
+since observer/controller interruption14:04; consumed jobs never retried.
+[Recovery72](issues/72-recover-interrupted-cpu-scheduling.md). T70v3 full MRI/runtime
+proof envelope and launch/output lifecycle frozen, complete resource admission
+f6f5628623c095d06a44c2b4f5cf3e516fb49d78e195c11d78233ddf05a1a452, unlaunched.
+T71 fixed analysis/replay prepared f90bb2ad7a216eb3a235595775ae5d559569b707a0b8b6b5b20369b57cb2934d;
+no final input/resource admission or predictive analysis.103 combined guards and
+module typing pass. Portable medical adapter is excluded from new45-module
+analysis closure; all frozen source snapshots must remain unchanged.

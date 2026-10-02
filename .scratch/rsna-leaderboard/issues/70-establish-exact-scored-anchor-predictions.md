@@ -53,3 +53,14 @@ weight sweep, competition submission, promotion or clean-OOF claim.
   weight-byte equality. Original v4-full and v5-SWA files confirmed in pinned
   inventories. Ten new envelope guards pass; no resource decision/launch.
   Preserve the new envelope builder and both versions' source snapshots.
+
+October2,16:18UTC — v3 supersedes unlaunchedv2: all5 scientific cells unchanged,
+actual installed runtime/twoT4 hardware contract, full original
+Gold58 MRI byte proof (10528 DICOM/7013061052bytes), explicit DINO member proof and
+stdout/stderr/tail guards added. Request255eff3d3ea66deb926a9a4507391322bd19bd66b8a9edd061a470a518cd2924.
+Complete resource admission f6f5628623c095d06a44c2b4f5cf3e516fb49d78e195c11d78233ddf05a1a452,
+14400 GPU-seconds/7200session/7140watchdog/oneattempt, zero spend. Newcap151200
+is approved under standing autonomy but not yet applied; no launch yet.
+Fresh quota57178.249 freeGPU, paid scaling off; projected1966290751150bytes,
+complete protected route+review finishesOct10,13:17UTC before retained Oct11T00
+admission cutoff. Exact receipt/native/runtime proof still needs actual execution.

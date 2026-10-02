@@ -133,3 +133,33 @@ remote runtime occurred. Before accepting outputs, verify remote attachment/
 container settings, actual mounted inputs and recorded loaded-weight hashes,
 original-MRI execution and independent terminal/output proof. Resource capacity
 and accelerator vacancy remain unadmitted; ledgers and queued TPU unchanged.
+
+## Verified runtime envelope and resource admission — October2,16:18UTC
+
+Version3 preserves the complete five scientific cells. Before inference it checks
+all58 original MRI studies,10528 DICOM/7013061052bytes against the previously
+independently verified extraction/source SHA manifests. Actual runtime versions,
+twoT4 hardware, complete original DINO member IDs and stdout/stderr/tails are
+retained. Independent verifier additionally rejects partial decoding, rechecks
+all mounted inference checkpoint hashes/sizes and recomputes the original Raptor
+and Gaussian-quantile outer fusion. GetKernel canonicalizes dataset references;
+accepted push explicitly pins the seven versions and original container. DINO
+initialization/config files are version-pinned; strict full DINO checkpoint loads
+replace all inference parameters/buffers. Historical byte parity is not claimed.
+
+Request255eff3d3ea66deb926a9a4507391322bd19bd66b8a9edd061a470a518cd2924,
+root artifacts/private/ticket70-scored-anchor-gold58-v3. MRI identity
+257f1ab29b55f6193b59d249b3777c7bce02922c1e4586943c0c12311c69b650.
+[Resource decision](../../.scratch/rsna-leaderboard/resource-approvals/ticket70-exact-anchor-20261002.json)
+binds one7200-second session,7140watchdog,14400 GPU-second bound, no retries or
+spend. Prospective6664.347-second forecast includes unmeasured180seconds for
+original MRI hashing; actual cost remains unverified. Fresh typed free quota
+57178.249 seconds, paid scaling off and existing accelerator requests terminal.
+Whole route/review projectedOct10,13:17UTC; apparent storage1966290751150bytes
+including prior protected reserves and80GB additional envelope, below2TB.
+Cap151200 authorized under standing autonomy; launch must apply amendment and
+reservation only after fresh quota/vacancy checks. No competition submission.
+
+Lifecycle and independent verifier are now frozen. Existing CPU Python uses the
+already installed official Kaggle2.2.4 SDK; the SDK-only Python lacks NumPy needed
+by project ledger imports. No environment packages were installed or replaced.
