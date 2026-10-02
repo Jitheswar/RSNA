@@ -43,11 +43,12 @@ def test_original_ordinary_adam_scope_and_full_encoder_gradient_update():
     assert all(torch.equal(before[k],v) for k,v in m.named_buffers())
 
 
-@pytest.mark.parametrize('defect', ['lr', 'weight_decay', 'betas', 'foreach', 'group_order', 'scheduler_position', 'frozen_encoder', 'not_full_model'])
+@pytest.mark.parametrize('defect', ['lr', 'weight_decay', 'decoupled_weight_decay', 'betas', 'foreach', 'group_order', 'scheduler_position', 'frozen_encoder', 'not_full_model'])
 def test_changed_original_scope_rejected(defect):
     m = model();optimizer = update.original_adam(m);scheduler = update.original_scheduler(optimizer)
     if defect == 'lr': optimizer.param_groups[0]['lr'] = 2e-5
     if defect == 'weight_decay': optimizer.param_groups[0]['weight_decay'] = .1
+    if defect == 'decoupled_weight_decay': optimizer.param_groups[0]['decoupled_weight_decay'] = True
     if defect == 'betas': optimizer.param_groups[0]['betas'] = (.8,.999)
     if defect == 'foreach': optimizer.param_groups[0]['foreach'] = True
     if defect == 'group_order': optimizer.param_groups[0]['params'].reverse()
@@ -115,3 +116,24 @@ def test_unknown_graph_hash_cannot_be_replaced_by_synthetic_success():
     assert backend.graph_hash([]) == '01'*16
     backend.xla._XLAC._get_graph_hash = lambda _:None
     with pytest.raises(ValueError,match='actual|Actual'): backend.graph_hash([])
+
+
+@pytest.mark.parametrize('defect', ['consumed_failure','skipped_start','skipped_next','repeated_step','path_reuse','generation_reuse','bool_generation'])
+def test_worker_prefix_or_consumed_failure_rejected_before_any_backend_work(defect):
+    backend = object.__new__(update.XlaPilotUpdate)
+    backend.failed_or_inflight = defect == 'consumed_failure'
+    backend.worker_identity = None
+    backend.next_step = None
+    path,step,generation = 'continuous',1,0
+    if defect == 'skipped_start': step = 3
+    if defect in ('skipped_next','repeated_step','path_reuse','generation_reuse'):
+        backend.worker_identity = ('continuous',0)
+        backend.next_step = 4
+    if defect == 'skipped_next': step = 5
+    if defect == 'repeated_step': step = 3
+    if defect == 'path_reuse': path = 'staged'
+    if defect == 'generation_reuse': path,step,generation = 'staged',9,1
+    if defect == 'bool_generation': generation = False
+    # No backend, model, optimizer or replica exists. The actual update must fail
+    # admission first; this neither mocks nor runs the XLA training computation.
+    with pytest.raises(ValueError): backend.update(None,None,None,None,path=path,successful_step=step,worker_generation=generation)

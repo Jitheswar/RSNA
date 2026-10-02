@@ -15,7 +15,7 @@ import torch
 
 from rsna_knee.full_backbone import ResNet18FullBackboneStudyModel
 from rsna_knee.replicated_masked_loss import replica_masked_bce
-from rsna_knee.tpu_pilot_telemetry import PilotUpdateObservation
+from rsna_knee.tpu_pilot_telemetry import PilotUpdateObservation, validate_rank_update
 
 
 def require(value, message):
@@ -44,6 +44,7 @@ def validate_optimizer(model, optimizer, scheduler, before_step):
         require(tuple(map(id, group['params'])) == tuple(map(id, parameters)) and group['lr'] == lr
             and group['betas'] == (.9,.999) and group['eps'] == 1e-8 and group['weight_decay'] == 0
             and group['amsgrad'] is False and group['maximize'] is False and group['capturable'] is False
+            and group.get('decoupled_weight_decay', False) is False
             and group['differentiable'] is False and group['foreach'] is None and group['fused'] is None,
             'Exact original parameter order and ordinary Adam settings required')
     for parameter in model.parameters():
@@ -128,6 +129,11 @@ class XlaPilotUpdate:
         self.rank = xr.global_ordinal()
         self.xla, self.xm, self.metrics = torch_xla, xm, metrics
         self.normalization = None
+        self.initialized_baseline = None
+        self.worker_identity = None
+        self.next_step = None
+        self.failed_or_inflight = False
+        self.last_update_evidence = None
 
     def graph_hash(self, tensors):
         value = self.xla._XLAC._get_graph_hash(tensors)
@@ -136,7 +142,13 @@ class XlaPilotUpdate:
 
     def update(self, model, optimizer, scheduler, replica, *, path, successful_step, worker_generation):
         require(path in ('continuous','staged') and type(successful_step) is int and successful_step in range(1,17)
-            and worker_generation == int(path == 'staged' and successful_step >= 9), 'Exact declared pilot path/step/generation required')
+            and type(worker_generation) is int and worker_generation == int(path == 'staged' and successful_step >= 9), 'Exact declared pilot path/step/generation required')
+        require(not self.failed_or_inflight, 'Consumed failed or in-flight update cannot be retried')
+        start = 9 if worker_generation else 1
+        identity = (path,worker_generation)
+        require((self.worker_identity is None and successful_step == start)
+            or (self.worker_identity == identity and successful_step == self.next_step),
+            'Fresh worker must execute its original consecutive prefix without retry or path reuse')
         require(replica.rank == self.rank and next(model.parameters()).device == self.device,
                 'Original input rank and model device must match actual worker')
         validate_optimizer(model,optimizer,scheduler,successful_step-1)
@@ -146,8 +158,12 @@ class XlaPilotUpdate:
         if self.normalization is None:
             self.normalization = {n:v.detach().clone() for n,v in model.named_buffers()
                 if n.endswith(('running_mean','running_var','num_batches_tracked'))}
+        self.failed_or_inflight = True
+        self.last_update_evidence = dict(path=path,successful_step=successful_step,worker_generation=worker_generation,
+            rank=self.rank,status='IN_FLIGHT',actual_complete_pilot_verified=False,competition_submission=False,candidate_promotion=False)
         self.xla.sync(wait=True)
         before = metrics_snapshot(self.metrics)
+        self.last_update_evidence['metrics_before'] = before
         started = time.monotonic()
         inputs = tuple(v.to(self.device) for v in replica.model_inputs)
         targets = replica.targets.to(self.device)
@@ -170,6 +186,7 @@ class XlaPilotUpdate:
         optimizer_graph = self.graph_hash([*model.parameters(),*state_tensors])
         self.xla.sync(wait=True)
         trained = metrics_snapshot(self.metrics)
+        self.last_update_evidence['metrics_after_training'] = trained
         training_seconds = time.monotonic()-started
         flags = [torch.isfinite(global_loss),*(torch.isfinite(v).all() for v in gradients),
             *(torch.isfinite(v).all() for v in model.parameters()),*(torch.isfinite(v).all() for v in state_tensors)]
@@ -182,11 +199,19 @@ class XlaPilotUpdate:
         value = float(global_loss.cpu())
         exported_gradients = {name:p.grad.detach().cpu().clone() for name,p in model.named_parameters()} if successful_step <= 3 else None
         guarded = metrics_snapshot(self.metrics)
+        self.last_update_evidence['metrics_after_guard'] = guarded
         observation = PilotUpdateObservation(path,successful_step,self.rank,worker_generation,time.monotonic()-started,
             metric_delta(before,trained,('CompileTime',)), metric_delta(before,trained,('ExecuteTime','ExecuteReplicatedTime')),
             forward_graph,optimizer_graph,True,fallback_deltas(before,trained))
-        require(not any(count > 0 for _,count in observation.fallback_counter_deltas), 'Unsupported training CPU fallback fails the pilot')
+        self.last_update_evidence['observation'] = asdict(observation)
+        validate_rank_update(observation, initialized_baseline=self.initialized_baseline)
+        if successful_step == start + 1:
+            self.initialized_baseline = observation
+        self.worker_identity = identity
+        self.next_step = successful_step + 1
         validate_optimizer(model,optimizer,scheduler,successful_step)
+        self.last_update_evidence['status'] = 'UPDATE_GATES_PASSED'
+        self.failed_or_inflight = False
         return dict(observation=asdict(observation), global_loss=value, training_seconds=training_seconds,
             finite_guard_and_prescribed_gradient_export_seconds=observation.synchronized_interval_seconds-training_seconds,
             metrics_before=before,metrics_after_training=trained,metrics_after_guard=guarded,
