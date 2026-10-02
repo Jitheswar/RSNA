@@ -43,3 +43,13 @@ weight sweep, competition submission, promotion or clean-OOF claim.
   Current136800 cap/129637 charged/7163 remaining are unchanged.
 - TPU136722939/v1 remains QUEUED; no second accelerator request is launched.
 - [Evidence and remaining gates](../../../docs/evidence/ticket-70-exact-scored-anchor.md).
+
+- October2: immutable pinned envelopev2 supersedes unlaunchedv1, requestSHA
+  `6f40239b3e5e57b7534bdbc97be7b84e92efaa2226d5330e9bbf0d67b690a886`.
+  Entire inference notebook unchanged; explicit dataset versions1/2/2/1/5/3/1
+  in original attachment order and exact saved container digest pinned.
+  Authenticated histories predate the earliest saved baseline run/request;
+  latest-version historical attachment lineage is an inference, not historical
+  weight-byte equality. Original v4-full and v5-SWA files confirmed in pinned
+  inventories. Ten new envelope guards pass; no resource decision/launch.
+  Preserve the new envelope builder and both versions' source snapshots.

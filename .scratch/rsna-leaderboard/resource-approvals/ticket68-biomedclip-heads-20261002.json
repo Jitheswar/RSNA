@@ -1,0 +1,50 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "candidate_promotion": false,
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "delegated_registered_ticket64_fit_scheduling": true,
+  "gpu_ledger_changed": false,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "plan_sha256": "16ee8b86a75aa30a0c6a1f25e68ee65028a084914b7863584e1abb540c8bc666",
+  "projection": {
+    "additional_calendar_seconds": 19800,
+    "additional_cpu_node_seconds": 12600,
+    "conservative_complete_route_finish_utc": "2026-10-09T19:14:07.053244+00:00",
+    "fit_forecast_seconds": 1207.1009794548154,
+    "medical_native_forecast_seconds": 3700.5207386389375,
+    "retained_other_native_replay_seconds": 5400,
+    "retained_prior_calendar_seconds": 523800,
+    "retained_review_seconds": 86400,
+    "science_freeze_utc": "2026-10-11T00:00:00+00:00",
+    "verification_forecast_seconds": 9100.520738638937
+  },
+  "resources": {
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "fit_walltime_seconds": 1800,
+    "fit_watchdog_seconds": 1740,
+    "gpu_count": 0,
+    "maximum_fit_launches": 1,
+    "maximum_owner_cpu_jobs": 2,
+    "maximum_simultaneous_experiment_jobs": 1,
+    "maximum_verification_launches": 1,
+    "memory_gib": 64,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "requeue": false,
+    "tasks": 1,
+    "verification_walltime_seconds": 10800,
+    "verification_watchdog_seconds": 10740
+  },
+  "storage": {
+    "additional_allowance_bytes": 1000000000,
+    "du_output": "1300320954660\t/home/ch.jitheswar/RSNA\n16397455028\t/home/ch.jitheswar/models/qwen3-8b-b968826d9c46dd6066d109eabc6255188de91218\n",
+    "existing_apparent_bytes": 1316718409688,
+    "projected_apparent_bytes": 1862706875815,
+    "retained_prior_allowance_bytes": 544988466127
+  },
+  "ticket64_science_or_sources_changed": false,
+  "tpu_ledger_changed": false
+}

@@ -618,3 +618,34 @@ vote on all12 targets before medical results. Paired2000 bootstrap20261002/95%
 CI/all original fold directions and image/zero-image controls; no alternate
 vote/target sweep or automatic promotion. Actual68/70 receipts and fixed
 analysis/delivery admission remain pending. [Protocol](issues/71-compare-medical-heads-with-scored-anchor.md).
+
+## October2 — complete independent medical bank and admitted matched heads
+
+Ticket67 resolved: all4228 studies/187272 slices checked, fixed344 native
+outputs exactly match; no all-study native vision replay. Sole partitions
+8041/8042/8057/8058 complete0:0/1901/1831/1896/1905 CPU-node seconds;8071
+verifier complete0:0/352, total7885. Actual feature/pooled bytes1178253654,
+read124.714/infer7258.738/write20.288s, verifier pixel read171.753s. ManifestSHA
+`b5c136b5d0d44e7e9dcecb040c8e087bbac78258811e112c965bc2fc7ac4f798`,
+independentSHA `1a3424090bc59cc227d64be4dd1658f4a87f7c4b0c480f3322fe39611c803fe9`,
+terminalSHA `f7348df1d46d8fb0ef8a58e6947c5baa6fac1b23f1679483b6a96097d77413f3`.
+No labels/fitting/AUC/accelerators/promotion/scoring.
+
+Actual Ticket68 plan admitted
+`16ee8b86a75aa30a0c6a1f25e68ee65028a084914b7863584e1abb540c8bc666`, tracked
+[resource decision](resource-approvals/ticket68-biomedclip-heads-20261002.json)
+SHA `c1dae5a04ed74b249c17d503c438ba2a3a194c6c42df48f54a9626cfc91d07c9`.
+One30-minute fit/one3-hour native verifier, max2 owner CPU jobs,16CPU64GiB,
+no retries/requeue/extra accelerators, protected route/review Oct9 19:14UTC.
+Ticket67 consumed scheduler exited; Ticket68 holds original coordinator and
+advances unchanged full stages.8054/8072 currently run, medical fit unlaunched.
+Preserve all frozen source/snapshots, compare only all-final native-verified
+outputs, no medical gain or promotion claim yet.
+
+Ticket70 pinned-source-envelopev2 request
+`6f40239b3e5e57b7534bdbc97be7b84e92efaa2226d5330e9bbf0d67b690a886` preserves
+identical inference notebook, binds7 dataset versions and saved container.
+Ten new guards/independent envelope validation pass. Latest historical attachment
+lineage is inferred from authenticated histories predating the saved baseline;
+historical byte parity and real MRI/remote runtime remain unverified. Freeze
+new envelope builder and snapshots; no cap/reservation/launch/ledger change.

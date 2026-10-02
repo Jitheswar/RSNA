@@ -130,20 +130,20 @@ None remains within this planning destination. All seven tickets are resolved. T
   resumed fold-1 stage-1 **8039** continue. Eleven guards pass. No fitted
   accuracy or rank evidence. [Completed evidence](../../docs/evidence/ticket-66-biomedclip-mri-admission.md).
 
-- [Ticket 67](issues/67-materialize-frozen-biomedclip-cohort.md) claimed:
-  exact 4,228-study /187,272-slice medical feature bank separately admitted,
-  four fixed bounded CPU partitions plus independent validation. Persistent
-  combined scheduler delegates unchanged Ticket 64 stage scheduling and waits
-  while 8036/8039 run, at most two owner CPU jobs. Fourteen guards pass;
-  actual extraction/accuracy remain pending. [Evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
+- [Ticket 67](issues/67-materialize-frozen-biomedclip-cohort.md) resolved:
+  all4228 studies/187272 slices extracted in four sole successful partitions,
+ 8071 independently checks every byte/source/mask/norm plus fixed344 native
+  outputs exactly. Total7885 CPU-node seconds,1178253654 feature/pooled bytes,
+  no labels/fitting/accuracy. [Completed evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
 
 - [Ticket 68](issues/68-test-matched-biomedclip-report-heads.md) claimed:
-  matched 7,500-total-step medical head workflow frozen, exact random init
-  and all six original source exposures preflight pass, 21 focused guards.
-  Persistent controller waits for complete independent Ticket67 bank proof;
-  no fitting resource admission or gain yet. First bank partition **8041**
-  is running; full **8036** completed exactly2,000 updates /0:0 while **8039**
-  continues. [Workflow evidence](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
+  complete bank then actual matched-head plan admitted,
+  `16ee8b86a75aa30a0c6a1f25e68ee65028a084914b7863584e1abb540c8bc666`.
+  Six7500-total-step random-init/source-matched heads plus all58 medical/parent
+  native verification, one fit/one verifier/max2 CPU jobs/no retry. Combined
+  controller owns unchanged scheduling;8054/8072 occupy both slots, no medical
+  fit/result yet. Route/review projects October9 19:14UTC.
+  [Workflow evidence](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
 
 - [Ticket69](issues/69-prepare-portable-medical-inference.md) claimed:
   additive strict CPU medical inference adapter, explicit held-out-fold versus
@@ -151,14 +151,15 @@ None remains within this planning destination. All seven tickets are resolved. T
   flags.26 synthetic tests and typing pass; real-MRI/package parity pending.
   Read-only audit confirms exact0.936 source is five cells, distinct from
   cached23-cell D4 lineage; exact scored-anchor Gold58 parity remains unproven.
-  Bank parts8041/8042/8057 completed0:0; fourth8058 and unchanged fit8054 run.
+  Bank completed and independently verified; unchanged8054/8072 fits run.
   [Evidence](../../docs/evidence/ticket-69-portable-medical-inference.md).
 
 - [Ticket70](issues/70-establish-exact-scored-anchor-predictions.md) claimed:
   exact0.936 scored-source Gold58 request separately prepared and independently
-  checked; five cells retained except four dataset-root literals, eight tests
-  and typing pass. No historical weight/MRI/runtime parity, resource admission
-  or launch yet. D4 final cache has different members/fusion; shared calibration
+  checked; pinned envelopev2 retains identical notebook while binding7 explicit
+  dataset versions and saved container. Eight source tests/typing and ten new
+  envelope guards pass. Historical weight-byte/MRI/runtime parity and resource
+  admission/launch remain unproven. D4 final cache has different members/fusion; shared calibration
   payload and50 matching top-level definitions do not prove predictions.
   [Evidence](../../docs/evidence/ticket-70-exact-scored-anchor.md).
 

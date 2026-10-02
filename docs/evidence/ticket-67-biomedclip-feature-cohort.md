@@ -1,13 +1,27 @@
 # Ticket 67: frozen BiomedCLIP feature cohort admission
 
-The first three fixed feature partitions completed successfully: **8041 /0:0**
-1,057 studies /46,824 slices /**1,901 CPU-node seconds**, **8042 /0:0**
-1,057 studies /46,816 slices /**1,831 CPU-node seconds**, and **8057 /0:0**
-1,057 studies /46,816 slices /**1,896 CPU-node seconds**. These actual terminal
-receipts total **3,171 studies /140,456 slices /5,628 CPU-node seconds**.
-Fourth **8058** is RUNNING alongside unchanged full-training **8054**;
-independent full-cohort verification remains pending. No accuracy or rank
-result follows from this partial feature bank.
+The complete unfitted bank is independently verified: **4,228 studies /187,272
+valid slices**. Sole partitions **8041/8042/8057/8058** completed **0:0**,
+respectively **1,901/1,831/1,896/1,905 CPU-node seconds**. Independent verifier
+**8071 /0:0 /352 seconds** checked every feature byte/source/array/mask/norm
+and reproduced the fixed344 native outputs exactly. Total **7,885 CPU-node
+seconds**, no labels, fitting, accelerator use, AUC or scoring.
+
+Feature plus pooled files occupy **1,178,253,654 bytes**. Extraction pixel reads
+124.713754s, model inference7258.738074s, serialization20.287985s; independent
+pixel reads171.752964s. These measured costs fit the fixed admission.
+
+ManifestSHA `b5c136b5d0d44e7e9dcecb040c8e087bbac78258811e112c965bc2fc7ac4f798`;
+independent validationSHA `1a3424090bc59cc227d64be4dd1658f4a87f7c4b0c480f3322fe39611c803fe9`;
+terminal verificationSHA `f7348df1d46d8fb0ef8a58e6947c5baa6fac1b23f1679483b6a96097d77413f3`.
+Private completion audit `artifacts/private/ticket67-biomedclip-cohort-v1/completion-audit.json`,
+SHA `d4a18be222866aaf4e8191e961c8e282222109fb59d430869262f08c003d4ebc`.
+
+The source proof remains all4228 original pixels plus fixed eight-study/344-slice
+native vision proof, not fresh all-study native vision replay. The consumed
+Ticket67 controller exited; Ticket68 has now admitted its separately fixed
+matched-head plan. Original full fits8054/8072 run; no medical fit or accuracy
+result yet. Preserve all frozen sources and sole launch intents.
 
 ## Evidence and fixed representation
 

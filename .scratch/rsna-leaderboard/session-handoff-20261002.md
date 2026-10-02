@@ -34,16 +34,16 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    held-out studies alongside gold. The failure is diagnosed and preserved,
    **1,551 CPU-node seconds**. Never retry either consumed v1 request. V1 source
    and coordinator remain preserved/stopped. [Diagnosis and recovery evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).
-3. **`rsna-ticket67-biomedclip-cohort-v1.service`** now owns combined CPU
-   scheduling, PID **293555**. Original
-   **`rsna-ticket64-comparison-coordinator-v2.service`** is temporarily held.
-   Ticket 67 itself advances the exact unchanged registered fitting stages
-   through frozen worker launches while materializing one feature partition
-   at a time. Do not manually recreate the original fit coordinator while
-   Ticket 67 owns scheduling. Current **8054** fit and fourth medical extraction **8058** continue,
-   with at most two pending+active owner CPU jobs. Original coordinator is restored on exit.
-   `coordinator-state.json` under Ticket 67 records current scheduling; the
-   old v2 snapshot is historical during delegation. Exact completed recovery
+3. **`rsna-ticket68-biomedclip-heads-v1.service`** now owns combined CPU
+   scheduling, PID324630, phase `execute_fixed_experiment`. Original
+   `rsna-ticket64-comparison-coordinator-v2.service` is held; Ticket67 finished
+   successfully and exited. Ticket68 advances unchanged registered full stages
+   while waiting to launch one medical fit and one native verifier. Do not
+   manually restore another coordinator during this ownership interval.
+   Current8054(fold0/stage2) and8072(fold1/stage2) run, each target3000, at most
+   two pending/active owner CPU jobs. T68 fit/native verifier unlaunched.
+   State under `artifacts/private/ticket68-biomedclip-head-controller-v1/state.json`;
+   original coordinator restored on its exit. Exact completed recovery
    control is required before unchanged fitting stages advance. The inherited original v1 fold-0/stage-0 **8032** can never be
    relaunched. Its successful terminal and durable step 1,000/hash are required
    before v2 stage 1. Full fold 0 resumes the original v1 training directory
@@ -120,54 +120,42 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    Root `artifacts/private/ticket66-biomedclip-mri-pilot-v1/`, plan
    `36a7524de3929e18d229102ed292c7a10e6bd49bcdeaa510eddce9ac1e63ff90`.
    [Actual evidence](../../docs/evidence/ticket-66-biomedclip-mri-admission.md).
-10. [Ticket 67](issues/67-materialize-frozen-biomedclip-cohort.md) claimed:
-    complete unfitted 4,228-study /187,272-slice medical feature bank admitted.
-    Root `artifacts/private/ticket67-biomedclip-cohort-v1/`; immutable plan
-    `e9ae761facc5ca3345925f38c36682ac18ff94e6e92d5c018e8a3eb7a9f5256a`,
-    feature identity
-    `7ba6b06160d908c6e03c2edb38bae73b0d90e50ab27c0eef2bbd1ce6cf3ac230`.
-    Four balanced partitions, each 1,057 studies; slice counts
-    46,824/46,816/46,816/46,816. FP32 microbatch one, whole-field224,
-    official learned512 projection/L2, original masks/descriptors/pixels.
-    One 3-hour/16-CPU/64-GiB attempt per partition plus one 1-hour independent
-    verification; no retry/requeue. Persistent scheduler above currently
-    completed8041 /0:0 /1901 CPU-node seconds,8042 /0:0 /1831 seconds
-    and8057 /0:0 /1896 seconds, total3171 studies /140456 valid slices.
-    Fourth8058 runs; independent verifier remains pending at11:38UTC.
-    Fourteen focused tests and five launcher checks pass. Preserve frozen
-    four Ticket 67 scripts and matching source snapshots; never duplicate
-    consumed controller/launch intents. On completion inspect exact terminals,
-    `feature-manifest.json`, `verification/independent-validation.json` and
-    `terminal-verification.json`. Verify all4228 feature bytes/source/norms/
-    padding/masks and fixed344 native outputs. Existing all-study native pixel
-    proof plus fixed eight-study native vision proof remain distinct; no new
-    all-study native vision replay claimed. Actual full extraction/accuracy
-    remain pending. Separate paired head-fit admission required afterward.
-    [Admission evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
+10. [Ticket67](issues/67-materialize-frozen-biomedclip-cohort.md) resolved:
+    all4228/187272 features independently verified, fixed344 native outputs
+    match exactly; no new all-study native vision replay. Sole8041/8042/8057/8058
+    complete0:0/1901/1831/1896/1905 CPU-node seconds; verifier8071 complete0:0/352.
+    Total7885 seconds,1178253654 feature+pooled bytes, extraction read124.714s/
+    inference7258.738s/write20.288s, verifier pixel read171.753s. No labels or
+    fitting/accuracy. Consumed controller exited and original scheduling restored
+    before Ticket68 took ownership; never duplicate jobs or frozen intents.
+    ManifestSHA `b5c136b5d0d44e7e9dcecb040c8e087bbac78258811e112c965bc2fc7ac4f798`;
+    independentSHA `1a3424090bc59cc227d64be4dd1658f4a87f7c4b0c480f3322fe39611c803fe9`;
+    terminal-verificationSHA `f7348df1d46d8fb0ef8a58e6947c5baa6fac1b23f1679483b6a96097d77413f3`.
+    Plan `e9ae761facc5ca3345925f38c36682ac18ff94e6e92d5c018e8a3eb7a9f5256a`;
+    feature identity `7ba6b06160d908c6e03c2edb38bae73b0d90e50ab27c0eef2bbd1ce6cf3ac230`.
+    Preserve all four frozen scripts and snapshots.
+    [Completed evidence](../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).
 
 11. [Ticket68](issues/68-test-matched-biomedclip-report-heads.md) claimed:
-    four-script medical-head workflow frozen; persistent
-    `rsna-ticket68-biomedclip-heads-v1.service`, PID **324630**, live in
-    `wait_for_complete_bank`. It currently leaves Ticket67 ownership intact.
-    Private root `artifacts/private/ticket68-biomedclip-head-controller-v1/`,
-    admission `ae31e9e0a1cf6e52c75fdd5e79f5e0dd22717c316b93f5d426a61c2bdd51ef67`.
-    No actual medical fitting plan/resource decision/job exists. Preserve
-    matching four repository sources and frozen controller snapshots.
-    Historical Ticket55 uses7500 **total** updates from original random init;
-    Ticket64 uses7500 **additional** updates from those final heads. New
-    medical comparison matches Ticket55 total budget/init/source exposures,
-    reuses its ResNet comparators, and separately replays all58 original-MRI
-    medical+parent outputs and fixed comparisons. Initial-state and source
-    preflight pass; **21** focused tests pass. On complete successful bank
-    receipt and restored original fit coordinator, this waiting controller
-    performs fresh whole-route/storage/review admission, freezes fit plan
-    and two launchers, then takes over unchanged registered fit scheduling
-    while launching one30-minute medical fit and one3-hour native verifier.
-    It restores original coordinator on exit; no retries/requeue/third slot.
-    Future exact fit plan SHA/resource decision must be committed when created.
-    Inspect terminal/source/state/native receipts before any provisional
-    review. Separate scored-anchor/offline delivery admission remains required;
-    no automatic promotion/submission. [Workflow](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
+    actual plan/root `artifacts/private/ticket68-biomedclip-matched-heads-v1`,
+    SHA `16ee8b86a75aa30a0c6a1f25e68ee65028a084914b7863584e1abb540c8bc666`.
+    Tracked resource decision `resource-approvals/ticket68-biomedclip-heads-20261002.json`,
+    SHA `c1dae5a04ed74b249c17d503c438ba2a3a194c6c42df48f54a9626cfc91d07c9`.
+    Complete bank and all exact source/runtime/feature/T55 bytes checked before
+    actual admission; one30-minute fit + one3-hour native verifier/16CPU64GiB/
+    max2 owner jobs/no retry. Additional12600 CPU-node/19800 calendar seconds,
+    1GB storage, protected whole route/review projects Oct9 19:14UTC.
+    Six7500 **total** updates from original random init, matching Ticket55
+    original admission/target/mask/source exposures; Ticket64 remains7500
+    **additional** warm-head updates. No head transfer or scientific sweep.
+    Initial/source preflight and21 guards passed earlier; do not edit any
+    four frozen sources or matching old/new snapshots. Combined scheduling
+    controller above is active;8054/8072 occupy both slots, no medical job or
+    predictive result yet. Follow existing handle, never recreate consumed
+    intents on timeout. Actual all58 medical/ResNet native/source/state/
+    checkpoint/sampler/Adam/terminal replay needed before provisional review.
+    Exact scored-anchor/offline delivery and actual ranks remain separate.
+    [Workflow](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
 
 12. [Ticket69](issues/69-prepare-portable-medical-inference.md) claimed:
     additive `src/rsna_knee/biomedclip_inference.py` implemented,26 synthetic
@@ -188,20 +176,27 @@ fallback preserved. Private score/rank and final selections remain unavailable.
     [Mechanics and gates](../../docs/evidence/ticket-69-portable-medical-inference.md).
 
 13. [Ticket70](issues/70-establish-exact-scored-anchor-predictions.md) claimed:
-    private exact-scored Gold58 request `artifacts/private/ticket70-scored-anchor-gold58-v1`,
-    SHA `e447295cda5201165327da9410c85f55f2815aa7dea07ee013a473f435c2eb71`.
-    Independent preparation validates original five0.936 cells; only four
-    root tokens change, all other recipe bytes retained. Eight focused source
-    tests and typing pass. Preserve new preparation/validation scripts and
-    `src/rsna_knee/scored_anchor_recipe.py` against their frozen snapshots.
-    No real MRI, weight or runtime parity is proven. Resolve historical asset
-    versions and pinned container before exact-anchor inference; capturing
-    future weight hashes alone does not prove historical equality. If input
-    envelope needs changes, supersede preparation instead of editing v1.
-    Proposed2T4/7200 session/7140 watchdog/14400 GPU-seconds; projected6484.347s
-    from exact visible run, not measured Gold58. Proposed151200 cap is not
-    amended/admitted; current136800/charged129637/reserved0/rem7163 unchanged.
-    TPU136722939/v1 remains QUEUED; do not launch a second accelerator job.
+    v2 explicit pinned envelope supersedes unlaunchedv1, private root
+    `artifacts/private/ticket70-scored-anchor-gold58-v2`, requestSHA
+    `6f40239b3e5e57b7534bdbc97be7b84e92efaa2226d5330e9bbf0d67b690a886`.
+    Entire notebook remains byte-identical to independently preparedv1: five
+    original0.936 cells except four root literals, no other scientific change.
+    ParentSHA `e447295cda5201165327da9410c85f55f2815aa7dea07ee013a473f435c2eb71`.
+    Explicit dataset versions1/2/2/1/5/3/1 in original order and exact saved
+    Docker digest pinned. Authenticated histories/latest versions predate
+    earliest saved baseline run/request; historical latest-version attachment
+    lineage is inferred, not historical weight-byte equality. Original plain
+    v4 complement and v5-SWA primary are present in pinned inventories.
+    Eight source safeguards/typing and ten new envelope guards pass; independent
+    preparation passes. Freeze old prep/validator/source helper and new
+    `prepare_ticket70_pinned_source_envelope.py` against all snapshots.
+    No MRI/native/remote runtime/weight parity yet. Validate actual remote
+    versions/container and loaded hashes before accepting predictions.
+    Proposed2T4/7200 session/7140 watchdog/14400 GPU-seconds remains unadmitted;
+    proposed151200 cap is not amended, current136800/charged129637/res0/rem7163.
+    Existing queuedTPU136722939/v1 must be terminal before another accelerator
+    launch, with fresh free quota/paid scaling off/calendar/storage/decision/
+    ledger reservation. Do not push either prepared version speculatively.
     [Evidence](../../docs/evidence/ticket-70-exact-scored-anchor.md).
 
 14. [Ticket71](issues/71-compare-medical-heads-with-scored-anchor.md) claimed:
@@ -321,3 +316,11 @@ Ticket71 vote protocol fixed with Ticket68 still `wait_for_complete_bank`,
 fitting admittedFalse/launchedFalse. Actual jobs8058/8054 remain RUNNING at
 12:02UTC, original scheduling/science unchanged. TPU136722939/v1 remains queued.
 No medical/anchor gain, GPU admission or leaderboard result yet.
+
+Current snapshot October2 12:21UTC: Ticket67 resolved/8071 complete0:0;
+Ticket68 exact plan admitted and controller active, owns unchanged8054/8072
+full-stage scheduling while medical fit/verifier wait for a CPU slot. No medical
+results. Ticket70 pinned v2 preparation verified and unlaunched; TPU remains
+queued and accelerator ledgers unchanged. Goal turn classification: progress
+(completed independent bank, actual matched plan, pinned source envelope),
+not rank completion. Neither first-place rank is verified.

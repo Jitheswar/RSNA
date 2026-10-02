@@ -1,7 +1,7 @@
 # 67: Materialize the frozen BiomedCLIP cohort
 
 **Type:** task
-**Status:** claimed
+**Status:** resolved
 **Assignee:** campaign agent
 **Blocked by:** 66
 
@@ -31,9 +31,9 @@ head fitting and later exact anchor/delivery comparison need their own decision.
 
 - [x] Actual successful Ticket 66 and full pixel-source integrity checked.
 - [x] Complete storage/calendar/runtime/partition/source admission frozen.
-- [ ] Four sole extraction attempts complete with durable exact CPU terminals.
-- [ ] All 4,228 feature outputs and fixed native outputs independently verified.
-- [ ] Full measured I/O, cost, feature identity and next decision recorded.
+- [x] Four sole extraction attempts complete with durable exact CPU terminals.
+- [x] All 4,228 feature outputs and fixed native outputs independently verified.
+- [x] Full measured I/O, cost, feature identity and next decision recorded.
 
 ## Comments
 
@@ -68,3 +68,25 @@ head fitting and later exact anchor/delivery comparison need their own decision.
   1057 studies/46816 slices; three-part total3171 studies/140456 slices/5628
   seconds. Fourth8058 runs beside unchanged full8054. Independent complete
   bank proof remains pending; no scientific schedule change or scoring.
+
+## Answer
+
+All four sole partitions8041/8042/8057/8058 completed0:0, respectively
+1901/1831/1896/1905 CPU-node seconds. Independent verifier8071 completed0:0
+/352 seconds. Total7885 CPU-node seconds,4228 studies/187272 valid slices,
+1178253654 bytes for feature plus pooled files. Extraction read124.714s,
+inference7258.738s, writes20.288s; independent pixel read171.753s.
+
+Every feature byte/semantic array/source/mask/descriptor/index/unit norm/padding
+and complete cohort was checked. Fixed344 native pilot outputs and fresh
+official vision replays match exactly. This is not all4228 native vision replay.
+No labels, fitting, accelerator seconds, AUC, promotion or scoring.
+
+ManifestSHA `b5c136b5d0d44e7e9dcecb040c8e087bbac78258811e112c965bc2fc7ac4f798`;
+independentSHA `1a3424090bc59cc227d64be4dd1658f4a87f7c4b0c480f3322fe39611c803fe9`;
+terminal verificationSHA `f7348df1d46d8fb0ef8a58e6947c5baa6fac1b23f1679483b6a96097d77413f3`.
+Completion auditSHA `d4a18be222866aaf4e8191e961c8e282222109fb59d430869262f08c003d4ebc`.
+Ticket67 controller exited/restored original scheduling; Ticket68 subsequently
+admitted its exact matched plan and now owns the combined unchanged schedule.
+Preserve all frozen sources and consumed intents.
+[Completed evidence](../../../docs/evidence/ticket-67-biomedclip-feature-cohort.md).

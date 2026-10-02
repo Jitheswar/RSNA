@@ -37,7 +37,7 @@ competition delivery needs a later separate decision; no automatic promotion.
 ## Acceptance
 
 - [x] Exact matched scientific protocol and initial-state equivalence implemented.
-- [ ] Completed verified bank then full frozen storage/calendar/resource admission.
+- [x] Completed verified bank then full frozen storage/calendar/resource admission.
 - [ ] Six sole medical fits complete and fixed comparisons computed.
 - [ ] Independent original-MRI/source/checkpoint/exposure/terminal replay passes.
 - [ ] Evidence and disposition recorded; anchor/delivery gates retained.
@@ -54,3 +54,14 @@ competition delivery needs a later separate decision; no automatic promotion.
   On complete successful bank receipt it performs fresh protected admission
   and combined unchanged-fit scheduling, then one fit and one native verifier.
 - [Workflow evidence](../../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
+
+- October2 12:15UTC: complete bank/8071 successful terminal verified; exact
+  planSHA `16ee8b86a75aa30a0c6a1f25e68ee65028a084914b7863584e1abb540c8bc666`
+  admitted under standing owner autonomy. Tracked decision
+  `../resource-approvals/ticket68-biomedclip-heads-20261002.json`. One30-minute
+  fit plus one3-hour native verifier,16CPU/64GiB, max2 owner jobs/no retries,
+  additional12600 CPU-node/19800 calendar seconds,1GB extra storage allowance,
+  protected full route/review projects October9 19:14UTC before October11.
+  Combined controller holds original coordinator and advances identical full
+  stages. Existing8054/8072 occupy both slots; medical fit/verification still
+  unlaunched. No medical predictive result, promotion or scoring yet.

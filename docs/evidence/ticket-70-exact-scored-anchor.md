@@ -1,5 +1,10 @@
 # Ticket70: exact scored-anchor development preparation
 
+Current preparation is **pinned envelopev2**, SHA
+`6f40239b3e5e57b7534bdbc97be7b84e92efaa2226d5330e9bbf0d67b690a886`;
+its notebook is identical to v1, with seven explicit dataset versions and the
+saved container pinned. Both preparations remain unlaunched and unreserved.
+
 A separate immutable Gold58 request now preserves the **five source cells**
 from **submission56705536 /script354125287 /notebookv2 /0.936**. Independent
 preparation validation passes, alongside **eight focused tests** and source
@@ -88,3 +93,43 @@ Only then use these predictions in a separately fixed paired candidate test.
 Gold58 has been repeatedly reused and public parents selected on its labels;
 even a positive paired result is provisional and cannot establish untouched
 generalization, a leaderboard score or first place.
+
+## Explicit source envelopev2
+
+Unlaunchedv2 supersedes v1's attachment envelope only, requestSHA
+`6f40239b3e5e57b7534bdbc97be7b84e92efaa2226d5330e9bbf0d67b690a886`, private
+root `artifacts/private/ticket70-scored-anchor-gold58-v2`. Entire notebook bytes,
+five-cell scientific recipe, four root changes, cohort and resource proposal
+remain unchanged. Validation passes; ten additional tests reject missing,
+duplicate, unready, ambiguous/newer versions and unpinned containers.
+Preserve `prepare_ticket70_pinned_source_envelope.py` and its frozen snapshot.
+
+Fresh authenticated dataset histories/file inventories at12:07UTC identify:
+
+| Dataset | Explicit version | Latest update UTC |
+| --- | ---: | --- |
+| dreaddevelopment/raptor-knee-maxspan | 1 | August22 |
+| mattiaangeli/knee-mri-fold-weights | 2 | August15 |
+| dreaddevelopment/raptor-knee-widedense | 2 | August23 |
+| marwanmath/resnet-50-radimagenet-marwan | 1 | July21 |
+| tonylica/rsna-knee-bend-dinov3-0917-repro-assets | 5 | September12 |
+| antoinegg1/rsna-knee-e9-radimagenet-heads-v15 | 3 | August11 |
+| pilkwang/rsna-knee-weights | 1 | August8 |
+
+All latest versions are Ready and predate the earliest retained saved baseline
+run/request. Its original unversioned/latest references support historical
+latest-version lineage **by inference**. They do not supply historical weight
+byte hashes. Metadata and complete pinned file inventories are retained under
+`artifacts/private/ticket70-asset-lineage-audit-v1`. The original plain
+`raptor_ft_coatnet_v4_full.pt` is292829402 bytes; the v5-SWA primary is292831426
+bytes. A v4-SWA file checked in an older asset preflight cannot stand in for
+the actual plain-v4 complement observed in the saved baseline log.
+
+The saved container is explicitly pinned with `docker_image_pinning_type=original`:
+`gcr.io/kaggle-private-byod/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461`.
+Local installed Kaggle SDK source verifies version-qualified dataset references
+and explicit Docker fields are accepted by its push interface. No push or
+remote runtime occurred. Before accepting outputs, verify remote attachment/
+container settings, actual mounted inputs and recorded loaded-weight hashes,
+original-MRI execution and independent terminal/output proof. Resource capacity
+and accelerator vacancy remain unadmitted; ledgers and queued TPU unchanged.
