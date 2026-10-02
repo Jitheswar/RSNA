@@ -20,12 +20,26 @@ import sys
 import time
 
 PROJECT = Path(os.environ.get("RSNA_PROJECT_ROOT", Path(__file__).resolve().parents[1])).resolve()
-FIT = PROJECT / "artifacts/private/ticket64-full-backbone-comparison-v1"
+FIT = PROJECT / "artifacts/private/ticket64-full-backbone-comparison-v2"
+OLD = PROJECT / "artifacts/private/ticket64-full-backbone-comparison-v1"
 ROOT = FIT / "independent-original-mri-replay-v1"
 DECISION = PROJECT / ".scratch/rsna-leaderboard/resource-approvals/ticket64-independent-original-mri-replay-20261002.json"
 AUTH = PROJECT / ".scratch/rsna-leaderboard/resource-approvals/campaign-owner-autonomy-20261001.json"
 ARMS = ("head-continuation", "full-backbone")
-FIT_SHA = "557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985"
+FIT_SHA = "41028974908d8ea8c4fe336f86de0263782100c76b9375dc7693bf60ac213eaf"
+SCIENCE_SHA = "557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985"
+
+
+def stage_location(fold, stage):
+    if fold == stage == 0:
+        return OLD / "full-backbone/fold-0/stage-0", SCIENCE_SHA
+    return FIT / f"full-backbone/fold-{fold}/stage-{stage}", FIT_SHA
+
+
+def final_checkpoint_path(arm, fold):
+    require(arm in ARMS and fold in (0, 1, 2), "Unknown final fit")
+    base = OLD if fold == 0 else FIT
+    return base / arm / f"fold-{fold}/training/checkpoints/final.pt"
 
 
 def read(path):
@@ -70,10 +84,10 @@ def prepare():
     require(stage_state(FIT / "control", checksum, None, "02:00:00") == "complete",
             "The complete matched control is required before replay admission")
     inputs = [AUTH, FIT / "plan.json", FIT / "analysis.json"]
-    for directory, limit, steps in [(FIT / "control", "02:00:00", None)] + [
-        (FIT / f"full-backbone/fold-{f}/stage-{s}", "05:30:00", min(7500, (s+1)*1000))
+    for directory, limit, steps, expected_sha in [(FIT / "control", "02:00:00", None, checksum)] + [
+        (stage_location(f, s)[0], "05:30:00", min(7500, (s+1)*1000), stage_location(f, s)[1])
         for f in range(3) for s in range(8)]:
-        require(stage_state(directory, checksum, steps, limit) == "complete", "All registered fits must finish")
+        require(stage_state(directory, expected_sha, steps, limit) == "complete", "All registered fits must finish")
         job = read(directory / "accepted-launch.json")["job_id"]
         inputs.extend([directory / "accepted-launch.json", directory / "stage-result.json",
                        directory / f"controller-{job}/terminal-controller.txt",
@@ -87,8 +101,8 @@ def prepare():
     for row in analysis["run_records"]:
         arm, fold = row["arm"], row["fold"]
         directory = FIT / arm / f"fold-{fold}"
-        path = directory / "training/checkpoints/final.pt"
-        require(digest(path) == row["checkpoint_sha256"], "Exact final checkpoint required")
+        path = final_checkpoint_path(arm, fold)
+        require(Path(row["checkpoint_path"]) == path and digest(path) == row["checkpoint_sha256"], "Exact final checkpoint required")
         inputs.append(path)
         if arm == "head-continuation":
             inputs.append(directory / "run.json")
@@ -213,7 +227,8 @@ def run(checksum):
     from rsna_knee.ticket34 import admit_ticket30_fold_supervision
     from rsna_knee.training import _batch_indices, _model_state_sha256, load_training_checkpoint
     from ticket62_mri_pixel_materialize import iter_packed_sources
-    from ticket64_full_backbone_comparison import config_for_arm, initial_for_arm, terminal
+    from ticket64_full_backbone_recovery_v2 import original, scientific_identity
+    config_for_arm, initial_for_arm, terminal = original.config_for_arm, original.initial_for_arm, original.terminal
     from ticket63_full_backbone_training_cost import PARENT, t36
     torch.set_num_threads(16); torch.set_num_interop_threads(1)
     require(torch.version.cuda is None and not torch.cuda.is_available(), "CPU-only replay required")
@@ -289,15 +304,24 @@ def run(checksum):
         native_parent_all.update(native_parent)
         del warm
         for stage in range(8):
-            terminal(FIT / f"full-backbone/fold-{fold}/stage-{stage}", request["fit_plan_sha256"], "05:30:00")
+            directory, stage_sha = stage_location(fold, stage)
+            terminal(directory, stage_sha, "05:30:00")
+            current = read(directory / "stage-result.json")
+            if stage:
+                previous_directory, _ = stage_location(fold, stage-1)
+                previous = read(previous_directory / "stage-result.json")
+                require(current["prior_checkpoint_sha256"] == previous["checkpoint_sha256"],
+                        "Exact inherited/resumed checkpoint chain differs")
         for arm in ARMS:
             directory = FIT / arm / f"fold-{fold}"
             record = read(directory / ("run.json" if arm == ARMS[0] else "stage-7/stage-result.json"))
             require(record["initial_model_state_sha256"] == initial_sha, "Actual matched initial tensors differ")
-            checkpoint_path = directory / "training/checkpoints/final.pt"
-            require(digest(checkpoint_path) == record["checkpoint_sha256"], "Final checkpoint identity differs")
+            checkpoint_path = final_checkpoint_path(arm, fold)
+            require(Path(record["checkpoint_path"]) == checkpoint_path and digest(checkpoint_path) == record["checkpoint_sha256"],
+                    "Final checkpoint identity differs")
             model = initial_for_arm(fold, arm)
-            checkpoint = load_training_checkpoint(checkpoint_path, model=model, expected_config=config_for_arm(arm), expected_fold=fold)
+            checkpoint = load_training_checkpoint(checkpoint_path, model=model, expected_config=config_for_arm(arm), expected_fold=fold,
+                expected_identity=scientific_identity(plan, request["fit_plan_sha256"], fold, arm))
             progress = checkpoint["progress"]
             require(progress == record["progress"] and progress["successful_optimizer_steps"] == progress["attempted_batches"] == 7500
                     and progress["sample_exposures"] == 30000 and progress["exposures_by_source"] == exposures

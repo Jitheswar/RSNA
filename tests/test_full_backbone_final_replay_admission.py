@@ -41,3 +41,28 @@ def test_unfinished_control_does_not_create_a_replay_request(tmp_path, monkeypat
         replay.prepare()
     assert not replay.ROOT.exists()
     assert not replay.DECISION.exists()
+
+
+def test_replay_uses_retained_fold_zero_finals_and_original_first_stage():
+    assert replay.final_checkpoint_path("head-continuation", 0) == (
+        replay.OLD / "head-continuation/fold-0/training/checkpoints/final.pt"
+    )
+    assert replay.final_checkpoint_path("full-backbone", 0) == (
+        replay.OLD / "full-backbone/fold-0/training/checkpoints/final.pt"
+    )
+    assert replay.final_checkpoint_path("full-backbone", 1) == (
+        replay.FIT / "full-backbone/fold-1/training/checkpoints/final.pt"
+    )
+    assert replay.stage_location(0, 0) == (
+        replay.OLD / "full-backbone/fold-0/stage-0", replay.SCIENCE_SHA
+    )
+    assert replay.stage_location(0, 1) == (
+        replay.FIT / "full-backbone/fold-0/stage-1", replay.FIT_SHA
+    )
+
+
+def test_replay_rejects_unknown_final_fit():
+    with pytest.raises(ValueError, match="Unknown final fit"):
+        replay.final_checkpoint_path("unknown", 0)
+    with pytest.raises(ValueError, match="Unknown final fit"):
+        replay.final_checkpoint_path("full-backbone", 3)

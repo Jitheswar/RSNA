@@ -475,3 +475,32 @@ TPU environment request remains **QUEUED**, last **06:33:21 UTC**, hardware
 unverified. GPU ledger unchanged **129,637 charged /136,800 cap /zero reserved /
 7,163 remaining seconds**; TPU ledger **600 seconds reserved**, spend zero.
 Conditional final fit and GPU delivery are not authorized by this fitting plan.
+
+
+## October 2 — diagnosed gold-cohort prediction recovery
+
+This supersedes the earlier live Ticket 64 v1 coordinator snapshot. Control
+**8033 failed `1:0`**, **1,551 CPU-node seconds**, after its fold-0 7,500-update
+fit. Its final helper incorrectly selected all held-out memberships, including
+report-only studies. Exact call-site error reproduced; gold-only intersection
+is verified, all 58 gold pixel entries exist and the frozen manifest matches.
+Original source/checkpoint/intents/failed terminal retained; v1 coordinator stopped.
+
+Distinct v2 plan
+`41028974908d8ea8c4fe336f86de0263782100c76b9375dc7693bf60ac213eaf`
+keeps the original scientific/checkpoint identity and recipe, reuses completed
+fold-0 control weights and inherits live first full stage **8032** without
+repeating updates. Recovery control **8034** is active with correct resources;
+its actual 20-study gold-only prediction passes and retained checkpoint hash
+is unchanged. No partial-fold AUC or candidate selection. V2 coordinator only
+advances exact admitted stages after terminal/state checks, no retry/requeue,
+at most two CPU jobs. Future first-stage resumes require original **8032**
+success and durable step-1,000 identity; frozen workers remain unchanged.
+
+Fresh storage forecast **1,792,099,252,356 bytes /2 TB**; complete conservative
+route **660,600 CPU-node seconds**, calendar **523,800 seconds** plus review day
+before October 11. Previous failed allocation included; GPU/TPU ledgers unchanged,
+zero spend. Gold-cohort regression **2**, recovery scheduling **3** and updated
+independent verifier **8** tests pass. All six final fits/comparisons and original
+MRI replay remain incomplete; no first-place evidence.
+[Recovery evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).

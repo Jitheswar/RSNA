@@ -138,3 +138,32 @@ admission/shape checks** passing and syntax verified. No verifier request or
 execution exists before all final fits; actual 116 final predictions, original
 source replay and the registered paired comparisons remain pending. First-stage
 and control optimizer updates are progressing with finite logged losses.
+
+
+October 2: Control **8033 failed `1:0`**, 1,551 CPU-node seconds, after completing
+fold 0's 7,500 updates. Prediction selector used all 1,522 fold members instead
+of 20 gold studies. The exact `Selected source cohort incomplete` error was
+reproduced at the actual call site in 0.07 s. All 58 gold pixels are available
+and the cohort manifest hash matches. Original trace/source/intents/terminal
+and trained checkpoint remain unchanged; v1 coordinator stopped correctly.
+
+Distinct v2 execution plan
+`41028974908d8ea8c4fe336f86de0263782100c76b9375dc7693bf60ac213eaf` restricts
+final prediction to gold studies while retaining the original science/config/
+checkpoint identity and all 7,500-update choices. Recovery control **8034**
+reuses fold-0 final weights and trains only previously unstarted folds 1/2.
+Actual gold-only prediction now passes all 20 fold-0 studies; retained checkpoint
+SHA unchanged, no updates repeated and no partial-fold AUC inspected. Full
+**8032** continues its original first stage. New v2 stage 1 requires its exact
+successful terminal/step-1,000/hash, then resumes the original scientific run.
+All future requests are distinct v2 launches, at most two CPU jobs, no retries.
+
+Fresh complete conservative bounds **660,600 CPU-node seconds** and **523,800
+calendar seconds** include the failed control's prior allocation; actual failed
+charge 1,551 seconds is separately retained. Projected storage 1,792,099,252,356
+bytes remains below 2 TB. GPU/TPU ledgers unchanged, spend zero. Only
+`rsna-ticket64-comparison-coordinator-v2.service` advances; v1 is stopped.
+Gold-cohort regression **2**, recovery scheduling **3**, updated independent
+verifier admission/path/shape **8** tests pass. Final scientific comparison,
+independent original-MRI replay and any leaderboard gain remain pending.
+[Diagnosis and recovery](../../../docs/evidence/ticket-64-gold-prediction-recovery.md).

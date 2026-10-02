@@ -12,22 +12,33 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    for older dispositions. Inspect Git, Slurm and persistent services. Standing
    owner authorization is **“approve anything as long as we win 1st place and
    fits kaggle comp dont ask me”**, zero external spend. Do not ask again.
-2. Continue registered [Ticket 64](issues/64-test-long-full-backbone-report-adaptation.md).
-   Root `artifacts/private/ticket64-full-backbone-comparison-v1/`, plan SHA-256
+2. Continue registered [Ticket 64](issues/64-test-long-full-backbone-report-adaptation.md)
+   under its distinct **v2 recovery**, root
+   `artifacts/private/ticket64-full-backbone-comparison-v2/`, execution plan
+   `41028974908d8ea8c4fe336f86de0263782100c76b9375dc7693bf60ac213eaf`.
+   Scientific/checkpoint identity remains original
    `557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985`.
-   First full fold-0/stage-0 job **8032** and matched-control job **8033**
-   accepted/running; actual allocations match. Their intents are consumed.
-   Inspect exact logs and `controller-JOB/` terminal evidence; never resubmit
-   either request because Slurm purges its record or startup is quiet.
-3. Persistent **`rsna-ticket64-comparison-coordinator-v1.service`** advances
-   only the 24 registered treatment stages. `coordinator-state.json` records
-   exact schedule. It waits for successful control, then fills the free slot
-   with fold 1; extends completed folds before starting fold 2. Every launch
-   uses the frozen executable and original exact terminal/checkpoint/resource
-   guards. Single file lock, at most two owner CPU jobs, no retry/requeue,
-   no intermediate scoring, no conditional final fit or candidate promotion.
-   Any failed/ambiguous stage stops the coordinator. Diagnose before a distinct
-   recovery request; do not overwrite frozen fit source or launch intents.
+   Original first full stage **8032** is live under v1; recovery control **8034**
+   is live under v2. Actual allocations match. Control **8033 failed `1:0`**
+   after completing fold-0 training because its final helper selected report-only
+   held-out studies alongside gold. The failure is diagnosed and preserved,
+   **1,551 CPU-node seconds**. Never retry either consumed v1 request. V1 source
+   and coordinator remain preserved/stopped. [Diagnosis and recovery evidence](../../docs/evidence/ticket-64-gold-prediction-recovery.md).
+3. Only **`rsna-ticket64-comparison-coordinator-v2.service`** advances fits.
+   `coordinator-state.json` under v2 records the schedule. It waits for exact
+   successful recovery control, then extends completed folds/fills the second
+   CPU slot. The inherited original v1 fold-0/stage-0 **8032** can never be
+   relaunched. Its successful terminal and durable step 1,000/hash are required
+   before v2 stage 1. Full fold 0 resumes the original v1 training directory
+   and scientific identity; all new receipts live under v2. Full folds 1/2
+   use v2 training directories. Control fold 0 reuses its v1 final checkpoint
+   unchanged; control folds 1/2 fit under v2. Exact native gold-only fold-0
+   final prediction has already passed (20 studies, no partial AUC read).
+   Single lock, at most two owner CPU jobs, no retry/requeue/intermediate
+   scoring/final fit/promotion. Any failed or ambiguous stage stops the
+   coordinator. Diagnose before a distinct recovery; never edit frozen v1/v2
+   worker snapshots or consumed intents. Worker is
+   `scripts/ticket64_full_backbone_recovery_v2.py`.
 4. Scientific budget stays **7,500 additional updates per arm/fold**, warm
    Ticket 55 report heads, original ImageNet encoder, audited original pools,
    two draws/source, head 1e-4/full encoder 1e-5, FP32/no augmentation/fixed
@@ -106,8 +117,8 @@ fallback preserved. Private score/rank and final selections remain unavailable.
 
 Fresh frozen admission includes **537,988,466,127 checkpoint bytes**, all six
 fits plus conditional final fit/history/temp files, under fresh project/external
-model two-terabyte storage accounting. Maximum route CPU-node reserve **653,400
-s /181.5 h**; conservative calendar **516,600 s /143.5 h** plus one review day
+model two-terabyte storage accounting. Maximum route CPU-node reserve **660,600
+s /183.5 h**; conservative calendar **523,800 s /145.5 h** plus one review day
 before October 11. Each job <=16 CPUs/64 GiB/six hours, nonexclusive; at most
 **two active/pending owner CPU jobs**. Independent replay **5,400 s** and offline
 delivery **7,200 s** reserved. Conditional additional full fit and GPU delivery
@@ -116,7 +127,7 @@ need separate exact recipes/decisions; they are not authorized by Ticket 64.
 GPU ledger unchanged: **129,637 charged /136,800 cap /zero reserved /7,163
 remaining seconds**. Preserve unknown charges. TPU reserves **600 seconds**,
 charged zero/hardware unverified. No external spend. Old continuation
-coordinator remains stopped; Ticket 64 is the only active fit coordinator.
+coordinator remains stopped; Ticket 64 v2 is the only active fit coordinator.
 
 Science freeze October 11, internal delivery before October 15; recorded
 competition final deadline October 22 at 23:59 UTC. Five submissions/day,
@@ -132,8 +143,8 @@ does not admit a new encoder run. Other variants have unresolved gates.
 
 
 Independent verifier code is now `scripts/validate_ticket64_full_backbone_comparison.py`.
-Its `prepare` rejects unfinished fits and creates no request; six admission/
-prediction-shape checks pass. After all six fits, run the frozen fit `analyze SHA`
+Its `prepare` rejects unfinished fits and creates no request; eight admission/
+prediction-shape/inherited-path checks pass. After all six fits, run the frozen recovery worker `analyze V2_SHA`
 under its project/source environment, then verifier `prepare`, inspect frozen
 request/launcher, `launch REPLAY_SHA`, and independently reconcile actual replay
 terminal before disposition. No verifier resource request exists yet. It uses
@@ -146,3 +157,12 @@ At **06:33 UTC** both jobs have begun successful optimizer updates with finite
 logged losses: full fold 0 **29** and control fold 0 **1,425**. These are progress
 observations only, without held-out scoring or scientific selection. Runtime
 source is frozen; preserve exact remaining stages and watch their terminal.
+
+
+The v2 recovery is frozen; do not edit its worker after preparation/launch.
+Minimal gold-cohort regressions pass **2** tests, recovery coordinator **3**,
+updated independent verifier admission/paths **8**. Runtime source and original
+checkpoint semantics remain fixed. Final analysis/replay paths are v2 except
+fold-0 head/full final checkpoint files, which remain in their original v1
+training directories. Verifier explicitly binds those original files, the
+inherited first-stage receipt and every resumed checkpoint SHA chain.
