@@ -419,3 +419,25 @@ See [evidence](../../docs/evidence/ticket-60-tpu-environment.md). The source
 integrity scan **8014** remains live; its first **962** records are COMPLETE,
 with zero preparation errors or sampler/sparse fallbacks, an interim observation
 that does not replace terminal verification.
+
+## October 2 — exact MRI pixels and shared training lifecycle
+
+[Ticket 62](issues/62-materialize-exact-mri-pixel-cohort.md) cohort **8017**
+completed `0:0`, **2,080 CPU-node seconds**. All **4,228 studies /187,272 valid
+slices** exactly replay fresh source packing, including complete pixels,
+masks, anatomical descriptors and source mapping. Payload **37.586 GB**;
+all-entry verified read/reconstruction **189.317 s**. Source algorithm,
+accepted job/plan/resources and terminal agree. Shared full-encoder CPU
+training with file-backed arrays, exact interrupted/resumed model/loss/source
+exposure replay and native prediction passes **57 focused tests**, typing
+**84 source files**. No scientific promotion follows from usable inputs/code.
+
+[Ticket 63](issues/63-measure-shared-full-backbone-training-delivery-cost.md)
+cost job **8018** is running under one nonexclusive **16-CPU /64-GiB /90-minute**
+plan. Actual full-cohort/all-fold admission and three mixed-source diagnostic
+updates with fresh-process staged resume are being measured; no held-out AUC,
+long fit, candidate or submission. Full longer comparison/delivery admission
+remains pending. CoAt **8014** continues; TPU request remains **QUEUED** at
+**03:11:29 UTC**, actual hardware unverified. Ledgers unchanged. Neither first
+place is established. [Pixel evidence](../../docs/evidence/ticket-62-exact-mri-pixel-cohort.md),
+[current handoff](session-handoff-20261002.md).

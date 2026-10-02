@@ -43,7 +43,7 @@ fallback preserved. Private score/rank and final selections remain unavailable.
 6. Observe the separate bounded TPU environment request, kernel **136722939 /v1**,
    `jitheswar/rsna-tpu-environment-admission-v1`, root
    `artifacts/private/ticket60-tpu-environment-v1/`, latest **QUEUED** at
-   **01:52:11 UTC**. Exact requested source/private/offline settings pass;
+   **03:11:29 UTC**. Exact requested source/private/offline settings pass;
    actual hardware remains unverified. One 600-second server bound, 540-second
    code watchdog, GPU off, no attachments/models/MRI/training, zero spend.
    Existing launch intent is consumed: never push it again. Observer
@@ -65,14 +65,36 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    independent validation pass. One consumed attempt, do not relaunch.
    [Ticket 61](issues/61-prepare-fixed-shape-full-backbone-report-training.md),
    [evidence](../../docs/evidence/ticket-61-full-backbone-cpu-cost.md). The new
-   versioned model/loss preserves prior variants and passes 39 focused tests.
-   **Next useful CPU action:** freeze complete three-fold matched-reference
-   comparison, compact exact-pixel cache/I/O, staged checkpoints and delivery
-   cost; choose full duration prospectively, no intermediate AUC selection.
+   versioned model/loss preserves prior variants. Shared CPU optimizer/resume,
+   file-backed pixels and native/evaluation/candidate prediction now pass
+   **57 focused tests**, typing **84 source files**.
    A 2× training-only projection gives 1,500 steps/fold 4.963 h, 7,500 steps
    24.814 h. Neither is a complete admitted route. CPU work can advance while
    TPU queues; no dependency on TPU for this alternative.
-8. Independently verify results, update evidence/tracker/freeze register, run
+8. Preserve completed exact pixel cohort **8017 /COMPLETED /0:0**, **2,080
+   CPU-node seconds**, root `artifacts/private/ticket62-mri-pixel-cohort-v1/`.
+   Plan `718e2c127bef8ea1135c7e76b653b2fee6313a6d69dc89219e8f78e5b645b581`.
+   Every pixel/mask/descriptor/source mapping from 4,228 studies /187,272 valid
+   slices matches fresh native source packing; the prior four-report full pixel
+   hash also replays exactly. Accepted plan/job/resources/frozen source/terminal
+   reconciliation passes. Read/reconstruction 189.317 s, native replay 704.605 s.
+   One consumed attempt; do not rerun. [Evidence](../../docs/evidence/ticket-62-exact-mri-pixel-cohort.md).
+9. Observe new bounded mixed-source shared-trainer cost job **8018**, root
+   `artifacts/private/ticket63-full-backbone-training-cost-v1/`, plan
+   `40f5268a019a9d247cb3ced8d0d7a62c419bd7b1e544a1370af7f884d65f7e39`.
+   One nonexclusive 16-CPU/64-GiB/90-minute attempt, GPU/spend zero, forecast
+   3,629.069 seconds. Five fresh processes admit the complete pixel cohort and
+   original three-fold supervision, interrupt at one mixed-source update,
+   resume to three, run three continuously and compare complete states. No
+   held-out AUC, full fit or candidate promotion. Persistent observer
+   `rsna-ticket63-cpu8018-observer.service`; do not relaunch. On success,
+   independently bind `cost-result.json`, stage metrics, exact source/accepted
+   job/resources and retained terminal. Then separately freeze complete
+   7,500-update three-fold matched-control regime, measured staged startup,
+   checkpoint/storage/evaluation/conditional final-fit/offline delivery cost.
+   Choose stage size from actual complete costs, each job <=six hours. No
+   intermediate AUC selection. [Ticket 63](issues/63-measure-shared-full-backbone-training-delivery-cost.md).
+10. Independently verify results, update evidence/tracker/freeze register, run
    relevant checks, commit/push private `origin/master` and verify equal heads.
    Mark the goal achieved only after both actual first-place ranks are proven.
 
@@ -110,7 +132,8 @@ Standing owner authorization remains **“approve anything as long as we win
 decisions are recorded as such, not claimed as new numeric owner approvals.
 GPU ledger unchanged: **129,637 charged / 136,800 cap / zero reserved / 7,163
 remaining seconds**. Full CoAt **8014** remains active, CPU-only, and one TPU
-environment request is queued with **600 TPU seconds reserved**. At most two concurrent
+environment request is queued with **600 TPU seconds reserved**. Shared-trainer
+cost job **8018** runs in the second CPU slot. At most two concurrent
 nonexclusive CPU jobs, each <=16 CPUs /64 GiB /six hours. No additional MRI
 extraction or large retained pixel banks in the CoAt probe. Preserve all prior
 unknown GPU charges. Old continuation coordinator remains stopped.
@@ -121,6 +144,14 @@ selection, nine-hour offline notebook constraints remain. Refresh live official
 state before a delivery decision. GitHub repository must remain private:
 **https://github.com/Jitheswar/RSNA**.
 
-Current focused tests: **39 passed**; typing **83 source files**; syntax checks
+Current focused tests: **57 passed**; typing **84 source files**; syntax checks
 and generated launcher checks pass. Main evidence:
 [Ticket 59](../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).
+
+Medical encoder [primary-source research](../../docs/research/medical-image-encoder-options-2026-10-02.md)
+found one conditional BiomedCLIP admission route: ungated MIT, 224-pixel,
+vision-only projected 512-D output. Its MRI evidence concerns scientific-article
+figures, not proven knee transfer. MedSigLIP is gated; MRI-CORE release rights,
+digest and strict loading remain unresolved. Metadata/source only, no weights
+downloaded. Keep current whole-backbone experiment; no new encoder launch from
+the note alone.

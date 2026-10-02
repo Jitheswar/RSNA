@@ -39,7 +39,7 @@ from .model import (
     restore_study_model,
 )
 from .preprocessing import PackingConfig, PreprocessConfig
-from .resnet18 import RESNET18_FINETUNE_MODEL_ID, RESNET18_MODEL_ID
+from .resnet18 import RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID, RESNET18_MODEL_ID
 from .real_inference import (
     DEFAULT_REAL_DECODER_POLICY,
     RealInferenceError,
@@ -170,6 +170,7 @@ class _CandidateEnsemble(nn.Module):
         if self.config.model_id in {
             RESNET18_MODEL_ID,
             RESNET18_FINETUNE_MODEL_ID,
+            RESNET18_FULL_FINETUNE_MODEL_ID,
             DINOV2_MODEL_ID,
         }:
             if series_descriptors is None:
@@ -201,6 +202,7 @@ class _CandidateEnsemble(nn.Module):
         if self.config.model_id in {
             RESNET18_MODEL_ID,
             RESNET18_FINETUNE_MODEL_ID,
+            RESNET18_FULL_FINETUNE_MODEL_ID,
             DINOV2_MODEL_ID,
         }:
             if series_descriptors is None:

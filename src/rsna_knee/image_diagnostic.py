@@ -892,7 +892,7 @@ def _example_images(examples: Sequence[TrainingExample]) -> list[np.ndarray]:
     for item in examples:
         if item.images is None:
             raise DiagnosticError("real-image diagnostic requires packed images")
-        images.append(item.images)
+        images.append(np.asarray(item.images))
     return images
 
 

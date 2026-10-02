@@ -66,10 +66,13 @@ from .resnet18 import (
     RESNET18_ENCODER_ID,
     RESNET18_FEATURE_DIM,
     RESNET18_FINETUNE_MODEL_ID,
+    RESNET18_FULL_FINETUNE_MODEL_ID,
     RESNET18_FIXTURE_ENCODER_ID,
     ResNet18FineTunedStudyModel,
     ResNet18StudyModel,
 )
+from .full_backbone import ResNet18FullBackboneStudyModel
+from .pixel_cache import PackedPixelArray
 from .pretrained import (
     RESNET18_ARTIFACT_BYTES,
     RESNET18_DOWNLOAD_URL,
@@ -519,7 +522,7 @@ def _json_sha256(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def _array_sha256(value: np.ndarray) -> str:
+def _array_sha256(value: np.ndarray | PackedPixelArray) -> str:
     array = np.ascontiguousarray(value)
     digest = hashlib.sha256()
     digest.update(str(array.dtype).encode("ascii"))
@@ -614,7 +617,7 @@ class TrainingConfig:
             self.model_config()
         except (TypeError, ValueError, ModelConfigurationError) as exc:
             raise TrainingConfigurationError("training model configuration is invalid") from exc
-        if self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}:
+        if self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID}:
             if self.image_size != (224, 224):
                 raise TrainingConfigurationError("ResNet-18 requires the 224-pixel representation")
             if self.pooling_id not in {ANATOMICAL_POOLING_ID, SIMPLE_POOLING_ID}:
@@ -624,7 +627,7 @@ class TrainingConfig:
                 != "ticket31-resnet18-224-whole-field-v1"
             ):
                 raise TrainingConfigurationError("ResNet-18 requires its versioned 224-pixel preprocessing")
-            if self.model_id == RESNET18_FINETUNE_MODEL_ID:
+            if self.model_id in {RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID}:
                 if self.pooling_id != ANATOMICAL_POOLING_ID:
                     raise TrainingConfigurationError("Ticket 39 requires plane-stratified pooling")
                 if self.encoder_learning_rate is None or (
@@ -634,6 +637,8 @@ class TrainingConfig:
                     raise TrainingConfigurationError(
                         "Ticket 39 requires a positive finite layer4 learning rate"
                     )
+                if self.model_id == RESNET18_FULL_FINETUNE_MODEL_ID and self.device != "cpu":
+                    raise TrainingConfigurationError("whole-backbone shared training is scoped to CPU execution")
             elif self.encoder_learning_rate is not None:
                 raise TrainingConfigurationError(
                     "encoder_learning_rate is reserved for Ticket 39 fine-tuning"
@@ -689,7 +694,7 @@ class TrainingConfig:
             max_series=self.max_series,
             representation_id=(
                 "ticket31-resnet18-224-whole-field-v1"
-                if self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID}
+                if self.model_id in {RESNET18_MODEL_ID, RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID}
                 else DINOV2_PREPROCESSING_ID
                 if self.model_id == DINOV2_MODEL_ID
                 else None
@@ -919,7 +924,7 @@ class TrainingExample:
     """One fixed-shape packed study with hard labels or admitted soft targets."""
 
     study_instance_uid: str
-    images: np.ndarray | None
+    images: np.ndarray | PackedPixelArray | None
     slice_mask: np.ndarray
     series_mask: np.ndarray
     targets: np.ndarray
@@ -933,6 +938,8 @@ class TrainingExample:
     def __post_init__(self) -> None:
         if not self.study_instance_uid.strip():
             raise TrainingDataError("training examples require a study identifier")
+        if isinstance(self.images, PackedPixelArray) and self.images.expected_study_uid != self.study_instance_uid:
+            raise TrainingDataError("file-backed pixels belong to a different training study")
         slice_mask = np.asarray(self.slice_mask)
         series_mask = np.asarray(self.series_mask)
         targets = np.asarray(self.targets)
@@ -1529,7 +1536,7 @@ def _attach_cached_frozen_features(
             continue
         if example.series_descriptors is None:
             raise TrainingDataError("frozen image models require declared series descriptors")
-        example_images = example.images
+        example_images = np.asarray(example.images)
         example_slice_mask = example.slice_mask
         example_series_mask = example.series_mask
         series_descriptors = example.series_descriptors
@@ -1687,7 +1694,7 @@ def _validate_examples(examples: Sequence[TrainingExample], config: TrainingConf
                 raise TrainingDataError(
                     f"study {example.study_instance_uid} has invalid frozen feature dimensions"
                 )
-        elif config.model_id == RESNET18_FINETUNE_MODEL_ID:
+        elif config.model_id in {RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID}:
             if example.images is None or tuple(example.images.shape) != expected_shape:
                 observed = None if example.images is None else example.images.shape
                 raise TrainingDataError(
@@ -2852,9 +2859,10 @@ def _train_fixed_budget_impl(
     )
     if not trainable_parameters:
         raise TrainingConfigurationError("the selected model has no trainable head parameters")
-    if isinstance(model, ResNet18FineTunedStudyModel):
+    if isinstance(model, (ResNet18FineTunedStudyModel, ResNet18FullBackboneStudyModel)):
+        encoder_scope = model.encoder if isinstance(model, ResNet18FullBackboneStudyModel) else model.encoder.layer4
         encoder_parameters = tuple(
-            parameter for parameter in model.encoder.layer4.parameters() if parameter.requires_grad
+            parameter for parameter in encoder_scope.parameters() if parameter.requires_grad
         )
         head_parameters = tuple(
             parameter for parameter in model.head.parameters() if parameter.requires_grad
@@ -3306,7 +3314,7 @@ def _train_fixed_budget_impl(
                             [cast(np.ndarray, example.images) for example in batch_examples]
                         )
                     ).to(device)
-                    if config.model_id == RESNET18_FINETUNE_MODEL_ID:
+                    if config.model_id in {RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID}:
                         if any(example.series_descriptors is None for example in batch_examples):
                             raise TrainingDataError("Ticket 39 images require series descriptors")
                         descriptors = torch.from_numpy(
@@ -4000,6 +4008,10 @@ def _train_one_fold_impl(
         raise TrainingDataError(f"fold must be one of {FOLD_IDS}")
     if not source_version.strip():
         raise TrainingConfigurationError("source_version must be non-empty")
+    if config.model_id == RESNET18_FULL_FINETUNE_MODEL_ID:
+        raise TrainingConfigurationError(
+            "whole-backbone folds require explicit campaign pixel/weight admission and the shared fixed-budget CPU trainer"
+        )
     pretrained_resource_evidence: Mapping[str, object] | None = None
     if config.model_id == RESNET18_FINETUNE_MODEL_ID:
         if config.encoder_id == RESNET18_ENCODER_ID:

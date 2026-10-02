@@ -62,3 +62,13 @@ GB**. 2× training-only scenario: 1,500 steps/fold **4.963 h**, 7,500 **24.814
 h**; complete three-fold/final-fit/I/O/checkpoint/delivery admission is still
 required. [Evidence](../../../docs/evidence/ticket-61-full-backbone-cpu-cost.md).
 No generalization gain or complete training route is inferred from the pilot.
+
+October 2: Shared CPU fixed-budget training now supports the complete encoder,
+file-backed exact pixels, explicit per-group learning rates, checkpoint resume,
+and descriptor-aware evaluation/native candidate prediction. Focused lifecycle
+checks verify exact interrupted/resumed versus continuous loss/model/source
+exposures and reject unintended accelerator execution. **57 tests passed**,
+typing **84 source files**. Ticket 62 independently verifies all original
+cohort pixels; Ticket 63 is the separately bounded actual shared-trainer
+startup/mixed-source/checkpoint-delivery cost admission. The complete longer
+comparison and TPU-specific runtime admission remain unfinished.

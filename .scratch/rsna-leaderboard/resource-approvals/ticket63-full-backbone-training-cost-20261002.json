@@ -1,0 +1,28 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "basis": "Measure complete admitted pixel I/O, actual shared trainer startup, diagnostic mixed-source updates, fresh-process exact staged resume and checkpoint delivery before freezing a complete longer three-fold route.",
+  "candidate_promotion": false,
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "full_training_authorized": false,
+  "gpu_ledger_changed": false,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "plan_sha256": "40f5268a019a9d247cb3ced8d0d7a62c419bd7b1e544a1370af7f884d65f7e39",
+  "resources": {
+    "code_watchdog_seconds": 5340,
+    "cpus_per_task": 16,
+    "exclusive": false,
+    "external_spend_usd": 0,
+    "gpu_count": 0,
+    "maximum_concurrent_jobs": 1,
+    "maximum_launch_attempts": 1,
+    "memory_gib": 64,
+    "nodes": 1,
+    "partition": "cluster1-cpu",
+    "requeue": false,
+    "tasks": 1,
+    "walltime_seconds": 5400
+  },
+  "schema_version": "rsna-campaign-autonomous-decision-v1",
+  "tpu_ledger_changed": false
+}

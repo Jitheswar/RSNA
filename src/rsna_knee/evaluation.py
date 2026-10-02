@@ -1174,6 +1174,7 @@ def predict_training_examples(
             from .dinov2 import DINOV2_MODEL_ID
             from .resnet18 import (
                 RESNET18_FINETUNE_MODEL_ID,
+                RESNET18_FULL_FINETUNE_MODEL_ID,
                 RESNET18_MODEL_ID,
             )
 
@@ -1191,7 +1192,7 @@ def predict_training_examples(
                 scores = cast(Any, model).predict_proba_from_features(
                     features, slice_mask, series_mask, descriptors
                 ).cpu().numpy()
-            elif model.config.model_id == RESNET18_FINETUNE_MODEL_ID:
+            elif model.config.model_id in {RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID}:
                 if any(item.images is None or item.series_descriptors is None for item in batch):
                     raise EvaluationError(
                         "Ticket 39 prediction requires pixels and series descriptors"

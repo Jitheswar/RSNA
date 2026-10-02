@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from .domain import StudyRecord
-from .model import DINOV2_MODEL_ID, RESNET18_FINETUNE_MODEL_ID, RESNET18_MODEL_ID, StudyModel
+from .model import DINOV2_MODEL_ID, RESNET18_FINETUNE_MODEL_ID, RESNET18_FULL_FINETUNE_MODEL_ID, RESNET18_MODEL_ID, StudyModel
 from .preprocessing import (
     PackedStudy,
     PreprocessConfig,
@@ -96,6 +96,7 @@ class InferenceEngine:
             if self.model.config.model_id in {
                 RESNET18_MODEL_ID,
                 RESNET18_FINETUNE_MODEL_ID,
+                RESNET18_FULL_FINETUNE_MODEL_ID,
                 DINOV2_MODEL_ID,
             }:
                 if packed.series_descriptors is None:
