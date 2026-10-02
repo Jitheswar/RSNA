@@ -99,3 +99,25 @@ and offline delivery. No submission is queued. If this route fails the fixed
 gates, the longer full-backbone comparison remains the next pending opportunity.
 
 October2,12:57UTC — sole medical fit **8073** completed **0:0**, **357 CPU-node seconds**, no restarts. Controller advances unchanged full stages while the sole original-MRI verifier awaits one of the two CPU slots. No predictive results inspected before native/terminal verification. Current full jobs8074(fold0/stage3,target4000) and8072(fold1/stage2,target3000); do not launch a third owner CPU job.
+
+## Completed native verification, October2
+
+Sole fit8073 COMPLETE0:0/357 CPU-node seconds; sole native verifier8106
+COMPLETE0:0/526 CPU-node seconds. All six7500-update heads,58 original MRI
+studies/2688 valid slices,116 medical and116 ResNet predictions, every target,
+mask, initial state, Adam state and source exposure pass independent replay.
+Maximum feature and prediction errors are0.0; all fixed comparisons reproduced.
+Disposition **inconclusive_no_promotion**: primary paired95% interval
+[-0.0779851582,0.0376199880], median-0.0191919640, two negative fold directions.
+Half blend interval crosses zero. Report-image evidence lower0.0429127277 and
+report-supervision improvement lower0.0106630347 both have all folds positive.
+No promotion, scored submission or first-rank claim follows. Ticket71 keeps its
+prospectively fixed10% complement test pending exact anchor verification.
+
+Private original-root terminal-verification.json binds plan
+16ee8b86a75aa30a0c6a1f25e68ee65028a084914b7863584e1abb540c8bc666,
+raw successful verifier terminal899c940804d246f7649130aadca5b1d30a61759936085c317990c5f70c28eaa2,
+independent validation23fe56b40c77afb27dc95f4baf39b8954d1ebaf6c3b8468a3411adbf60c834e3,
+and fixed analysis7e4b485888c8d2f25e48fbe97402ad01f807aeda296c7eaabf15c0199b126625.
+The additive observer only closes the sole already launched verifier. Missing
+full-fit terminals8072/8074 are not fabricated or repaired by this result.

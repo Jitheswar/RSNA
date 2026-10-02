@@ -70,3 +70,10 @@ under artifacts/private/ticket71-scored-anchor-analysis-v1. Forty-five static
 local dependency modules are frozen; portable medical adapter remains editable.
 Final input/native/terminal receipts and CPU resource admission remain absent;
 no prediction/label analysis has run. No candidate/scoring/promotion follows.
+
+October2,16:47UTC: v1 remains frozen against the failed v3 anchor and cannot
+advance. Mechanically superseding v2 plan25fa04a170d1683cbc47c1bbaf573a64399b6302b08b3d9a2f4f6e44db84e560
+binds the separately admitted v4 metadata recovery and its independent verifier.
+Every scientific protocol field is identical to v1; no retuning follows the
+now verified inconclusive standalone medical result. Final anchor/input proof,
+analysis CPU admission, primary terminal and independent replay still required.

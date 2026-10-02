@@ -5,9 +5,15 @@
       "old_budget_seconds": 72000,
       "path": "/home/ch.jitheswar/RSNA/.scratch/rsna-leaderboard/resource-approvals/cap-amendment-20261001.json",
       "sha256": "df57f378f9fc8ab15b0593a0f6280086f9dab5f9f003111723d0d0febe37d57a"
+    },
+    {
+      "new_budget_seconds": 151200,
+      "old_budget_seconds": 136800,
+      "path": "/home/ch.jitheswar/RSNA/.scratch/rsna-leaderboard/resource-approvals/ticket70-exact-anchor-20261002.json",
+      "sha256": "f6f5628623c095d06a44c2b4f5cf3e516fb49d78e195c11d78233ddf05a1a452"
     }
   ],
-  "budget_seconds": 136800,
+  "budget_seconds": 151200,
   "created_at_utc": "2026-09-25T18:28:07Z",
   "initial_reserved_comparison_seconds": 64800,
   "requests": [
@@ -885,6 +891,44 @@
       "status": "completed",
       "unverified_allocation_charge_seconds": 0,
       "wall_time_seconds": 2700
+    },
+    {
+      "actual_allocated_seconds": 0,
+      "actual_allocation_known": false,
+      "attempts": [
+        {
+          "allocated_seconds": null,
+          "attempt_number": 1,
+          "conservative_exposure_charge_seconds": 14400,
+          "exit_code": null,
+          "job_id": "jitheswar/rsna-exact-scored-anchor-gold58-development",
+          "queue_wait_seconds": null,
+          "status": "failed",
+          "submission_exit_code": 0,
+          "submitted_epoch": 1790958425,
+          "terminal_backend_status": "ERROR"
+        }
+      ],
+      "comparison_reserve_release_active": false,
+      "comparison_reserve_release_seconds": 0,
+      "created_at_utc": "2026-10-02T16:27:05Z",
+      "experiment_id": "ticket70-exact-scored-anchor-gold58-v3",
+      "gpu_count": 2,
+      "max_attempts": 1,
+      "queue_wait_seconds": 0,
+      "request_checksum": "255eff3d3ea66deb926a9a4507391322bd19bd66b8a9edd061a470a518cd2924",
+      "reserved_seconds": 0,
+      "retry_allowed": false,
+      "status": "failed",
+      "terminal_accounting": {
+        "basis": "Full reservation conservatively charged; notebook elapsed does not prove controller allocation duration",
+        "conservative_charge_seconds": 14400,
+        "evidence_path": "/home/ch.jitheswar/RSNA/artifacts/private/ticket70-scored-anchor-gold58-v3/kernel-terminal.json",
+        "evidence_sha256": "6a1fcf8822954b076cf1d6446ad92c431f25bc013876141173c333e3f7a6037e",
+        "recorded_at_utc": "2026-10-02T16:32:31.911200+00:00"
+      },
+      "unverified_allocation_charge_seconds": 14400,
+      "wall_time_seconds": 7200
     }
   ],
   "reserved_comparison_seconds": 0,

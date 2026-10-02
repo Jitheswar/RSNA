@@ -348,3 +348,52 @@ Ticket71 immutable protocol prepared f90bb2ad7a216eb3a235595775ae5d559569b707a0b
 final input/resource admission absent, no metrics run. Preserve allnew snapshots.
 TPU whole-backbone pilot design is preparation only; no training launch, quota
 reservation, predictive gain or either first rank is established.
+
+## Current recovery update,16:47UTC
+
+## Completed native verification, October2
+
+Sole fit8073 COMPLETE0:0/357 CPU-node seconds; sole native verifier8106
+COMPLETE0:0/526 CPU-node seconds. All six7500-update heads,58 original MRI
+studies/2688 valid slices,116 medical and116 ResNet predictions, every target,
+mask, initial state, Adam state and source exposure pass independent replay.
+Maximum feature and prediction errors are0.0; all fixed comparisons reproduced.
+Disposition **inconclusive_no_promotion**: primary paired95% interval
+[-0.0779851582,0.0376199880], median-0.0191919640, two negative fold directions.
+Half blend interval crosses zero. Report-image evidence lower0.0429127277 and
+report-supervision improvement lower0.0106630347 both have all folds positive.
+No promotion, scored submission or first-rank claim follows. Ticket71 keeps its
+prospectively fixed10% complement test pending exact anchor verification.
+
+Private original-root terminal-verification.json binds plan
+16ee8b86a75aa30a0c6a1f25e68ee65028a084914b7863584e1abb540c8bc666,
+raw successful verifier terminal899c940804d246f7649130aadca5b1d30a61759936085c317990c5f70c28eaa2,
+independent validation23fe56b40c77afb27dc95f4baf39b8954d1ebaf6c3b8468a3411adbf60c834e3,
+and fixed analysis7e4b485888c8d2f25e48fbe97402ad01f807aeda296c7eaabf15c0199b126625.
+The additive observer only closes the sole already launched verifier. Missing
+full-fit terminals8072/8074 are not fabricated or repaired by this result.
+
+October2,16:46UTC — v3 actual numeric136804102/version1 ERROR before inference.
+Server used title-derived handle jitheswar/rsna-exact-scored-anchor-gold58-development;
+read-only exact source/settings reconciliation retained, no repeated push.
+Downloaded actual trace: Papermill ValueError "No kernel name found in notebook
+and no override provided." Notebook metadata lacked kernelspec. No MRI/weight/
+prediction receipts exist. Full14400 GPU-second bound charged conservatively;
+cap151200/charged144037/reserved0. This known startup failure is distinct from
+the older hidden D4 error, whose cause remains unproved.
+
+Separate v4 recovery requestff7ae7ad97578582a5fd7a3b6e4058fb02fb8d3208c64fb3c5d782d596e64b4a
+restores the successful scored notebook's Python3 kernelspec and deterministic
+cell ID, with title/slug matched. Every executable code cell remains identical
+to v3. Separate source, admission and output verifier preserve all old frozen
+requests.71 focused lifecycle/metadata/output guards pass. Decision
+9f24cdc600c9312fec54a19b89ee0b8c91dbb31f9ac49979fd8162d5b01fb08c
+admits one new7200-second twoT4 session/7140watchdog/full14400 GPU-seconds,
+cap151200->165600 under standing autonomy/zero spend. Fresh free quota57163.371,
+both accelerator reservations0/paid scaling off; protected storage1967294745889
+bytes<2TB. Prior entire downstream route and80GB allowance retained plus
+14400 calendar seconds and1GB incremental envelope/log storage; protected
+finishOctober10,17:46UTC before conservativeOctober11T00 cutoff. Prepared and
+admitted; launch remains a separate once-only action. No scored submission.
+
+T71 v2 plan25fa04a170d1683cbc47c1bbaf573a64399b6302b08b3d9a2f4f6e44db84e560 binds v4, scientific protocol identical to v1; no analysis launched.

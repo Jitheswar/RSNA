@@ -1,0 +1,56 @@
+{
+  "authorization_sha256": "634562f8d5d89016e625ecb6befb57ed410b281a1f70762f3b4391d8ed7103ca",
+  "calendar": {
+    "additional_route_seconds": 14400,
+    "conservative_finish_utc": "2026-10-10T17:46:11.650751+00:00",
+    "protected_prior_seconds": 594000,
+    "review_seconds": 86400,
+    "science_freeze_utc": "2026-10-11T00:00:00+00:00"
+  },
+  "capacity_before": {
+    "budget_seconds": 151200,
+    "comparison_reserved_seconds": 0,
+    "outstanding_reserved_seconds": 0,
+    "remaining_seconds": 7163,
+    "spent_seconds": 144037
+  },
+  "competition_submission": false,
+  "created_at_utc": "2026-10-02T16:46:14.721093+00:00",
+  "decision": "approved",
+  "decision_made_by": "campaign agent under standing owner authorization",
+  "forecast_limitation": "Conservative source scaling plus180s input-hash allowance, not measured complete Gold58 cost",
+  "forecast_wall_seconds_including_input_hash": 6664.346740722656,
+  "frozen_files": {
+    "artifacts/private/ticket70-scored-anchor-gold58-v4/lifecycle-source-snapshot/gpu_campaign.py": "9232c71f581fa2821ca319130be0ef9b33a38eccc9e4b8d551958c17440093b8",
+    "artifacts/private/ticket70-scored-anchor-gold58-v4/lifecycle-source-snapshot/ticket70_accelerator_lifecycle_v4.py": "ec7477b1bd6404a9e101f061d4b226b572887e87cd6e857f5be2a1e6678f83a1",
+    "artifacts/private/ticket70-scored-anchor-gold58-v4/lifecycle-source-snapshot/verify_ticket70_exact_anchor_outputs_v4.py": "7fbf53ed474ba1acd7f732693e0781fe3b576e283f1d898a3a84b7f3b1a2564f"
+  },
+  "model_fitting": false,
+  "new_campaign_cap_seconds": 165600,
+  "new_exact_owner_numeric_approval_claimed": false,
+  "official_requirements_refresh_sha256": "c820dabe6b0a982273aa9da8c040c1e15de1ae8f1ff387d3ec715c1ccf6a8113",
+  "old_campaign_cap_seconds": 151200,
+  "parent_resource_decision_sha256": "f6f5628623c095d06a44c2b4f5cf3e516fb49d78e195c11d78233ddf05a1a452",
+  "parent_terminal_sha256": "6a1fcf8822954b076cf1d6446ad92c431f25bc013876141173c333e3f7a6037e",
+  "pinned_model_inventory_sha256": "05c8ff8072533b26001d129ee61e50eeb38172a65df5e6b342ee588641e7cc6b",
+  "purpose": "Separately admitted notebook metadata recovery; exact unchanged inference and fixed downstream comparison retained",
+  "quota_sha256": "a1f8f8d39d623860ae84e15a957a8d7ec405acb375c168dd240fe317834e0c4c",
+  "request_sha256": "ff7ae7ad97578582a5fd7a3b6e4058fb02fb8d3208c64fb3c5d782d596e64b4a",
+  "resources": {
+    "assigned_gpu_count": 2,
+    "external_spend_usd": 0,
+    "maximum_launch_attempts": 1,
+    "reserved_gpu_seconds": 14400,
+    "session_timeout_seconds": 7200,
+    "watchdog_seconds": 7140
+  },
+  "schema_version": "rsna-ticket70-resource-admission-v1",
+  "storage": {
+    "additional_allowance_bytes": 1000000000,
+    "du_output": "1323908824734\t/home/ch.jitheswar/RSNA\n16397455028\t/home/ch.jitheswar/models/qwen3-8b-b968826d9c46dd6066d109eabc6255188de91218\n",
+    "existing_apparent_bytes": 1340306279762,
+    "projected_apparent_bytes": 1967294745889,
+    "protected_allowance_bytes": 625988466127
+  },
+  "vacancy_sha256": "e36a563d76b49d07ad5c1a01f69ab7abd16fc7e22613e2d483da42b7a02812b0"
+}

@@ -64,3 +64,26 @@ is approved under standing autonomy but not yet applied; no launch yet.
 Fresh quota57178.249 freeGPU, paid scaling off; projected1966290751150bytes,
 complete protected route+review finishesOct10,13:17UTC before retained Oct11T00
 admission cutoff. Exact receipt/native/runtime proof still needs actual execution.
+
+October2,16:46UTC — v3 actual numeric136804102/version1 ERROR before inference.
+Server used title-derived handle jitheswar/rsna-exact-scored-anchor-gold58-development;
+read-only exact source/settings reconciliation retained, no repeated push.
+Downloaded actual trace: Papermill ValueError "No kernel name found in notebook
+and no override provided." Notebook metadata lacked kernelspec. No MRI/weight/
+prediction receipts exist. Full14400 GPU-second bound charged conservatively;
+cap151200/charged144037/reserved0. This known startup failure is distinct from
+the older hidden D4 error, whose cause remains unproved.
+
+Separate v4 recovery requestff7ae7ad97578582a5fd7a3b6e4058fb02fb8d3208c64fb3c5d782d596e64b4a
+restores the successful scored notebook's Python3 kernelspec and deterministic
+cell ID, with title/slug matched. Every executable code cell remains identical
+to v3. Separate source, admission and output verifier preserve all old frozen
+requests.71 focused lifecycle/metadata/output guards pass. Decision
+9f24cdc600c9312fec54a19b89ee0b8c91dbb31f9ac49979fd8162d5b01fb08c
+admits one new7200-second twoT4 session/7140watchdog/full14400 GPU-seconds,
+cap151200->165600 under standing autonomy/zero spend. Fresh free quota57163.371,
+both accelerator reservations0/paid scaling off; protected storage1967294745889
+bytes<2TB. Prior entire downstream route and80GB allowance retained plus
+14400 calendar seconds and1GB incremental envelope/log storage; protected
+finishOctober10,17:46UTC before conservativeOctober11T00 cutoff. Prepared and
+admitted; launch remains a separate once-only action. No scored submission.

@@ -189,3 +189,5 @@ T71 fixed analysis/replay prepared f90bb2ad7a216eb3a235595775ae5d559569b707a0b8b
 no final input/resource admission or predictive analysis.103 combined guards and
 module typing pass. Portable medical adapter is excluded from new45-module
 analysis closure; all frozen source snapshots must remain unchanged.
+
+- October2,16:47UTC: [T68](issues/68-test-matched-biomedclip-report-heads.md) resolved with exact native proof/inconclusive_no_promotion; [T70](issues/70-establish-exact-scored-anchor-predictions.md) v3 failed before code due missing kernelspec, full bound charged; separate unchanged-code v4 admitted; [T71](issues/71-compare-medical-heads-with-scored-anchor.md) v2 mechanically binds v4 with identical fixed science. T72 missing full-fit terminals remains open.

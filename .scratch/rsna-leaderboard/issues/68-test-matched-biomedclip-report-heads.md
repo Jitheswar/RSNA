@@ -1,7 +1,7 @@
 # 68: Test matched BiomedCLIP report heads
 
 **Type:** task
-**Status:** claimed
+**Status:** resolved
 **Assignee:** campaign agent
 **Blocked by:** 67
 
@@ -38,9 +38,9 @@ competition delivery needs a later separate decision; no automatic promotion.
 
 - [x] Exact matched scientific protocol and initial-state equivalence implemented.
 - [x] Completed verified bank then full frozen storage/calendar/resource admission.
-- [ ] Six sole medical fits complete and fixed comparisons computed.
-- [ ] Independent original-MRI/source/checkpoint/exposure/terminal replay passes.
-- [ ] Evidence and disposition recorded; anchor/delivery gates retained.
+- [x] Six sole medical fits complete and fixed comparisons computed.
+- [x] Independent original-MRI/source/checkpoint/exposure/terminal replay passes.
+- [x] Evidence and disposition recorded; anchor/delivery gates retained.
 
 ## Comments
 
@@ -67,3 +67,26 @@ competition delivery needs a later separate decision; no automatic promotion.
   unlaunched. No medical predictive result, promotion or scoring yet.
 
 October2,12:57UTC — sole medical fit **8073** completed **0:0**, **357 CPU-node seconds**, no restarts. Controller advances unchanged full stages while the sole original-MRI verifier awaits one of the two CPU slots. No predictive results inspected before native/terminal verification. Current full jobs8074(fold0/stage3,target4000) and8072(fold1/stage2,target3000); do not launch a third owner CPU job.
+
+## Answer
+
+October2,16:40UTC: all six sole heads completed the registered7500-update
+budget (fit8073 COMPLETE0:0/357 CPU-node seconds). After the combined controller
+stopped, its unconsumed sole native verifier8106 was launched under the original
+plan; COMPLETE0:0/526 CPU-node seconds. Independent replay checks all58 MRI
+studies/2688 valid slices, every fitted target/mask/init/exposure/Adam and all
+six heads,116 medical and116 ResNet predictions. Maximum feature and prediction
+error both0.0; all fixed comparisons reproduced. Terminal proof and analysis
+remain private under the original ticket68 root; no repeated fit or metric sweep.
+
+Disposition **inconclusive_no_promotion**. Primary medical-report minus
+ResNet-report paired95% interval [-0.077985,0.037620], median-0.019192; two
+negative fold directions. Fixed half blend also crosses zero. Medical report
+image signal passes (lower0.042913/all folds positive), and report supervision
+beats medical reference supervision (lower0.010663/all folds positive).
+The previously declared Ticket71 uniform10% scored-anchor comparison remains
+unchanged and requires the actual verified Ticket70 anchor. These adaptive
+Gold58 results establish neither a competition gain nor leaderboard rank.
+Terminal proof SHA and native verification hashes are recorded in the evidence
+note. Interrupted full-fit8072/8074 terminal gaps belong to Ticket72 and remain
+unresolved; this completed medical verifier does not repair their ancestry.
