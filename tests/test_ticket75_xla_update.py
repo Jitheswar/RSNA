@@ -1,4 +1,4 @@
-"""CPU contract checks only; the actual XLA backend is not imported or simulated."""
+"""CPU contract checks only; no XLA import. Collective failure boundaries are mocked."""
 from copy import deepcopy
 import importlib.util
 from pathlib import Path
@@ -137,3 +137,97 @@ def test_worker_prefix_or_consumed_failure_rejected_before_any_backend_work(defe
     # No backend, model, optimizer or replica exists. The actual update must fail
     # admission first; this neither mocks nor runs the XLA training computation.
     with pytest.raises(ValueError): backend.update(None,None,None,None,path=path,successful_step=step,worker_generation=generation)
+
+
+@pytest.mark.parametrize('defect', ['none','loss_nan','reduced_gradient_inf','parameter_nan','moment_nan','second_moment_nan','second_moment_negative','changed_normalization','missing_gradient'])
+def test_pre_update_device_flag_detects_failures_without_mutating_model_or_adam(defect):
+    m = model();optimizer = update.original_adam(m)
+    for p in m.parameters(): p.grad = torch.ones_like(p)
+    optimizer.step()
+    normalization = {n:v.clone() for n,v in m.named_buffers()
+        if n.endswith(('running_mean','running_var','num_batches_tracked'))}
+    loss = torch.tensor(1.)
+    parameter = next(m.parameters())
+    if defect == 'loss_nan': loss.fill_(float('nan'))
+    if defect == 'reduced_gradient_inf': parameter.grad.flatten()[0] = float('inf')
+    if defect == 'parameter_nan':
+        with torch.no_grad(): parameter.flatten()[0] = float('nan')
+    if defect == 'moment_nan': optimizer.state[parameter]['exp_avg'].flatten()[0] = float('nan')
+    if defect == 'second_moment_nan': optimizer.state[parameter]['exp_avg_sq'].flatten()[0] = float('nan')
+    if defect == 'second_moment_negative': optimizer.state[parameter]['exp_avg_sq'].flatten()[0] = -1
+    if defect == 'changed_normalization':
+        name = next(n for n in normalization if n.endswith('running_mean'))
+        dict(m.named_buffers())[name].flatten()[0] += 1
+    if defect == 'missing_gradient': parameter.grad = None
+    before = deepcopy(m.state_dict());adam_before = deepcopy(optimizer.state_dict())
+    if defect == 'missing_gradient':
+        with pytest.raises(ValueError,match='gradient'): update.finite_training_flag(m,optimizer,loss,normalization)
+    else:
+        flag = update.finite_training_flag(m,optimizer,loss,normalization)
+        assert flag.device.type == 'cpu' and flag.dtype == torch.float32 and flag.shape == ()
+        assert flag.item() == int(defect == 'none')
+    for name,value in m.state_dict().items():
+        torch.testing.assert_close(value,before[name],rtol=0,atol=0,equal_nan=True)
+    for key,state in optimizer.state_dict()['state'].items():
+        for name,value in state.items():
+            torch.testing.assert_close(value,adam_before['state'][key][name],rtol=0,atol=0,equal_nan=True)
+
+
+def test_initial_empty_adam_state_has_a_valid_pre_update_flag():
+    m = model();optimizer = update.original_adam(m)
+    for p in m.parameters(): p.grad = torch.ones_like(p)
+    normalization = {n:v.clone() for n,v in m.named_buffers()
+        if n.endswith(('running_mean','running_var','num_batches_tracked'))}
+    assert update.finite_training_flag(m,optimizer,torch.tensor(1.),normalization).item() == 1
+    assert not optimizer.state
+
+
+def test_training_phase_deltas_exclude_intentional_guard_and_retain_raw_training_fallbacks():
+    before = snapshot(2,4,counters={'aten::_local_scalar_dense':0})
+    backward_done = snapshot(3,5,counters={'aten::_local_scalar_dense':0})
+    # The explicit finite guard has its own compile/execute and scalar readback.
+    before_optimizer = snapshot(5,9,counters={'aten::_local_scalar_dense':1})
+    trained = snapshot(5,10,counters={'aten::_local_scalar_dense':1,'aten::unsupported':2},fallback=['aten::unsupported'])
+    result = update.training_phase_deltas(((before,backward_done),(before_optimizer,trained)))
+    assert result == dict(compile=1,execute=2,fallbacks=(('aten::_local_scalar_dense',0),('aten::unsupported',2)))
+    assert update.metric_delta(before,trained,('CompileTime',)) == 3
+    assert update.training_phase_deltas(((snapshot(None,None),snapshot(None,None)),(before_optimizer,trained)))['execute'] is None
+    with pytest.raises(ValueError,match='reset|backwards'):
+        update.training_phase_deltas(((backward_done,before),))
+
+
+@pytest.mark.parametrize('failure', ['other_rank','nonfinite_reduced_gradient'])
+def test_failed_collective_pre_guard_leaves_original_parameters_adam_and_scheduler_unchanged(failure):
+    m = model();optimizer = update.original_adam(m);scheduler = update.original_scheduler(optimizer)
+    before = deepcopy(m.state_dict())
+    if failure == 'nonfinite_reduced_gradient':
+        next(m.parameters()).register_hook(lambda gradient: torch.full_like(gradient,float('nan')))
+    backend = object.__new__(update.XlaPilotUpdate)
+    backend.device = torch.device('cpu');backend.rank = 0
+    backend.normalization = backend.initialized_baseline = backend.worker_identity = backend.next_step = None
+    backend.failed_or_inflight = False;backend.last_update_evidence = None
+    reductions = []
+    # Actual CPU forward/backward, with only backend synchronization/collective
+    # boundaries replaced. This cannot establish actual XLA/TPU behavior.
+    backend.xla = SimpleNamespace(sync=lambda **kwargs:None,
+        _XLAC=SimpleNamespace(_get_graph_hash=lambda _:b'a'*16))
+    def all_reduce(operation,value,**kwargs):
+        if 'scale' in kwargs: return value.detach()
+        assert value.item() == int(failure == 'other_rank')
+        return torch.tensor(7. if failure == 'other_rank' else 0.)
+    backend.xm = SimpleNamespace(REDUCE_SUM='sum',all_reduce=all_reduce,
+        reduce_gradients=lambda optimizer:reductions.append('mean'))
+    backend.metrics = SimpleNamespace(metric_names=lambda:['CompileTime','ExecuteTime'],
+        metric_data=lambda name:(1,1.,[]),counter_names=lambda:[],executed_fallback_ops=lambda:[])
+    replica = SimpleNamespace(rank=0,model_inputs=(torch.rand(1,2,2,1,32,32),torch.ones(1,2,2,dtype=torch.bool),
+        torch.ones(1,2,dtype=torch.bool),torch.zeros(1,2,10)),targets=torch.ones(1,12),
+        supervision_mask=torch.ones(1,12,dtype=torch.bool),global_supervised_entries=torch.tensor(48.))
+    with pytest.raises(ValueError,match='before any update'):
+        backend.update(m,optimizer,scheduler,replica,path='continuous',successful_step=1,worker_generation=0)
+    assert reductions == ['mean'] and not optimizer.state and scheduler.last_epoch == 0
+    for name,value in m.state_dict().items(): torch.testing.assert_close(value,before[name],rtol=0,atol=0)
+    assert backend.failed_or_inflight is True
+    assert backend.last_update_evidence['pre_update_finite_rank_count'] == (7 if failure == 'other_rank' else 0)
+    assert 'metrics_before_optimizer' in backend.last_update_evidence
+    with pytest.raises(ValueError,match='cannot be retried'):
+        backend.update(m,optimizer,scheduler,replica,path='continuous',successful_step=1,worker_generation=0)

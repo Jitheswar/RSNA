@@ -97,6 +97,35 @@ def fallback_deltas(before, after):
     return deltas
 
 
+def finite_training_flag(model, optimizer, global_loss, normalization):
+    """Device tensor only: inspect reduced gradients and state before mutation."""
+    parameters = tuple(model.parameters())
+    require(all(p.grad is not None and p.grad.dtype == torch.float32 for p in parameters),
+        'Every original parameter requires an FP32 gradient on every rank')
+    flags = [torch.isfinite(global_loss),*(torch.isfinite(p.grad).all() for p in parameters),
+        *(torch.isfinite(p).all() for p in parameters)]
+    for state in optimizer.state.values():
+        flags.extend((torch.isfinite(state['exp_avg']).all(),torch.isfinite(state['exp_avg_sq']).all(),
+            (state['exp_avg_sq'] >= 0).all()))
+    buffers = dict(model.named_buffers())
+    flags.extend((buffers[name] == value).all() for name,value in normalization.items())
+    return torch.stack(flags).all().to(dtype=torch.float32)
+
+
+def training_phase_deltas(phases):
+    """Combine training intervals while retaining separate intentional guards."""
+    result = {}
+    for label,names in (('compile',('CompileTime',)),('execute',('ExecuteTime','ExecuteReplicatedTime'))):
+        counts = [metric_delta(before,after,names) for before,after in phases]
+        result[label] = None if any(count is None for count in counts) else sum(counts)
+    counters = {}
+    for before,after in phases:
+        for name,count in fallback_deltas(before,after):
+            counters[name] = counters.get(name,0) + count
+    result['fallbacks'] = tuple(sorted(counters.items()))
+    return result
+
+
 class XlaPilotUpdate:
     """Construct only inside an already admitted fresh eight-device worker."""
     def __init__(self, *, admitted_worker, expected_source_hashes):
@@ -177,9 +206,24 @@ class XlaPilotUpdate:
         require(all(g is not None and g.dtype == torch.float32 for g in gradients), 'Every original parameter requires an FP32 gradient on every rank')
         global_loss = self.xm.all_reduce(self.xm.REDUCE_SUM,loss.detach(),scale=1/8)
         forward_graph = self.graph_hash([global_loss,*gradients])
-        # Exactly one mean collective, then ordinary Adam. Calling optimizer_step
-        # again would reduce twice; this is its pinned ordinary-update body.
+        # Reduce exactly once and complete backward before the all-rank guard.
+        # A nonfinite reduced gradient must never mutate ordinary Adam state.
         self.xm.reduce_gradients(optimizer)
+        self.xla.sync(wait=True)
+        backward_done = metrics_snapshot(self.metrics)
+        backward_seconds = time.monotonic()-started
+        self.last_update_evidence['metrics_after_backward'] = backward_done
+        guard_started = time.monotonic()
+        finite = finite_training_flag(model,optimizer,global_loss,self.normalization)
+        all_finite = self.xm.all_reduce(self.xm.REDUCE_SUM,finite)
+        self.xla.sync(wait=True)
+        finite_count = float(all_finite.cpu())
+        before_optimizer = metrics_snapshot(self.metrics)
+        self.last_update_evidence['metrics_before_optimizer'] = before_optimizer
+        self.last_update_evidence['pre_update_finite_rank_count'] = finite_count
+        pre_update_guard_seconds = time.monotonic()-guard_started
+        require(finite_count == 8, 'All eight ranks must have finite model/loss/reduced gradients/Adam and unchanged normalization before any update')
+        optimizer_started = time.monotonic()
         optimizer.step()
         scheduler.step()
         state_tensors = [v for state in optimizer.state.values() for v in state.values() if isinstance(v,torch.Tensor) and v.device.type == 'xla']
@@ -187,12 +231,9 @@ class XlaPilotUpdate:
         self.xla.sync(wait=True)
         trained = metrics_snapshot(self.metrics)
         self.last_update_evidence['metrics_after_training'] = trained
-        training_seconds = time.monotonic()-started
-        flags = [torch.isfinite(global_loss),*(torch.isfinite(v).all() for v in gradients),
-            *(torch.isfinite(v).all() for v in model.parameters()),*(torch.isfinite(v).all() for v in state_tensors)]
-        flags.extend((state['exp_avg_sq'] >= 0).all() for state in optimizer.state.values())
-        flags.extend((dict(model.named_buffers())[name] == value).all() for name,value in self.normalization.items())
-        finite = torch.stack(flags).all().to(dtype=torch.float32)
+        optimizer_seconds = time.monotonic()-optimizer_started
+        training_seconds = backward_seconds+optimizer_seconds
+        finite = finite_training_flag(model,optimizer,global_loss,self.normalization)
         all_finite = self.xm.all_reduce(self.xm.REDUCE_SUM,finite)
         self.xla.sync(wait=True)
         require(float(all_finite.cpu()) == 8, 'Nonfinite model/gradient/Adam or changed normalization fails the pilot')
@@ -200,9 +241,9 @@ class XlaPilotUpdate:
         exported_gradients = {name:p.grad.detach().cpu().clone() for name,p in model.named_parameters()} if successful_step <= 3 else None
         guarded = metrics_snapshot(self.metrics)
         self.last_update_evidence['metrics_after_guard'] = guarded
+        deltas = training_phase_deltas(((before,backward_done),(before_optimizer,trained)))
         observation = PilotUpdateObservation(path,successful_step,self.rank,worker_generation,time.monotonic()-started,
-            metric_delta(before,trained,('CompileTime',)), metric_delta(before,trained,('ExecuteTime','ExecuteReplicatedTime')),
-            forward_graph,optimizer_graph,True,fallback_deltas(before,trained))
+            deltas['compile'],deltas['execute'],forward_graph,optimizer_graph,True,deltas['fallbacks'])
         self.last_update_evidence['observation'] = asdict(observation)
         validate_rank_update(observation, initialized_baseline=self.initialized_baseline)
         if successful_step == start + 1:
@@ -213,7 +254,9 @@ class XlaPilotUpdate:
         self.last_update_evidence['status'] = 'UPDATE_GATES_PASSED'
         self.failed_or_inflight = False
         return dict(observation=asdict(observation), global_loss=value, training_seconds=training_seconds,
+            forward_backward_seconds=backward_seconds,pre_update_guard_seconds=pre_update_guard_seconds,optimizer_seconds=optimizer_seconds,
             finite_guard_and_prescribed_gradient_export_seconds=observation.synchronized_interval_seconds-training_seconds,
-            metrics_before=before,metrics_after_training=trained,metrics_after_guard=guarded,
+            metrics_before=before,metrics_after_backward=backward_done,metrics_before_optimizer=before_optimizer,
+            metrics_after_training=trained,metrics_after_guard=guarded,pre_update_finite_rank_count=finite_count,
             reduced_gradients=exported_gradients, actual_complete_pilot_verified=False,
             competition_submission=False,candidate_promotion=False)
