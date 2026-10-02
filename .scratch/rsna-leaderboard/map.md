@@ -153,3 +153,17 @@ None remains within this planning destination. All seven tickets are resolved. T
   cached23-cell D4 lineage; exact scored-anchor Gold58 parity remains unproven.
   Bank parts8041/8042/8057 completed0:0; fourth8058 and unchanged fit8054 run.
   [Evidence](../../docs/evidence/ticket-69-portable-medical-inference.md).
+
+- [Ticket70](issues/70-establish-exact-scored-anchor-predictions.md) claimed:
+  exact0.936 scored-source Gold58 request separately prepared and independently
+  checked; five cells retained except four dataset-root literals, eight tests
+  and typing pass. No historical weight/MRI/runtime parity, resource admission
+  or launch yet. D4 final cache has different members/fusion; shared calibration
+  payload and50 matching top-level definitions do not prove predictions.
+  [Evidence](../../docs/evidence/ticket-70-exact-scored-anchor.md).
+
+- [Ticket71](issues/71-compare-medical-heads-with-scored-anchor.md) claimed:
+  fixed90% exact-anchor/10% report-medical OOF rank vote declared before medical
+  results, all12 targets,2000 paired bootstrap20261002, all-fold directions plus
+  zero-image controls. Diagnostics are fixed and cannot become alternate
+  candidates. Blocked by actual68/70 receipts; no analysis/gain/promotion yet.

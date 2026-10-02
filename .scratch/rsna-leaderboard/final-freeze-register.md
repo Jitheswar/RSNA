@@ -590,3 +590,31 @@ CPU-node seconds,1057 studies/46816 slices. Three-part total3171 studies
 verification remains unlaunched. Portable heads now retain fold/arm identity
 and reject swapped folds or mixed supervision arms;26 synthetic tests and
 source typing pass. No real-MRI adapter replay, predictive gain or submission.
+
+## October2 — exact scored-anchor preparation and prospective medical vote
+
+Ticket70 source/submission bridge and independent preparation pass, five
+original0.936 cells unchanged except four competition-root tokens. Eight source
+safeguards and typing pass. Private requestSHA
+`e447295cda5201165327da9410c85f55f2815aa7dea07ee013a473f435c2eb71`.
+Freeze its preparation/validation scripts, source helper and matching snapshots.
+No actual MRI prediction, weight parity or Kaggle runtime proof. Historical
+asset/container binding and full fresh launch admission remain required.
+
+Proposed2T4/7200-second session/7140-watchdog/14400 GPU-seconds/one attempt,
+zero external spend. Conservative exact-visible scaling forecasts6484.347s;
+not measured Gold58 cost. Proposed151200 cap is an agent proposal under owner
+autonomy, not a new exact owner numeric approval. Current136800/charged129637
+/reserved0/remaining7163 and all unknown charges remain unchanged. Queued
+TPU136722939/v1 prevents a second accelerator request. No cap change or launch.
+
+D4 cached final differs in Raptor members, family mixtures and linear-rank outer
+fusion;0.936 scored recipe uses its originalv4 complement and Gaussian-quantile
+target fusion. Equal calibration payload and50 matching top-level AST definitions
+are partial facts, not whole-program prediction parity.
+
+Ticket71 freezes a single90% exact-anchor/10% report-medical held-out-fold rank
+vote on all12 targets before medical results. Paired2000 bootstrap20261002/95%
+CI/all original fold directions and image/zero-image controls; no alternate
+vote/target sweep or automatic promotion. Actual68/70 receipts and fixed
+analysis/delivery admission remain pending. [Protocol](issues/71-compare-medical-heads-with-scored-anchor.md).

@@ -187,6 +187,32 @@ fallback preserved. Private score/rank and final selections remain unavailable.
     No new inference/accuracy/GPU/job/upload/submission is admitted here.
     [Mechanics and gates](../../docs/evidence/ticket-69-portable-medical-inference.md).
 
+13. [Ticket70](issues/70-establish-exact-scored-anchor-predictions.md) claimed:
+    private exact-scored Gold58 request `artifacts/private/ticket70-scored-anchor-gold58-v1`,
+    SHA `e447295cda5201165327da9410c85f55f2815aa7dea07ee013a473f435c2eb71`.
+    Independent preparation validates original five0.936 cells; only four
+    root tokens change, all other recipe bytes retained. Eight focused source
+    tests and typing pass. Preserve new preparation/validation scripts and
+    `src/rsna_knee/scored_anchor_recipe.py` against their frozen snapshots.
+    No real MRI, weight or runtime parity is proven. Resolve historical asset
+    versions and pinned container before exact-anchor inference; capturing
+    future weight hashes alone does not prove historical equality. If input
+    envelope needs changes, supersede preparation instead of editing v1.
+    Proposed2T4/7200 session/7140 watchdog/14400 GPU-seconds; projected6484.347s
+    from exact visible run, not measured Gold58. Proposed151200 cap is not
+    amended/admitted; current136800/charged129637/reserved0/rem7163 unchanged.
+    TPU136722939/v1 remains QUEUED; do not launch a second accelerator job.
+    [Evidence](../../docs/evidence/ticket-70-exact-scored-anchor.md).
+
+14. [Ticket71](issues/71-compare-medical-heads-with-scored-anchor.md) claimed:
+    before any medical predictive result, fixed one all-target90% exact scored
+    anchor/10% medical-report OOF percentile-rank vote, average ties/final rerank.
+    Never use all-three-head Gold58 mean.2000 paired study bootstrap20261002/95%
+    CI/all-fold directions plus fixed reference and zero-image diagnostics.
+    Reject failed/unsupported gates; do not search vote weights/targets or choose
+    a diagnostic as another candidate. Requires actual68/70/native/asset receipts
+    and separately frozen analysis admission; no result/promotion/submission.
+
 ## Completed prerequisites
 
 - Full-backbone CPU pilot **8016 /COMPLETED /0:0**, **127 CPU-node seconds**,
@@ -289,3 +315,9 @@ tests/typing; actual adapter/model delivery is unverified. No interim AUC or
 new scoring request/accelerator charge/promotion. Submission targetOct3–4 is
 conditional on predictive gain, exact scored-anchor comparison and offline
 delivery. Neither first-place rank is achieved.
+
+October2 follow-up: Ticket70 preparation and source distinction are verified;
+Ticket71 vote protocol fixed with Ticket68 still `wait_for_complete_bank`,
+fitting admittedFalse/launchedFalse. Actual jobs8058/8054 remain RUNNING at
+12:02UTC, original scheduling/science unchanged. TPU136722939/v1 remains queued.
+No medical/anchor gain, GPU admission or leaderboard result yet.
