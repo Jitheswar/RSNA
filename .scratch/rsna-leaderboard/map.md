@@ -102,3 +102,14 @@ None remains within this planning destination. All seven tickets are resolved. T
 - October 2 full-backbone learning route: [Ticket 61](issues/61-prepare-fixed-shape-full-backbone-report-training.md) code and real-MRI CPU cost pilot **8016 /0:0** pass, 127 node seconds. Median whole-encoder update 5.955313 s, all stages change with fixed normalization; exact native initial logits and independent diagnostic checkpoint replay. 39 focused tests/83-source-file typing pass. CPU can advance independently of queued TPU; long 7,500-update route needs staged-job, cache/I/O and complete comparison/delivery admission. No predictive gain or promotion. [Evidence](../../docs/evidence/ticket-61-full-backbone-cpu-cost.md).
 
 - October 2 whole-cohort preparation: [Ticket 62](issues/62-materialize-exact-mri-pixel-cohort.md) pixel materialization **8017 /0:0**, 2,080 CPU-node seconds; all 4,228 studies /187,272 slices independently replay native sources exactly, 37.586 GB payload, 189.317 s verified cache reads/reconstruction. Shared full-encoder CPU training, file-backed pixel inputs, exact checkpoint resume and native prediction pass 57 focused tests/84-file typing. [Ticket 63](issues/63-measure-shared-full-backbone-training-delivery-cost.md) actual mixed-source training/startup/checkpoint cost **8018** is running, one 90-minute/16-CPU/64-GiB job. Complete 7,500-update comparison remains separately unadmitted. CoAt **8014** continues; exact TPU request remains queued. No predictive gain/rank change. [Pixel evidence](../../docs/evidence/ticket-62-exact-mri-pixel-cohort.md), [medical encoder research](../../docs/research/medical-image-encoder-options-2026-10-02.md).
+
+
+- [Ticket 62](issues/62-materialize-exact-mri-pixel-cohort.md) resolved: all
+  4,228 exact pixel bags independently replay original source packing; measured
+  whole-cohort I/O and separate complete Ticket 64 fitting/delivery admission
+  are recorded. No accuracy result follows from materialization.
+- [Ticket 63](issues/63-measure-shared-full-backbone-training-delivery-cost.md)
+  resolved: job 8018 completed `0:0`, 2,170 CPU-node seconds. Fresh-process
+  staged and continuous real-MRI model/Adam/scheduler/progress/sampler states
+  agree exactly; all encoder stages change with fixed normalization. Actual
+  startup/serialization/RSS establish costs for prospectively registered Ticket 64.

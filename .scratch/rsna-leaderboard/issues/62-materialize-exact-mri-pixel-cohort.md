@@ -1,7 +1,7 @@
 # 62: Materialize exact MRI pixels for full-backbone training
 
 Type: task
-Status: claimed
+Status: resolved
 Labels: ready-for-agent
 Parent: [RSNA campaign](../spec.md)
 
@@ -39,7 +39,7 @@ source checks. Archive gold studies follow the previously admitted reader.
 - [x] Independently verify every file/array/source/mask/descriptor identity,
   exact cohort/terminal/job/resources, and previously admitted real-MRI pixel
   replay; capture read/reconstruction costs for the next training plan.
-- [ ] Freeze complete three-fold matched-reference training, staged checkpoint,
+- [x] Freeze complete three-fold matched-reference training, staged checkpoint,
   I/O/evaluation/final-fit/delivery cost separately before fitting.
 
 ## Comments
@@ -64,3 +64,14 @@ resumed versus continuous training passes focused lifecycle checks. A separate
 [Ticket 63](63-measure-shared-full-backbone-training-delivery-cost.md) measures
 actual mixed-source startup, staged real-MRI checkpoint delivery and cost.
 Complete longer comparison/final-fit/delivery admission remains pending.
+
+
+## Answer
+
+The complete exact pixel cohort and independent original-source replay are
+admitted. Shared-trainer costs subsequently passed Ticket 63. The separate
+[Ticket 64](64-test-long-full-backbone-report-adaptation.md) plan now freezes
+all six 7,500-update fits, staged checkpoints, complete memory/storage/calendar
+costs and independent replay/conditional delivery reserves before fitting.
+Pixel materialization and route admission are complete; predictive value remains
+an open experiment, with no candidate promoted.

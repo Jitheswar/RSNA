@@ -447,6 +447,34 @@ def test_cpu_preflight_records_the_required_runtime_checks(tmp_path) -> None:
     assert (tmp_path / "preflight.json").exists()
 
 
+def test_planned_stage_pause_saves_exact_progress_between_normal_checkpoint_boundaries(tmp_path) -> None:
+    config = TrainingConfig(
+        image_size=(16, 16), channels=(2, 4, 8), max_slices=1, max_series=1,
+        successful_optimizer_steps=4, checkpoint_interval_steps=100,
+    )
+    # Two updates are neither an epoch nor a step/time checkpoint boundary.
+    examples = tuple(_tiny_example(f"stage-{i}", i % 2) for i in range(7))
+    staged = tmp_path / "staged"
+    with pytest.raises(TrainingInterrupted):
+        train_fixed_budget(examples, config, artifact_dir=staged,
+                           interrupt_after_steps=2, checkpoint_clock=lambda: 0.0)
+    checkpoint_path = staged / "checkpoints/latest.pt"
+    assert checkpoint_path.is_file(), "A planned stage pause must publish its exact stopping state"
+    checkpoint = load_training_checkpoint(checkpoint_path, expected_config=config)
+    assert checkpoint["progress"]["successful_optimizer_steps"] == 2
+    assert checkpoint["progress"]["attempted_batches"] == 2
+    assert checkpoint["checkpoint_reason"] == "planned_interruption"
+    assert not (staged / "checkpoints/final.pt").exists()
+    resumed = train_fixed_budget(examples, config, artifact_dir=staged,
+                                 resume_from=checkpoint_path, checkpoint_clock=lambda: 0.0)
+    continuous = train_fixed_budget(examples, config, artifact_dir=tmp_path / "continuous",
+                                    checkpoint_clock=lambda: 0.0)
+    assert resumed.loss_history == continuous.loss_history
+    assert resumed.exposures_by_source == continuous.exposures_by_source
+    for key, value in resumed.model.state_dict().items():
+        assert torch.equal(value, continuous.model.state_dict()[key])
+
+
 def test_interrupted_training_resumes_same_run_with_a_new_execution_attempt(tmp_path) -> None:
     config = TrainingConfig(
         image_size=(16, 16),
@@ -735,12 +763,21 @@ def test_resume_records_and_replays_only_batches_after_last_checkpoint(tmp_path)
     examples = tuple(_tiny_example(f"replay-{index}", index % 2) for index in range(5))
     run_dir = tmp_path / "replay"
 
-    with pytest.raises(TrainingInterrupted):
+    clock_calls = 0
+
+    def fail_after_two_updates() -> float:
+        nonlocal clock_calls
+        clock_calls += 1
+        if clock_calls == 3:
+            raise OSError("injected unexpected failure after two updates")
+        return float(clock_calls)
+
+    with pytest.raises(OSError, match="unexpected failure after two updates"):
         train_fixed_budget(
             examples,
             config,
             artifact_dir=run_dir,
-            interrupt_after_steps=2,
+            checkpoint_clock=fail_after_two_updates,
         )
 
     first_attempt = run_dir / "attempts" / "attempt-0001"

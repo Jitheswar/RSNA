@@ -150,4 +150,23 @@ cost scaled to full membership plus 900 seconds forecasts **21,282.375 seconds**
 inside that bound. Original MRI files are reused read-only, and bags are released
 after recording hashes. Only the worker's resource guard/watchdog change; the
 scientific input functions are unchanged. An exact-job controller observer
-retains terminal evidence. Full outcome is pending; do not infer it from the pilot.
+retains terminal evidence. Full outcome was subsequently independently verified below.
+
+
+## October 2 — full CoAt preparation completed
+
+Job **8014 completed `0:0`**, **8,770 allocated CPU-node seconds**. Independent
+summary verification at **06:06:33 UTC** checks actual terminal/resources,
+frozen execution/plan and every original **4,407** study. Bags contain **52–94
+windows**, original slice range **67–632**, peak worker RSS **1,837,875,200 bytes**.
+There are **zero input failures, dense-sampler fallbacks or preparation warnings**.
+Producer payload/sidecar hash records pass; images are not independently replayed.
+Result SHA-256:
+`e77ab56f854ec56ea89b5d8a5733f94f18d23b6f846c1a8eb7622aeb96eec930`.
+Private retained terminal and `independent-summary-validation.json` live under
+`full-coat-cpu-input-probe-v1/`. One consumed attempt, no relaunch.
+
+This tests the accessible CPU preparation seam across the complete original
+corpus. It excludes model/GPU execution, other readers and hidden inputs.
+**The hidden Kaggle failure remains unreproduced; Ticket 59 stays open.**
+No scoring retry, repair, promotion, final selection or GPU-ledger change follows.

@@ -135,3 +135,11 @@ leader **0.961**; exact failed frontier still no score/traceback. Phase 1 remain
 incomplete: no matching hidden reproduction, cause, repair or rescoring. Ledger
 unchanged; zero new GPU/spend. [Current handoff](../session-handoff-20261002.md),
 [evidence](../../../docs/evidence/ticket-59-hidden-execution-diagnosis.md).
+
+
+October 2, **06:06:33 UTC**: complete CoAt input job **8014** independently
+passes exact terminal/source/summary verification, `COMPLETED 0:0`, **8,770
+CPU-node seconds**, all **4,407** studies, windows **52–94**, **zero input
+failures/sampler fallbacks/warnings**. Producer hashes checked; independent
+pixel replay was not performed. No hidden error reproduced or ranked cause
+established, and no scoring retry or GPU use. This ticket remains open.

@@ -441,3 +441,37 @@ remains pending. CoAt **8014** continues; TPU request remains **QUEUED** at
 **03:11:29 UTC**, actual hardware unverified. Ledgers unchanged. Neither first
 place is established. [Pixel evidence](../../docs/evidence/ticket-62-exact-mri-pixel-cohort.md),
 [current handoff](session-handoff-20261002.md).
+
+
+## October 2 — actual shared training cost; long comparison admitted
+
+This entry supersedes earlier live-job snapshots. Full CoAt **8014** completed
+`0:0`, **8,770 CPU-node seconds**; all 4,407 original inputs pass independent
+summary checks, zero preparation failures/fallbacks/warnings. Hidden failure
+remains unreproduced; no scoring retry or hidden-cause claim.
+
+Shared-trainer cost **8018** completed `0:0`, **2,170 CPU-node seconds**. Exact
+fresh-process model/Adam/scheduler/progress/sampler replay, original targets and
+masks, all encoder changes, fixed normalization and accepted terminal/source
+pass independently. Maximum diagnostic interval **8.745448 s**, startup
+**372.921 s**, checkpoint **135,071,169 bytes**, peak RSS **16.871 GB**.
+[Evidence](../../docs/evidence/ticket-63-shared-full-backbone-training-cost.md).
+
+Registered [Ticket 64](issues/64-test-long-full-backbone-report-adaptation.md)
+uses **7,500 additional updates** for each matched arm/fold from identical
+warm heads, full encoder **1e-5** and head **1e-4**. All six fits, eight bounded
+stages per treatment fold, checkpoint histories, independent source replay and
+conditional final-fit/offline delivery costs fit fresh complete admission.
+Plan `557230fec672f6db9252b1895a4d174652fe217c0388a8c9598bd749183aa985`.
+First full stage **8032** and matched control **8033** are running, each
+nonexclusive 16 CPUs/64 GiB, 5.5-hour/two-hour bounds, no requeue/GPU/spend.
+The guarded coordinator advances only registered stages, one launch per stage,
+at most two owner CPU jobs, no retries or intermediate scoring. It stops on
+failed or ambiguous execution. Seven coordinator safety tests, five admission
+checks and 27 focused lifecycle/training tests pass; source typing passes 84
+files. No predictive gain, promoted candidate or first-place rank is established.
+
+TPU environment request remains **QUEUED**, last **06:33:21 UTC**, hardware
+unverified. GPU ledger unchanged **129,637 charged /136,800 cap /zero reserved /
+7,163 remaining seconds**; TPU ledger **600 seconds reserved**, spend zero.
+Conditional final fit and GPU delivery are not authorized by this fitting plan.

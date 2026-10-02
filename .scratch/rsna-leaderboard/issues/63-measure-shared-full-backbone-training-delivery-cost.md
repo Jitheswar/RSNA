@@ -1,7 +1,7 @@
 # 63: Measure shared full-backbone training and checkpoint delivery cost
 
 Type: task
-Status: claimed
+Status: resolved
 Labels: ready-for-agent
 Parent: [RSNA campaign](../spec.md)
 
@@ -37,10 +37,10 @@ Checkpoint every diagnostic update to measure serialization and reloading.
 
 - [x] Freeze exact source, inputs, complete cohort, fresh storage, runtime,
   standing resource decision and accepted one-attempt allocation.
-- [ ] Measure all-fold construction/fingerprints and actual complete pixel I/O.
-- [ ] Verify fresh-process interrupted/resumed and continuous real-MRI state
+- [x] Measure all-fold construction/fingerprints and actual complete pixel I/O.
+- [x] Verify fresh-process interrupted/resumed and continuous real-MRI state
   equality, actual full-backbone changes, fixed normalization and terminal.
-- [ ] Retain stage startup, step/checkpoint intervals, file sizes, reload times
+- [x] Retain stage startup, step/checkpoint intervals, file sizes, reload times
   and RSS for a separate complete fitting/final-delivery decision.
 
 ## Comments
@@ -56,3 +56,26 @@ Plan `40f5268a019a9d247cb3ced8d0d7a62c419bd7b1e544a1370af7f884d65f7e39`,
 complete forecast **3,629.069 seconds**, 90-minute server bound. Five fresh
 processes use the immutable source snapshot. Terminal observer is active.
 No second request; complete experiment/checkpoint metrics remain pending.
+
+
+## Answer
+
+Job **8018 completed `0:0`, 2,170 allocated CPU-node seconds**. Independent
+terminal/source/state reconciliation passes. All 4,228 pixel entries and every
+original training target/mask are admitted. Fresh-process resumed and continuous
+three-update states match exactly, including model, Adam, scheduler, progress
+and sampler; every encoder stage changes and normalization buffers stay fixed.
+No held-out predictions or predictive gain are inferred.
+
+Complete pixel read **126.443 s**; all-fold example construction **97.390–100.800
+s**, fingerprinting **185.434–192.671 s**. Maximum fresh-stage startup **372.921 s**,
+maximum diagnostic step/prior-checkpoint interval **8.745448 s**, maximum
+checkpoint **135,071,169 bytes**, peak RSS **16,871,268,352 bytes**. Actual
+checkpoint reload **0.259566–0.479378 s**. These measured complete costs support
+separate Ticket 64 admission, rather than a training-only extrapolation.
+[Evidence](../../../docs/evidence/ticket-63-shared-full-backbone-training-cost.md).
+
+October 2: Independent verification at **06:06:37 UTC** binds exact original
+supervision/exposures, admitted initial weights, retained terminal and source.
+One consumed attempt remains closed. Ticket 64 prospectively registers the
+longer matched regime and independently bounds its entire delivery route.

@@ -3387,7 +3387,14 @@ def _train_fixed_budget_impl(
             )
             time_due = now - last_checkpoint_at >= config.checkpoint_interval_seconds
             target_reached = successful_steps >= config.successful_optimizer_steps
-            if latest_path is not None and (at_epoch_boundary or step_due or time_due or target_reached):
+            planned_interrupt_due = (
+                interrupt_after_steps is not None
+                and successful_steps >= interrupt_after_steps
+                and not target_reached
+            )
+            if latest_path is not None and (
+                at_epoch_boundary or step_due or time_due or target_reached or planned_interrupt_due
+            ):
                 reasons = [
                     name
                     for name, due in (
@@ -3395,15 +3402,12 @@ def _train_fixed_budget_impl(
                         ("optimizer_step_interval", step_due),
                         ("time_interval", time_due),
                         ("target_reached", target_reached),
+                        ("planned_interruption", planned_interrupt_due),
                     )
                     if due
                 ]
                 publish_checkpoint(reason="+".join(reasons), now=now)
-            if (
-                interrupt_after_steps is not None
-                and successful_steps >= interrupt_after_steps
-                and successful_steps < config.successful_optimizer_steps
-            ):
+            if planned_interrupt_due:
                 raise TrainingInterrupted(
                     f"training interrupted after {successful_steps} optimizer steps",
                     checkpoint_path=latest_path,
