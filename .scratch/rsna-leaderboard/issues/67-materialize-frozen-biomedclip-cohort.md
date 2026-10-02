@@ -58,3 +58,13 @@ head fitting and later exact anchor/delivery comparison need their own decision.
   Sole first extraction **8041** is RUNNING, first64 studies at216.537 process
   seconds; **8039** continues. Two-slot limit preserved. Matched-head Ticket68
   controller waits for complete independent bank proof without taking slots.
+
+- October2 11:12UTC: first8041 completed0:0/1901 CPU-node seconds, second
+  8042 completed0:0/1831 seconds; both1057 studies, respectively46824/46816
+  valid slices. Third8057 runs beside unchanged full8054(fold0/stage2).
+  Independent all4228 feature proof and fourth partition remain pending.
+
+- October2 11:38UTC: third8057 completed0:0/1896 CPU-node seconds,
+  1057 studies/46816 slices; three-part total3171 studies/140456 slices/5628
+  seconds. Fourth8058 runs beside unchanged full8054. Independent complete
+  bank proof remains pending; no scientific schedule change or scoring.

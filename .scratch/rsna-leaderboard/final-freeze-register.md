@@ -566,3 +566,27 @@ bank receipt and fresh whole-route admission required. Accelerator ledgers
 unchanged. Next24–48h submission target is conditional on gain and offline
 delivery, with no first-place evidence.
 [Workflow](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
+
+## October2 — partial medical bank complete; portable mechanics and baseline lineage
+
+8041/8042 both completed0:0, respectively1901/1831 CPU-node seconds, total
+2114 studies/93640 valid slices. Third8057 and full8054(fold0/stage2) run;
+8039 completed exact2000 updates0:0/6988 seconds with checkpoint
+`1cb772aa30a89533b1f02f0c22f64ff32e41d8d3ae38a26de8f426f60fd90aa4`.
+No intermediate scoring, acceleration or scientific schedule change.
+
+Ticket69 additive medical adapter passes26 synthetic tests and typing, with
+strict runtime/weight/head identities, held-out-fold versus probability mean
+and explicit eligible-reference fallback rows. Real-MRI adapter parity and
+production package remain pending. Read-only exact-saved-source audit verifies
+the0.936 baseline's five cells;23-cell cached D4 predictions are not yet
+proof of its Gold58 predictions. A later candidate needs exact scored-anchor
+comparison and offline runtime evidence before submission. Neither rank is
+achieved. [Evidence](../../docs/evidence/ticket-69-portable-medical-inference.md).
+
+At11:38UTC third8057 is independently observed COMPLETED /0:0 /1896
+CPU-node seconds,1057 studies/46816 slices. Three-part total3171 studies
+/140456 slices/5628 seconds; fourth8058 and unchanged fit8054 run. Full bank
+verification remains unlaunched. Portable heads now retain fold/arm identity
+and reject swapped folds or mixed supervision arms;26 synthetic tests and
+source typing pass. No real-MRI adapter replay, predictive gain or submission.

@@ -22,7 +22,10 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    **6,685 CPU-node seconds**. Resumed fold-0/stage-1 **8036** now completed `0:0`, exactly2,000
    updates, **6,857 CPU-node seconds**, checkpoint
    `e9fdceb3af12099a71e250b5aa9028abf5816e17c81919a005b3c2658d7a0668`.
-   Full fold-1/stage-1 **8039** continues. Fold-1 first stage **8035**
+   Full fold-1/stage-1 **8039** now completes exactly2000 updates /0:0,
+   **6,988 CPU-node seconds**, checkpoint
+   `1cb772aa30a89533b1f02f0c22f64ff32e41d8d3ae38a26de8f426f60fd90aa4`.
+   Current full fold0/stage2 **8054** runs, target3000. Fold-1 first stage **8035**
    completed its exact 1,000-update boundary successfully. Recovery control **8034** now
    completes `0:0`, **995 CPU-node seconds**, all three final 7,500-update heads
    and 58 gold predictions. Independent initial/state/Adam/source-exposure audit
@@ -37,7 +40,7 @@ fallback preserved. Private score/rank and final selections remain unavailable.
    Ticket 67 itself advances the exact unchanged registered fitting stages
    through frozen worker launches while materializing one feature partition
    at a time. Do not manually recreate the original fit coordinator while
-   Ticket 67 owns scheduling. Current **8039** fit and first medical extraction **8041** continue,
+   Ticket 67 owns scheduling. Current **8054** fit and fourth medical extraction **8058** continue,
    with at most two pending+active owner CPU jobs. Original coordinator is restored on exit.
    `coordinator-state.json` under Ticket 67 records current scheduling; the
    old v2 snapshot is historical during delegation. Exact completed recovery
@@ -128,9 +131,9 @@ fallback preserved. Private score/rank and final selections remain unavailable.
     official learned512 projection/L2, original masks/descriptors/pixels.
     One 3-hour/16-CPU/64-GiB attempt per partition plus one 1-hour independent
     verification; no retry/requeue. Persistent scheduler above currently
-    runs first partition **8041**, accepted after8036 completed.
-    First64 studies observed at216.537 process seconds; remaining partitions
-    and independent verifier are unlaunched at10:06UTC.
+    completed8041 /0:0 /1901 CPU-node seconds,8042 /0:0 /1831 seconds
+    and8057 /0:0 /1896 seconds, total3171 studies /140456 valid slices.
+    Fourth8058 runs; independent verifier remains pending at11:38UTC.
     Fourteen focused tests and five launcher checks pass. Preserve frozen
     four Ticket 67 scripts and matching source snapshots; never duplicate
     consumed controller/launch intents. On completion inspect exact terminals,
@@ -165,6 +168,24 @@ fallback preserved. Private score/rank and final selections remain unavailable.
     Inspect terminal/source/state/native receipts before any provisional
     review. Separate scored-anchor/offline delivery admission remains required;
     no automatic promotion/submission. [Workflow](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
+
+12. [Ticket69](issues/69-prepare-portable-medical-inference.md) claimed:
+    additive `src/rsna_knee/biomedclip_inference.py` implemented,26 synthetic
+    tests and module typing pass. Exact pinned CPU vision/head loading, one
+    encode per valid slice, audited batch-two heads, explicit held-out fold
+    versus three-fold probability mean, eligible-reference priors/fallback
+    flags. Existing frozen sources are unchanged. Production heads, real-MRI
+    adapter equivalence, package construction and Kaggle CPU runtime remain
+    gated by successful Ticket68 and fresh exact resource admission. Do not
+    present synthetic fixture tests as medical checkpoint/MRI proof.
+    Read-only source audit matches the five exact0.936 scored cells to saved
+    script354125287/v2. Existing23-cell D4 Gold58 cache cannot currently prove
+    its same-cohort predictions; obtain exact scored inference or prove a
+    matching reconstruction before candidate anchor comparison. Private receipt
+    `artifacts/private/ticket69-scored-anchor-distinction-v1.json`, SHA
+    `d01bc8f53dd58767b9b0e6b7adad9750415134222622b510d0b1d7d383580be5`.
+    No new inference/accuracy/GPU/job/upload/submission is admitted here.
+    [Mechanics and gates](../../docs/evidence/ticket-69-portable-medical-inference.md).
 
 ## Completed prerequisites
 
@@ -258,11 +279,13 @@ training directories. Verifier explicitly binds those original files, the
 inherited first-stage receipt and every resumed checkpoint SHA chain.
 
 
-Current snapshot **October2 10:06UTC**: **8036** completed exact2,000
-updates /0:0; **8039** fit and **8041** first extraction run. Ticket67 owns
-unchanged registered fitting scheduling; final verifier waits for all fits.
-Ticket68 waiting controller is live without a fitting resource plan or launch.
-TPU remains QUEUED. No intermediate AUC, scoring request, accelerator ledger
-change or promotion. Submission target next24–48h is conditional on a measured
-gain plus fixed anchor/offline delivery; no submission is queued and neither
-first-place rank is achieved.
+Current snapshot **October2 11:38UTC**: **8039** completed exact2000
+updates /0:0 /6988 CPU-node seconds; **8054** fold0/stage2 fit and **8058**
+fourth extraction run. Parts8041/8042/8057 completed0:0, total3171 studies
+/140456 slices/5628 CPU-node seconds. Ticket67 owns unchanged registered scheduling;
+final verifier waits for all fits. Ticket68 controller waits for complete bank;
+no medical fitting resource plan exists. Ticket69 mechanics pass26 synthetic
+tests/typing; actual adapter/model delivery is unverified. No interim AUC or
+new scoring request/accelerator charge/promotion. Submission targetOct3–4 is
+conditional on predictive gain, exact scored-anchor comparison and offline
+delivery. Neither first-place rank is achieved.

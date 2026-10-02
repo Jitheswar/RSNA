@@ -1,11 +1,13 @@
 # Ticket 67: frozen BiomedCLIP feature cohort admission
 
-The complete unfitted feature bank is admitted and its persistent scheduler
-is live. Sole first partition **8041** is **RUNNING**, with 64 studies observed
-complete after 216.537 process seconds. It was admitted only after fit **8036**
-completed its fixed 2,000-update boundary successfully. Fit **8039** continues;
-exactly two owner CPU jobs are live. Actual full-cohort outputs and independent
-validation remain pending; no accuracy or rank result follows.
+The first three fixed feature partitions completed successfully: **8041 /0:0**
+1,057 studies /46,824 slices /**1,901 CPU-node seconds**, **8042 /0:0**
+1,057 studies /46,816 slices /**1,831 CPU-node seconds**, and **8057 /0:0**
+1,057 studies /46,816 slices /**1,896 CPU-node seconds**. These actual terminal
+receipts total **3,171 studies /140,456 slices /5,628 CPU-node seconds**.
+Fourth **8058** is RUNNING alongside unchanged full-training **8054**;
+independent full-cohort verification remains pending. No accuracy or rank
+result follows from this partial feature bank.
 
 ## Evidence and fixed representation
 

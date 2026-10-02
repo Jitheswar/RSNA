@@ -144,3 +144,12 @@ None remains within this planning destination. All seven tickets are resolved. T
   no fitting resource admission or gain yet. First bank partition **8041**
   is running; full **8036** completed exactly2,000 updates /0:0 while **8039**
   continues. [Workflow evidence](../../docs/evidence/ticket-68-biomedclip-matched-heads.md).
+
+- [Ticket69](issues/69-prepare-portable-medical-inference.md) claimed:
+  additive strict CPU medical inference adapter, explicit held-out-fold versus
+  probability mean, one encoding per valid slice and eligible-reference fallback
+  flags.26 synthetic tests and typing pass; real-MRI/package parity pending.
+  Read-only audit confirms exact0.936 source is five cells, distinct from
+  cached23-cell D4 lineage; exact scored-anchor Gold58 parity remains unproven.
+  Bank parts8041/8042/8057 completed0:0; fourth8058 and unchanged fit8054 run.
+  [Evidence](../../docs/evidence/ticket-69-portable-medical-inference.md).
