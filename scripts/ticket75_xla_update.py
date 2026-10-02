@@ -4,6 +4,7 @@ This is not a launcher: no device is acquired at import, there is no CLI, and
 actual source/input/resource admission and fresh-worker supervision are separate.
 """
 from dataclasses import asdict
+from copy import deepcopy
 import hashlib
 import importlib
 import importlib.metadata
@@ -15,6 +16,8 @@ import torch
 
 from rsna_knee.full_backbone import ResNet18FullBackboneStudyModel
 from rsna_knee.replicated_masked_loss import replica_masked_bce
+from rsna_knee.tpu_pilot_checkpoint import validate_pilot_checkpoint
+from rsna_knee.tpu_pilot_state import restore_host_rng
 from rsna_knee.tpu_pilot_telemetry import PilotUpdateObservation, validate_rank_update
 
 
@@ -57,7 +60,8 @@ def validate_optimizer(model, optimizer, scheduler, before_step):
                 and state['step'].device.type == 'cpu' and state['step'].numel() == 1
                 and float(state['step']) == before_step
                 and state['exp_avg'].shape == state['exp_avg_sq'].shape == parameter.shape
-                and state['exp_avg'].dtype == state['exp_avg_sq'].dtype == torch.float32,
+                and state['exp_avg'].dtype == state['exp_avg_sq'].dtype == torch.float32
+                and state['exp_avg'].device == state['exp_avg_sq'].device == parameter.device,
                 'Complete original Adam moment shapes and exact CPU step scalar required')
 
 
@@ -131,7 +135,7 @@ class XlaPilotUpdate:
     def __init__(self, *, admitted_worker, expected_source_hashes):
         require(admitted_worker is True, 'Actual worker admission must precede backend initialization')
         require(expected_source_hashes and set(expected_source_hashes) == {
-            'torch_xla.core.xla_model', 'torch_xla.debug.metrics', 'torch_xla.backends', 'torch_xla.torch_xla'},
+            'torch_xla.core.xla_model', 'torch_xla.debug.metrics', 'torch_xla.backends', 'torch_xla.torch_xla', 'torch.optim.optimizer'},
             'All exact pinned backend API source hashes required')
         for name in ('XLA_USE_BF16','XLA_DOWNCAST_BF16','XLA_USE_FP16','XLA_DOWNCAST_FP16'):
             require(os.environ.get(name) in (None,'','0'), 'Reduced-precision environment fails the original FP32 pilot')
@@ -163,11 +167,60 @@ class XlaPilotUpdate:
         self.next_step = None
         self.failed_or_inflight = False
         self.last_update_evidence = None
+        self.checkpoint_restore_consumed = False
+        self.restored_checkpoint = None
 
     def graph_hash(self, tensors):
         value = self.xla._XLAC._get_graph_hash(tensors)
         require(isinstance(value, bytes) and len(value) in (16,32), 'Actual pinned phase graph hash required')
         return value.hex()
+
+    def restore_staged_checkpoint(self, model, packet, *, expected_identity, ordered_masks, expected_config):
+        """Use only in the newly admitted generation1 worker, before any update."""
+        require(not self.checkpoint_restore_consumed and self.worker_identity is None and self.next_step is None
+            and self.initialized_baseline is None and not self.failed_or_inflight,
+            'Fresh unused worker required; never restore twice or reuse a trained runtime')
+        validate_pilot_checkpoint(packet,expected_identity=expected_identity,ordered_masks=ordered_masks)
+        require(packet['path'] == 'staged' and packet['successful_steps'] == 8 and packet['worker_generation'] == 0,
+            'Only the original staged step8 checkpoint can enter fresh generation1')
+        require(type(model) is ResNet18FullBackboneStudyModel and packet['config'] == expected_config
+            and model.config.to_dict() == expected_config['model']
+            and all(p.device.type == 'cpu' and p.dtype == torch.float32 and p.requires_grad for p in model.parameters()),
+            'Exact registered config and original fresh CPU full-backbone model required')
+        current = model.state_dict()
+        restored = packet['model_state_dict']
+        names = [[f'encoder.{name}' for name,_ in model.encoder.named_parameters()],
+            [f'head.{name}' for name,_ in model.head.named_parameters()]]
+        require(names == packet['parameter_names'] and current.keys() == restored.keys()
+            and getattr(current,'_metadata',None) == getattr(restored,'_metadata',None)
+            and all(current[name].shape == restored[name].shape and current[name].dtype == restored[name].dtype for name in current),
+            'Original complete model architecture, buffers, metadata and parameter order required before mutation')
+        # Everything is validated before consuming the only restore. A failure
+        # during device transfer/state loading remains consumed, with no retry.
+        self.checkpoint_restore_consumed = True
+        model.load_state_dict(restored,strict=True)
+        model.to(self.device)
+        # Construct groups after device transfer so the optimizer cannot retain
+        # stale CPU Parameter objects. The pinned loader casts moments to their
+        # corresponding parameters while ordinary Adam's step stays on CPU.
+        optimizer = original_adam(model)
+        scheduler = original_scheduler(optimizer)
+        optimizer.load_state_dict(deepcopy(packet['optimizer_state_dict']))
+        scheduler.load_state_dict(deepcopy(packet['scheduler_state_dict']))
+        validate_optimizer(model,optimizer,scheduler,8)
+        model.train()
+        self.normalization = {name:value.detach().clone() for name,value in model.named_buffers()
+            if name.endswith(('running_mean','running_var','num_batches_tracked'))}
+        self.xla.sync(wait=True)
+        # Restore RNG only after model construction, transfer, state loading and
+        # normalization initialization have completed. Queue no further work.
+        rng = packet['rank_rng_states'][self.rank]
+        self.xm.set_rng_state(rng['xla_seed'],device=self.device)
+        require(self.xm.get_rng_state(device=self.device) == rng['xla_seed'], 'Actual device RNG restore failed')
+        restore_host_rng(rng['host'])
+        self.restored_checkpoint = dict(identity=dict(expected_identity),rank=self.rank,successful_steps=8)
+        return model,optimizer,scheduler,dict(restored_successful_steps=8,next_batch_index=8,rank=self.rank,
+            fresh_worker_generation=1,actual_complete_pilot_verified=False,competition_submission=False,candidate_promotion=False)
 
     def update(self, model, optimizer, scheduler, replica, *, path, successful_step, worker_generation):
         require(path in ('continuous','staged') and type(successful_step) is int and successful_step in range(1,17)
@@ -178,6 +231,12 @@ class XlaPilotUpdate:
         require((self.worker_identity is None and successful_step == start)
             or (self.worker_identity == identity and successful_step == self.next_step),
             'Fresh worker must execute its original consecutive prefix without retry or path reuse')
+        if worker_generation == 1:
+            require(self.restored_checkpoint is not None and self.checkpoint_restore_consumed
+                and self.restored_checkpoint['rank'] == self.rank and self.restored_checkpoint['successful_steps'] == 8,
+                'Successful exact fresh staged checkpoint restoration required before generation1 training')
+        elif self.checkpoint_restore_consumed:
+            require(False, 'Restored worker belongs only to the fresh staged generation')
         require(replica.rank == self.rank and next(model.parameters()).device == self.device,
                 'Original input rank and model device must match actual worker')
         validate_optimizer(model,optimizer,scheduler,successful_step-1)

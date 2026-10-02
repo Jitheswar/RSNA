@@ -60,7 +60,7 @@ def test_changed_original_scope_rejected(defect):
 
 @pytest.mark.parametrize('defect', ['unadmitted', 'missing_sources', 'low_precision'])
 def test_backend_initialization_fails_before_any_XLA_import(monkeypatch, defect):
-    hashes = {k:'a'*64 for k in ('torch_xla.core.xla_model','torch_xla.debug.metrics','torch_xla.backends','torch_xla.torch_xla')}
+    hashes = {k:'a'*64 for k in ('torch_xla.core.xla_model','torch_xla.debug.metrics','torch_xla.backends','torch_xla.torch_xla','torch.optim.optimizer')}
     admitted = True
     if defect == 'unadmitted': admitted = False
     if defect == 'missing_sources': hashes = {}
@@ -122,6 +122,7 @@ def test_unknown_graph_hash_cannot_be_replaced_by_synthetic_success():
 def test_worker_prefix_or_consumed_failure_rejected_before_any_backend_work(defect):
     backend = object.__new__(update.XlaPilotUpdate)
     backend.failed_or_inflight = defect == 'consumed_failure'
+    backend.checkpoint_restore_consumed = False;backend.restored_checkpoint = None
     backend.worker_identity = None
     backend.next_step = None
     path,step,generation = 'continuous',1,0
@@ -204,6 +205,7 @@ def test_failed_collective_pre_guard_leaves_original_parameters_adam_and_schedul
         next(m.parameters()).register_hook(lambda gradient: torch.full_like(gradient,float('nan')))
     backend = object.__new__(update.XlaPilotUpdate)
     backend.device = torch.device('cpu');backend.rank = 0
+    backend.checkpoint_restore_consumed = False;backend.restored_checkpoint = None
     backend.normalization = backend.initialized_baseline = backend.worker_identity = backend.next_step = None
     backend.failed_or_inflight = False;backend.last_update_evidence = None
     reductions = []
