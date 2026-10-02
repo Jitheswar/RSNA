@@ -54,6 +54,11 @@ weight search and preserves the .936 scored anchor.
 
 - [x] Freeze one prospective candidate and diagnostics before final full outcomes.
 - [x] Bind the verified exact scored anchor and complete unchanged training route.
+- [x] Prepare immutable metrics/input/worker sources and a guarded native-completion waiter.
 - [ ] Admit complete genuine final/native inputs and distinct bounded CPU analysis.
 - [ ] Compute and independently reproduce every fixed comparison and gate.
 - [ ] If gates pass, prepare and validate the exact offline candidate before scoring.
+
+## Comments
+
+October2: prepared-only plan187599d49ac25b90fd9fdd5c8dcf830c115481cbb59916771c94bc53edaa6470 binds46 local modules/98 source files. New metrics/native input/CPU worker ready.28 guards and projectmypy88 pass; source hashes revalidated. Frozen lifecycle3b21a40d7ad2d7cfd0683d87e61a316da76feede83f3092f455bfbb77516c665, live rsna-ticket74-await-native-inputs-v1.service waits for actual T73/native completion before fresh fullroute admission. No analysis resource/input admission or scoring. Final/native/source receipts and originalgate required. Future additional7200CPU-node seconds+100MB, no consumedT71 reserve reuse. Six completed experiment future-storage bounds can be released only after genuine proof; actualdu retains allfiles/seventhconditionalfinalfit/delivery/review. Whole remainingcalendar309600seconds afterfits/nativecomplete; freshfreeze/storageguard enforced. Evidence docs/evidence/ticket-74-full-backbone-anchor-analysis.md.
