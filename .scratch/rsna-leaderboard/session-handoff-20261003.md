@@ -52,3 +52,16 @@ longer the main path to rank.
   vs public v2 0.887 — **rejected**; the Kaggle labelling kernel was superseded by a no-op v2.
 - Inference: `scripts/fast/infer.py` + vendored `rsna_prep` package (`artifacts/private/fast-v1/model-pkg`),
   end-to-end CPU test passed; inference volumes byte-identical to training volumes.
+
+## Update (≈08:45 UTC) — training moved to cluster CPU
+
+- Owner stopped Kaggle training (GPU quota: 21,600 s/week, 20,186 used, refresh Oct 10; TPU 72,000 s unused).
+  All Kaggle training kernels deleted; reservations 0. Submission 56788419 still scoring.
+- Kaggle fp16 GPU runs collapsed (pred std ≈1e-4). Fixed: CNN-only autocast, LR 1e-4/3e-4, 10% warmup,
+  collapse guard. CPU fp32 overfit check learns; TPU fixed-shape trainer `train_tpu.py` built (forward parity 2.4e-7), unused.
+- CPU array **8189_0..4** (nodes 5/7/8/9/10, 64 cores, bf16 encoder autocast) → `artifacts/private/fast-v1/run3-cpu`.
+  Epoch 0 (72 min each): weak AUC 0.708–0.734, pred std 0.07–0.12. GPU backup array 8186 queued → `run2`.
+- `scripts/fast/eval_blend.py`: epoch-0 pooled Gold58 ours 0.623, anchor 0.9532; every rank-blend weight
+  0.05–0.30 is negative with CI below zero. **Blend only if the final OOF gives a non-negative CI.**
+- Fail-safe blended notebook prepared (`notebooks/blend/build.py`): public 0.946 + appended leg, verified
+  locally (blend path; broken-model path keeps public CSV byte-identical). Needs dataset `jitheswar/rsna-fast-model`.
