@@ -30,10 +30,18 @@ def load_jsonl(path):
     return rows
 
 
+def _num(v, default):
+    try:
+        x = float(v)
+        return x if np.isfinite(x) else default
+    except (TypeError, ValueError):
+        return default
+
+
 def to_frames(rows):
-    uids = list(rows)
-    p = np.array([[float(rows[u][t].get("p", 50)) / 100.0 for t in TARGETS] for u in uids])
-    g = np.array([[float(rows[u][t].get("g", -1)) for t in TARGETS] for u in uids])
+    uids = [u for u in rows if all(isinstance(rows[u].get(t), dict) for t in TARGETS)]
+    p = np.array([[_num(rows[u][t].get("p", 50), 50.0) / 100.0 for t in TARGETS] for u in uids])
+    g = np.array([[_num(rows[u][t].get("g", -1), -1.0) for t in TARGETS] for u in uids])
     side = [rows[u].get("side", "unknown") for u in uids]
     postop = [bool(rows[u].get("postop", False)) for u in uids]
     P = pd.DataFrame(np.clip(p, 0.0, 1.0), index=uids, columns=TARGETS)

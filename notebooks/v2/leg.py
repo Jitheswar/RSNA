@@ -4,7 +4,8 @@ import numpy as np, pandas as pd
 V2_WEIGHT = __WEIGHT__          # pre-fixed blend weight for our models (rank space)
 V2_ONLY = __ONLY__              # True -> submit our models alone (no baseline)
 _t0 = time.time()
-_pkg = [p for p in glob.glob('/kaggle/input/**/kaggle_infer.py', recursive=True) if 'rsna-v2' in p]
+_pkg = [p for pat in ('/kaggle/input/*/kaggle_infer.py', '/kaggle/input/*/*/kaggle_infer.py', '/kaggle/input/datasets/*/*/kaggle_infer.py', '/kaggle/input/datasets/*/*/*/kaggle_infer.py')
+        for p in glob.glob(pat) if 'rsna-v2' in p]
 _comp = [p for p in [os.environ.get('RSNA_COMP_ROOT', ''), '/kaggle/input/competitions/rsna-knee-abnormality-detection', '/kaggle/input/rsna-knee-abnormality-detection'] if os.path.exists(os.path.join(p, 'test.csv'))][0]
 _base_path = '/kaggle/working/submission.csv'
 TARGETS = ['ACL','MCL','Medial Meniscus','Lateral Meniscus','Medial OA','Lateral OA','PF OA','Effusion','Synovitis',"Baker's",'Contusion','Fracture']
@@ -15,7 +16,7 @@ except Exception:
     pass
 try:
     pkg = os.path.dirname(_pkg[0])
-    models = sorted(glob.glob(os.path.join(pkg, "**", "*.pt"), recursive=True))
+    models = sorted(glob.glob(os.path.join(pkg, "*.pt")) + glob.glob(os.path.join(pkg, "*", "*.pt")))
     print('v2 package', pkg, len(models), 'models', flush=True)
     cmd = [sys.executable, os.path.join(pkg, 'kaggle_infer.py'), '--comp', _comp, '--models', *models,
            '--out', '/kaggle/working/v2_preds.csv', '--workers', '4', '--fp16']

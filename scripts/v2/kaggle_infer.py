@@ -111,7 +111,7 @@ def prepare_study(args):
     return study, out, time.time() - t0
 
 
-def study_tensors(vols, series_meta, n_series, k):
+def study_tensors(vols, series_meta, n_series, k, shift=0.0):
     """Build model inputs from prepared volumes using the training-time (deterministic) selection."""
     from data import choose_series, slice_indices, series_type, PRIORITY
     rank = {t: i for i, t in enumerate(PRIORITY)}
@@ -133,6 +133,9 @@ def study_tensors(vols, series_meta, n_series, k):
             vol = vols[row.SeriesInstanceUID][0]
             D = vol.shape[0]
             idx = slice_indices(D, K, None)
+            if shift:
+                step = 0.92 * (D - 1) / max(K - 1, 1)
+                idx = np.clip(np.rint(idx + shift * step), 0, D - 1).astype(int)
             trip = np.stack([np.clip(idx - 1, 0, D - 1), idx, np.clip(idx + 1, 0, D - 1)], 1)
             x[j] = vol[trip]
             types[j] = int(row.stype)
@@ -151,6 +154,7 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--fp16", action="store_true")
+    ap.add_argument("--tta", type=int, default=1, help="1 = none; 2 = add a half-step slice-offset pass")
     args = ap.parse_args()
     import torch
     from model import KneeNet
@@ -199,29 +203,35 @@ def main():
             per_model = []
             with torch.no_grad():
                 inputs = {}
+                shifts = [0.0, 0.5][: max(1, args.tta)]
                 for kk in Ks:
-                    x, types, pos, present = study_tensors(vols, smeta, S, kk)
-                    inputs[kk] = (torch.from_numpy(x)[None].to(dev), torch.from_numpy(types)[None].to(dev),
-                                  torch.from_numpy(pos)[None].to(dev), torch.from_numpy(present)[None].to(dev))
+                    for sh in shifts:
+                        x, types, pos, present = study_tensors(vols, smeta, S, kk, shift=sh)
+                        inputs[(kk, sh)] = (torch.from_numpy(x)[None].to(dev), torch.from_numpy(types)[None].to(dev),
+                                            torch.from_numpy(pos)[None].to(dev), torch.from_numpy(present)[None].to(dev))
                 for net, a in zip(models[dev], cfgs):
-                    x, types, pos, present = inputs[a["k"]]
-                    if a["n_series"] < S:
-                        x, types, pos, present = x[:, :a["n_series"]], types[:, :a["n_series"]], pos[:, :a["n_series"]], present[:, :a["n_series"]]
-                    if present.sum() == 0:
-                        per_model.append(np.full(12, np.nan, np.float32))
-                        continue
-                    img = a.get("img", 384)
-                    xx = x
-                    if img != x.shape[-1]:
-                        B_, S_, K_, C_, H_, W_ = x.shape
-                        xx = torch.nn.functional.interpolate(x.view(-1, C_, H_, W_).float(), size=(img, img), mode="bilinear",
-                                                             align_corners=False).view(B_, S_, K_, C_, img, img)
-                    if args.fp16 and dev.type == "cuda":
-                        with torch.autocast("cuda", dtype=torch.float16):
-                            logits, _ = net(xx, types, pos.half(), present, micro=48)
-                    else:
-                        logits, _ = net(xx, types, pos, present, micro=48)
-                    per_model.append(torch.sigmoid(logits.float())[0].cpu().numpy())
+                    tta_probs = []
+                    for sh in shifts:
+                        x, types, pos, present = inputs[(a["k"], sh)]
+                        ns = a["n_series"]
+                        if ns < S:
+                            x, types, pos, present = x[:, :ns], types[:, :ns], pos[:, :ns], present[:, :ns]
+                        if present.sum() == 0:
+                            break
+                        img = a.get("img", 384)
+                        xx = x
+                        if img != x.shape[-1]:
+                            B_, S_, K_, C_, H_, W_ = x.shape
+                            xx = torch.nn.functional.interpolate(x.view(-1, C_, H_, W_).float(), size=(img, img),
+                                                                 mode="bilinear", align_corners=False
+                                                                 ).view(B_, S_, K_, C_, img, img)
+                        if args.fp16 and dev.type == "cuda":
+                            with torch.autocast("cuda", dtype=torch.float16):
+                                logits, _ = net(xx, types, pos.half(), present, micro=48)
+                        else:
+                            logits, _ = net(xx, types, pos, present, micro=48)
+                        tta_probs.append(torch.sigmoid(logits.float())[0].cpu().numpy())
+                    per_model.append(np.mean(tta_probs, 0) if tta_probs else np.full(12, np.nan, np.float32))
             preds[study] = np.stack(per_model)
 
     threads = [threading.Thread(target=consumer, args=(d,), daemon=True) for d in devs]
