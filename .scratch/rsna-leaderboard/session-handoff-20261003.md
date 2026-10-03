@@ -118,3 +118,6 @@ w=0.05 −0.0003 [−0.0023,+0.0010], w≥0.10 negative. Not yet submission-wort
 3. When a run's blend CI is non-negative, build `notebooks/blend/build.py <w> rsna-knee-d4-fastblend` (baseline
    public0946), upload model package as dataset `jitheswar/rsna-fast-model` (infer.py, train.py, rsna_prep/,
    models/fold*.pt), push, submit. Kaggle GPU quota: ~23 min left until Oct 10 → one visible run.
+- Correction 18:00 UTC: 320 px rebuild runs ~3.5 series/s → finishes ≈20:00 UTC (not 35 min).
+- Old superseded coordinator `rsna-ticket73-configured-continuation-v4.service` still launches CPU jobs (e.g. 8236);
+  stop it (`systemctl --user stop ...`) if the capacity is needed. Its outputs are not part of the fast lane.
