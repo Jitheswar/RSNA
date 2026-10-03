@@ -73,3 +73,12 @@ longer the main path to rank.
 - CPU folds after epoch 2: weak AUC 0.772–0.796; pooled Gold58 0.623 → 0.740 → **0.785**;
   w=0.05 rank blend with the 0.936 anchor now neutral (95% [-0.0016, +0.0015]).
 - Owner approved all resources. Kaggle TPU smoke `jitheswar/rsna-fast-tpu-smoke2` queued >2 h (no TPU free yet).
+
+## Direction (owner, ≈17:15 UTC) — publication framing
+
+The work also feeds a university paper. Public notebooks are **attributed baselines only** (current: fork of
+`yamadan96/rsna-knee-d4-public0946`, 0.943). Do not chase higher-scoring public notebooks. Every submission is
+baseline + our model; report baseline alone, ours alone (OOF + Gold58) and the blend at a weight fixed in advance,
+with bootstrap CIs. Keep negative results (Qwen3 relabelling, fp16 collapse) and parity evidence as paper material.
+- TPU v2 (`jitheswar/rsna-fast-tpu-v2`: ConvNeXt-Tiny, 24 slices, 15 epochs, 5 folds, in-session smoke) queued 17:06 UTC.
+  XLA logic verified in a torch_xla 2.8 container on the XLA CPU backend; mesh_reduce payload bug fixed first.
