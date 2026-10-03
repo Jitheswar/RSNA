@@ -42,3 +42,13 @@ longer the main path to rank.
   preprocessing, with a rank blend weight chosen on the gold58/OOF evidence; submit.
 - Larger levers: better report labels (local Qwen3-8B in `~/models`), higher-res/more slices,
   several backbones, pseudo-labelling the unlabeled test-like pool.
+
+## Update (≈05:00 UTC)
+
+- Dataset `jitheswar/rsna-fast-vols` ready. Kaggle `jitheswar/rsna-fast-train-f01` (folds 0,1; 10 epochs, 10.5 h guard) RUNNING.
+  `k23` pushes automatically via a background retry loop (log `artifacts/private/fast-v1/logs/push-k23.log`) once a GPU session frees.
+- Cluster: fold 4 full run job 8157 (`artifacts/private/fast-v1/run1`); smoke 8148 cancelled.
+- Qwen3-8B yes/no log-prob labels (`scripts/fast/llm_label.py`) on all 58 gold: 0.835 alone, 0.887 blended
+  vs public v2 0.887 — **rejected**; the Kaggle labelling kernel was superseded by a no-op v2.
+- Inference: `scripts/fast/infer.py` + vendored `rsna_prep` package (`artifacts/private/fast-v1/model-pkg`),
+  end-to-end CPU test passed; inference volumes byte-identical to training volumes.
