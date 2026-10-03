@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from data import TARGETS, StudyDataset, load_series_table  # noqa: E402
-from model import KneeNet, gpu_augment  # noqa: E402
+from model import KneeNet, center_zoom, gpu_augment  # noqa: E402
 
 
 def auc_macro(y, p, mask=None):
@@ -84,12 +84,14 @@ def collate(batch):
 
 
 @torch.no_grad()
-def predict(model, loader, dev, crop=None, micro=0):
+def predict(model, loader, dev, crop=None, micro=0, zoom=1.0):
     model.eval()
     preds, idxs = [], []
     for b in loader:
         x = b["x"].to(dev, non_blocking=True)
-        if crop and crop != x.shape[-1]:
+        if zoom != 1.0:
+            x = center_zoom(x, zoom, crop or x.shape[-1])
+        elif crop and crop != x.shape[-1]:
             B, S, K, C, H, W = x.shape
             x = F.interpolate(x.view(-1, C, H, W).float(), size=(crop, crop), mode="bilinear",
                               align_corners=False).view(B, S, K, C, crop, crop)
@@ -138,6 +140,7 @@ def main():
     ap.add_argument("--aux-grades", default="", help="grades CSV (LLM ordinal grades) -> auxiliary severity head")
     ap.add_argument("--aux-w", type=float, default=0.3)
     ap.add_argument("--no-lat-norm", action="store_true", help="ablation: undo laterality normalisation of left knees")
+    ap.add_argument("--zoom", type=float, default=1.0, help="central zoom factor (1.6 ~ 100 mm field)")
     ap.add_argument("--k-sag", type=int, default=0, help="per-plane slice counts (0 = use --k for all planes)")
     ap.add_argument("--k-cor", type=int, default=0)
     ap.add_argument("--k-ax", type=int, default=0)
@@ -249,7 +252,7 @@ def main():
             for it, b in enumerate(dl_tr):
                 x = b["x"].to(dev, non_blocking=True)
                 present = b["present"].to(dev)
-                x = gpu_augment(x, present, gen=gen, crop=args.img if args.img != x.shape[-1] else None)
+                x = gpu_augment(x, present, gen=gen, crop=args.img if args.img != x.shape[-1] else None, zoom=args.zoom)
                 y = b["y"].to(dev)
                 wg = w_gold[b["idx"]].to(dev)
                 with torch.autocast("cuda", dtype=torch.bfloat16):
@@ -282,7 +285,8 @@ def main():
             rec = {"fold": fold, "epoch": epoch, "loss": run_loss / max(nb, 1), "train_s": time.time() - t0}
             if dl_va is not None:
                 ema.swap(model)
-                p, idx = predict(model, dl_va, dev, crop=args.img if args.img != 384 else None, micro=args.micro)
+                p, idx = predict(model, dl_va, dev, crop=args.img if args.img != 384 else None, micro=args.micro,
+                                 zoom=args.zoom)
                 ema.restore(model)
                 yv = Yt[va_idx][idx]
                 wk_y = (yv > 0.5).astype(int)

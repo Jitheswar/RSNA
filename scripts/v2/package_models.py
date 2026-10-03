@@ -27,6 +27,8 @@ for p in paths:
     name = f"{run}__{fold}__{Path(p).stem}.pt"
     keep_args = {k: ck["args"][k] for k in ["backbone", "d", "layers", "n_series", "k", "img"]}
     a = ck["args"]
+    if a.get("zoom", 1.0) != 1.0:
+        keep_args["zoom"] = a["zoom"]
     if a.get("k_sag") or a.get("k_cor") or a.get("k_ax"):
         keep_args["k_plane"] = {"Sagittal": a.get("k_sag") or a["k"], "Coronal": a.get("k_cor") or a["k"],
                                 "Axial": a.get("k_ax") or a["k"]}

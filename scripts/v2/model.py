@@ -99,7 +99,7 @@ class KneeNet(nn.Module):
 
 
 @torch.no_grad()
-def gpu_augment(x, present, gen=None, rot=10.0, scale=(0.9, 1.1), shift=0.06, crop=None):
+def gpu_augment(x, present, gen=None, rot=10.0, scale=(0.9, 1.1), shift=0.06, crop=None, zoom=1.0):
     """Per-series consistent random affine + intensity jitter on GPU. x uint8 [B,S,K,3,H,W] -> float."""
     B, S, K, C, H, W = x.shape
     dev = x.device
@@ -109,6 +109,7 @@ def gpu_augment(x, present, gen=None, rot=10.0, scale=(0.9, 1.1), shift=0.06, cr
     sc = torch.empty(n, device=dev).uniform_(scale[0], scale[1], generator=gen)
     tx = (torch.rand(n, device=dev, generator=gen) * 2 - 1) * shift
     ty = (torch.rand(n, device=dev, generator=gen) * 2 - 1) * shift
+    sc = sc * zoom  # zoom > 1 samples a central sub-window (higher effective resolution)
     cos, sin = torch.cos(ang) / sc, torch.sin(ang) / sc
     theta = torch.stack([torch.stack([cos, -sin, tx], 1), torch.stack([sin, cos, ty], 1)], 1)  # [n,2,3]
     theta = theta.repeat_interleave(K, 0)
@@ -123,3 +124,15 @@ def gpu_augment(x, present, gen=None, rot=10.0, scale=(0.9, 1.1), shift=0.06, cr
     imgs = (255.0 * (imgs / 255.0).clamp(0, 1) ** g) * c + b
     imgs = imgs.clamp(0, 255)
     return imgs.view(B, S, K, C, *out_hw)
+
+
+def center_zoom(x, zoom, out):
+    """Deterministic central zoom + resize for inference/validation. x float/uint8 [B,S,K,C,H,W] -> float."""
+    B, S, K, C, H, W = x.shape
+    th = torch.zeros(B * S * K, 2, 3, device=x.device)
+    th[:, 0, 0] = 1.0 / zoom
+    th[:, 1, 1] = 1.0 / zoom
+    grid = F.affine_grid(th, (B * S * K, C, out, out), align_corners=False)
+    y = F.grid_sample(x.reshape(B * S * K, C, H, W).float(), grid, mode="bilinear", padding_mode="zeros",
+                      align_corners=False)
+    return y.view(B, S, K, C, out, out)

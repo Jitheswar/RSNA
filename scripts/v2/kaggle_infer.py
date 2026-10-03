@@ -228,7 +228,10 @@ def main():
                             break
                         img = a.get("img", 384)
                         xx = x
-                        if img != x.shape[-1]:
+                        if a.get("zoom", 1.0) != 1.0:
+                            from model import center_zoom
+                            xx = center_zoom(x, a["zoom"], img)
+                        elif img != x.shape[-1]:
                             B_, S_, K_, C_, H_, W_ = x.shape
                             xx = torch.nn.functional.interpolate(x.view(-1, C_, H_, W_).float(), size=(img, img),
                                                                  mode="bilinear", align_corners=False
