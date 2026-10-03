@@ -40,11 +40,16 @@ def _stamp(path: Path) -> tuple[int,int,int,int,int]:
 
 
 class FrozenPilotInputBank:
-    def __init__(self, root: str | Path, *, expected_manifest_sha256: str) -> None:
+    def __init__(self, root: str | Path, *, expected_manifest_sha256: str, manifest_path: str | Path | None = None) -> None:
         self.root = Path(root).resolve()
         _require(_sha(expected_manifest_sha256), 'Exact admitted bank-manifest SHA required')
-        manifest_path = self.root/'input-bank-manifest.json'
-        _require(manifest_path.resolve().is_relative_to(self.root), 'Bank manifest must remain inside the admitted root')
+        explicit_sidecar = manifest_path is not None
+        manifest_path = Path(manifest_path).resolve() if manifest_path is not None else self.root/'input-bank-manifest.json'
+        # An explicitly hash-bound preparation sidecar can live outside the
+        # immutable original array directory; deployed banks use the default.
+        _require(manifest_path.is_file(), 'Exact bank manifest file required')
+        _require(explicit_sidecar or manifest_path.resolve().is_relative_to(self.root),
+            'Default bank manifest must remain inside the admitted bank')
         with manifest_path.open('rb') as stream:
             _require(hashlib.file_digest(stream,'sha256').hexdigest() == expected_manifest_sha256, 'Frozen bank manifest bytes changed')
             stream.seek(0);manifest = json.load(stream)

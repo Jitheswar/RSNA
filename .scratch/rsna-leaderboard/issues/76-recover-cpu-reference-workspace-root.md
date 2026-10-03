@@ -45,3 +45,5 @@ CPU intent/accepted job yet. Jobs8128 fold0/stage6 and8132 fold1/stage6 RUNNING.
 17focused tests and mypy93 PASS. Whole conservative finishOct9 11:47UTC and
 storage1791028146436B, no completed files deleted or old future reserves reused.
 Actual full reference completion remains pending. No daily scored submission.
+
+October3 IST: root correction passed actual launch; acceptedCPU8139 subsequently failed at separate JSON-to-Path interface before first array/model/update. Actual FAILED1:0/374nodeSec terminal retained, lifecycle stopped without retry. Root issue resolved operationally; full reference acceptance remains incomplete. New issue77 tracks separately bounded recovery and unchanged-science Path-only corrected worker, not a repeat of consumed v2 request.

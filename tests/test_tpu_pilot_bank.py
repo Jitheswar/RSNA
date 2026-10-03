@@ -112,3 +112,39 @@ def test_hash_bound_wrong_uncertainty_mask_dtype_rejected(bank_files):
         with pytest.raises(ValueError,match='dtype'): FrozenPilotInputBank(root,expected_manifest_sha256=save_manifest(root,manifest))
     finally:
         path.write_bytes(original_bytes);save_manifest(root,original_manifest)
+
+
+
+def test_external_hash_bound_sidecar_uses_unchanged_original_arrays(bank_files,tmp_path):
+    root,manifest = bank_files
+    original_sha = save_manifest(root,manifest)
+    sidecar_sha = save_manifest(tmp_path,manifest)
+    bank = FrozenPilotInputBank(root,manifest_path=tmp_path/'input-bank-manifest.json',expected_manifest_sha256=sidecar_sha)
+    assert bank.root == root.resolve()
+    assert bank.global_batch(0)['series_descriptors'][:,0,0].tolist() == [1.,2.,3.,4.]
+    assert bank.verify_final_bytes()['original_array_files'] == 384
+    assert digest(root/'input-bank-manifest.json') == original_sha
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['input-bank-manifest.json']
+
+
+def test_external_sidecar_wrong_hash_and_post_admission_change_rejected(bank_files,tmp_path):
+    root,manifest = bank_files
+    sha = save_manifest(tmp_path,manifest);path = tmp_path/'input-bank-manifest.json'
+    with pytest.raises(ValueError,match='manifest bytes changed'):
+        FrozenPilotInputBank(root,manifest_path=path,expected_manifest_sha256='0'*64)
+    bank = FrozenPilotInputBank(root,manifest_path=path,expected_manifest_sha256=sha)
+    path.write_bytes(path.read_bytes()+b' ')
+    with pytest.raises(ValueError,match='metadata changed'): bank.global_batch(0)
+    with pytest.raises(ValueError,match='metadata changed'): bank.verify_final_bytes()
+
+
+def test_default_manifest_symlink_cannot_escape_bank(bank_files,tmp_path):
+    root,manifest = bank_files
+    original_sha = save_manifest(root,manifest);path = root/'input-bank-manifest.json'
+    save_manifest(tmp_path,manifest)
+    try:
+        path.unlink();path.symlink_to(tmp_path/'input-bank-manifest.json')
+        with pytest.raises(ValueError,match='Default bank manifest must remain inside'):
+            FrozenPilotInputBank(root,expected_manifest_sha256=original_sha)
+    finally:
+        path.unlink();save_manifest(root,manifest)
