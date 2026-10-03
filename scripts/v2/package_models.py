@@ -14,6 +14,8 @@ out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 for f in ["prep.py", "data.py", "model.py", "kaggle_infer.py"]:
     shutil.copy(Path("scripts/v2") / f, out / f)
+if Path("artifacts/private/v2/lat_clf.pt").exists():
+    shutil.copy("artifacts/private/v2/lat_clf.pt", out / "lat_clf.bin")
 paths = []
 for c in args.ckpts:
     paths += sorted(glob.glob(c))

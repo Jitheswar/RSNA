@@ -29,6 +29,46 @@ TARGETS = ["ACL", "MCL", "Medial Meniscus", "Lateral Meniscus", "Medial OA", "La
            "Effusion", "Synovitis", "Baker's", "Contusion", "Fracture"]
 
 
+_LAT = None
+
+
+def _lat_model():
+    """Anatomical laterality checker (resnet18, CPU) shipped as lat_clf.pt next to this file; None if absent."""
+    global _LAT
+    if _LAT is None:
+        path = os.path.join(HERE, "lat_clf.bin")
+        if not os.path.exists(path):
+            _LAT = False
+        else:
+            import torch
+            import torch.nn as nn
+            import torchvision
+            torch.set_num_threads(1)
+            m = torchvision.models.resnet18(num_classes=1)
+            m.conv1 = nn.Conv2d(3, 64, 7, 2, 3, bias=False)
+            m.load_state_dict(torch.load(path, map_location="cpu"))
+            _LAT = m.eval()
+    return _LAT or None
+
+
+def check_flip(out, side_src):
+    """True if the study should be re-flipped: checker p>0.5 for weak geometry, p>0.99 for tag/geometry."""
+    import torch
+    import torch.nn.functional as F
+    model = _lat_model()
+    cor = [(v.shape[0], v) for v, info in out.values() if info["plane"] == "Coronal"]
+    if model is None or not cor:
+        return False
+    vol = max(cor, key=lambda t: t[0])[1]
+    D = vol.shape[0]
+    idx = np.linspace(0.45 * (D - 1), 0.85 * (D - 1), 3).round().astype(int)
+    x = torch.from_numpy(np.ascontiguousarray(vol[idx])).float() / 255.0
+    x = F.interpolate(x[:, None], size=(192, 192), mode="area")[:, 0][None]
+    with torch.no_grad():
+        p = torch.sigmoid(model(x)[0, 0]).item()
+    return p > (0.5 if side_src in ("weak-geometry", "unresolved") else 0.99)
+
+
 def prepare_study(args):
     """Read all DICOMs of one test study and return {series_uid: (uint8 vol, info)} plus timing."""
     import pydicom
@@ -56,6 +96,16 @@ def prepare_study(args):
                 out[se] = (vol, info)
             except Exception as exc:
                 print(f"prep fail {study}/{se}: {type(exc).__name__}: {exc}", flush=True)
+        if out:
+            try:
+                if check_flip(out, side_src):
+                    for se, (vol, info) in list(out.items()):
+                        vol = vol[::-1] if info["plane"] == "Sagittal" else vol[:, :, ::-1]
+                        info["lat_checker_flip"] = True
+                        out[se] = (np.ascontiguousarray(vol), info)
+                    print(f"laterality checker flipped {study}", flush=True)
+            except Exception as exc:
+                print(f"laterality check failed {study}: {exc}", flush=True)
     except Exception as exc:
         print(f"study fail {study}: {type(exc).__name__}: {exc}", flush=True)
     return study, out, time.time() - t0
