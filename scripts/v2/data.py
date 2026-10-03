@@ -79,7 +79,7 @@ def slice_indices(depth: int, k: int, rng: np.random.Generator | None, lo=0.04, 
 class StudyDataset(Dataset):
     def __init__(self, studies, meta: pd.DataFrame, vol_dir: str, labels: np.ndarray | None,
                  n_series=6, k=16, train=False, seed=0, aux: np.ndarray | None = None, series_drop=0.15,
-                 unnorm_lat: dict | None = None, k_plane: dict | None = None):
+                 unnorm_lat: dict | None = None, k_plane: dict | None = None, random_pos: bool = False):
         self.studies = list(studies)
         self.by_study = {s: g for s, g in meta.groupby("StudyInstanceUID")}
         self.vol_dir = vol_dir
@@ -90,6 +90,7 @@ class StudyDataset(Dataset):
         self.series_drop = series_drop
         self.unnorm_lat = unnorm_lat or {}  # study -> True: undo laterality normalisation (ablation)
         self.k_plane = k_plane or {}  # per-plane slice counts, e.g. {"Sagittal": 20, "Coronal": 12, "Axial": 10}
+        self.random_pos = random_pos  # training bag sampling: random window centres instead of an even grid
         self.epoch = 0
 
     def __len__(self):
@@ -111,7 +112,12 @@ class StudyDataset(Dataset):
             vol = np.load(f"{self.vol_dir}/{row.SeriesInstanceUID}.npy", mmap_mode="r")
             D = vol.shape[0]
             Kp = int(self.k_plane.get(row.plane, self.k)) if self.k_plane else K
-            idx = slice_indices(D, Kp, rng)
+            if self.random_pos and rng is not None:
+                lo_c, hi_c = max(1, int(0.03 * (D - 1))), min(D - 2, int(np.ceil(0.97 * (D - 1))))
+                cand = np.arange(lo_c, max(lo_c, hi_c) + 1)
+                idx = np.sort(rng.choice(cand, size=Kp, replace=len(cand) < Kp))
+            else:
+                idx = slice_indices(D, Kp, rng)
             trip = np.stack([np.clip(idx - 1, 0, D - 1), idx, np.clip(idx + 1, 0, D - 1)], 1)  # [Kp,3]
             uniq, inv = np.unique(trip, return_inverse=True)
             block = np.asarray(vol[uniq])  # [U,H,W]

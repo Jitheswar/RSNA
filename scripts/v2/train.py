@@ -141,6 +141,13 @@ def main():
     ap.add_argument("--aux-w", type=float, default=0.3)
     ap.add_argument("--no-lat-norm", action="store_true", help="ablation: undo laterality normalisation of left knees")
     ap.add_argument("--zoom", type=float, default=1.0, help="central zoom factor (1.6 ~ 100 mm field)")
+    ap.add_argument("--head", default="tf", choices=["tf", "mil"])
+    ap.add_argument("--pos-weight", action="store_true", help="BCE pos_weight = clip((1-prev)/prev, 1, 10)")
+    ap.add_argument("--aug", default="full", choices=["full", "light", "none"])
+    ap.add_argument("--random-pos", action="store_true", help="bag sampling: random window centres in training")
+    ap.add_argument("--ktr-sag", type=int, default=0, help="training per-plane window counts (default = eval counts)")
+    ap.add_argument("--ktr-cor", type=int, default=0)
+    ap.add_argument("--ktr-ax", type=int, default=0)
     ap.add_argument("--k-sag", type=int, default=0, help="per-plane slice counts (0 = use --k for all planes)")
     ap.add_argument("--k-cor", type=int, default=0)
     ap.add_argument("--k-ax", type=int, default=0)
@@ -189,6 +196,9 @@ def main():
     k_plane = None
     if args.k_sag or args.k_cor or args.k_ax:
         k_plane = {"Sagittal": args.k_sag or args.k, "Coronal": args.k_cor or args.k, "Axial": args.k_ax or args.k}
+    k_plane_tr = k_plane
+    if args.ktr_sag or args.ktr_cor or args.ktr_ax:
+        k_plane_tr = {"Sagittal": args.ktr_sag or args.k, "Coronal": args.ktr_cor or args.k, "Axial": args.ktr_ax or args.k}
     run_folds = [-1] if args.full else [int(f) for f in args.folds.split(",")]
     for fold in run_folds:
         lab = labels_for(fold if fold >= 0 else 0)
@@ -211,7 +221,7 @@ def main():
             unnorm = {s: ((v == "L") != (s in flipped)) for s, v in sides.items()}
         ds_tr = StudyDataset([studies[i] for i in tr_idx], meta, args.vol_dir, Yt[tr_idx], n_series=args.n_series,
                              k=args.k, train=True, seed=args.seed + fold, aux=AUX[tr_idx] if AUX is not None else None,
-                             unnorm_lat=unnorm, k_plane=k_plane)
+                             unnorm_lat=unnorm, k_plane=k_plane_tr, random_pos=args.random_pos)
         ds_va = StudyDataset([studies[i] for i in va_idx], meta, args.vol_dir, Yt[va_idx], n_series=args.n_series,
                              k=args.k, train=False, unnorm_lat=unnorm, k_plane=k_plane)
         dl_tr = DataLoader(ds_tr, batch_size=args.bs, shuffle=True, num_workers=args.workers, collate_fn=collate,
@@ -222,7 +232,12 @@ def main():
         w_gold = torch.tensor(np.where(is_gold[tr_idx], args.gold_weight, 1.0), dtype=torch.float32)
 
         model = KneeNet(args.backbone, d=args.d, n_layers=args.layers, drop_path=args.drop_path,
-                        grad_ckpt=args.grad_ckpt, n_aux=12 if AUX is not None else 0).to(dev)
+                        grad_ckpt=args.grad_ckpt, n_aux=12 if AUX is not None else 0, head=args.head).to(dev)
+        pw = None
+        if args.pos_weight:
+            prev = np.clip(Yt[tr_idx].mean(0), 0.03, 0.7)
+            pw = torch.tensor(np.clip((1 - prev) / prev, 1, 10), dtype=torch.float32, device=dev)
+            print("pos_weight", np.round(pw.cpu().numpy(), 2).tolist(), flush=True)
         model.enc.to(memory_format=torch.channels_last)
         enc_params = list(model.enc.parameters())
         enc_ids = {id(p) for p in enc_params}
@@ -252,13 +267,19 @@ def main():
             for it, b in enumerate(dl_tr):
                 x = b["x"].to(dev, non_blocking=True)
                 present = b["present"].to(dev)
-                x = gpu_augment(x, present, gen=gen, crop=args.img if args.img != x.shape[-1] else None, zoom=args.zoom)
+                if args.aug == "full":
+                    x = gpu_augment(x, present, gen=gen, crop=args.img if args.img != x.shape[-1] else None, zoom=args.zoom)
+                elif args.aug == "light":
+                    x = gpu_augment(x, present, gen=gen, crop=args.img if args.img != x.shape[-1] else None, zoom=args.zoom,
+                                    rot=4.0, scale=(0.95, 1.05), shift=0.03)
+                else:
+                    x = center_zoom(x, args.zoom, args.img)
                 y = b["y"].to(dev)
                 wg = w_gold[b["idx"]].to(dev)
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     logits, aux_logits = model(x, b["types"].to(dev), b["pos"].to(dev), present, micro=args.micro,
                                                smask=b["smask"].to(dev))
-                loss = F.binary_cross_entropy_with_logits(logits.float(), y, reduction="none").mean(1)
+                loss = F.binary_cross_entropy_with_logits(logits.float(), y, reduction="none", pos_weight=pw).mean(1)
                 loss = (loss * wg).sum() / wg.sum()
                 if aux_logits is not None and "aux" in b:
                     a = b["aux"].to(dev)

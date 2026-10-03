@@ -62,3 +62,16 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Rehearsal v1 failed in A5 stage (sim sample_submission mismatch) after DINOv2 stage = 2,600 s for 1,300 studies;
   v2 pushed with fixed sim. Kaggle GPU quota 23.7 h left.
 - Auto: make_teachers.sh fires when Qwen labelling finishes (scratchpad/auto_teachers.sh).
+
+## 2026-10-04 04:40 IST (after usage-limit pause)
+- FIRST v2 LB: 1-fold ConvNeXt-S 320 public labels = **0.896** (sub 56806371); matches its fold gold AUC ~0.89 -> no
+  test-time bug; recipe is weak vs public single-fold CoAtNet (~0.937-0.95).
+- Public recipe (dreaddevelopment knee-mri-training-the-twelve-finding-model): 12 RANDOM 3-slice windows/study in
+  training (24 eval), attention-MIL head, bb_lr 3e-5 / head 1e-3 OneCycle, BCE pos_weight, NO spatial aug,
+  CoAtNet-2 384, 140 mm crop, top-3 epoch averaging.
+- Implemented: --random-pos (bag sampling) + --ktr-* (train windows) / --k-* (eval), --head mil, --pos-weight,
+  --aug {full,light,none}, --zoom (1.14 ~ 140 mm).
+- Teachers (old recipe) paused -> queue/hold. Running fold-0 experiments: E1 coat384 new recipe + public labels,
+  E2 same + cal_v1 labels.
+- Gemma-4 labels done (raw AUC 0.842); adds nothing to calibration (LOO ll 0.389). sol61 1,650/4,407 (resume 05:02).
+- Workers: 8250, 8254 running (8249 exited idle); 8258 queued.

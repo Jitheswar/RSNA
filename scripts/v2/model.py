@@ -24,8 +24,9 @@ class GeM(nn.Module):
 
 class KneeNet(nn.Module):
     def __init__(self, backbone: str, n_targets=12, d=384, n_layers=2, n_heads=8, dropout=0.1,
-                 pretrained=True, drop_path=0.1, n_aux=0, grad_ckpt=False):
+                 pretrained=True, drop_path=0.1, n_aux=0, grad_ckpt=False, head="tf"):
         super().__init__()
+        self.head_type = head
         kw = {"drop_path_rate": drop_path} if drop_path else {}
         self.enc = timm.create_model(backbone, pretrained=pretrained, num_classes=0, global_pool="", **kw)
         if grad_ckpt:
@@ -42,6 +43,8 @@ class KneeNet(nn.Module):
         self.queries = nn.Parameter(torch.randn(n_targets, d) * 0.02)
         self.xattn = nn.MultiheadAttention(d, n_heads, dropout=dropout, batch_first=True)
         self.qnorm = nn.LayerNorm(d)
+        if head == "mil":  # per-finding gated attention-MIL over window tokens (no transformer)
+            self.mil_att = nn.Sequential(nn.Linear(d, 256), nn.Tanh(), nn.Dropout(0.2), nn.Linear(256, n_targets))
         self.head_w = nn.Parameter(torch.randn(n_targets, d) * 0.02)
         self.head_b = nn.Parameter(torch.zeros(n_targets))
         self.n_aux = n_aux
@@ -86,11 +89,17 @@ class KneeNet(nn.Module):
         if allpad.any():  # never let a study attend to nothing
             pad = pad.clone()
             pad[allpad, 0] = False
-        h = self.norm(self.tf(tok, src_key_padding_mask=pad))
-        q = self.queries.unsqueeze(0).expand(B, -1, -1)
-        ctx, _ = self.xattn(q, h, h, key_padding_mask=pad)
-        ctx = self.qnorm(ctx + q)
-        logits = (ctx * self.head_w).sum(-1) + self.head_b
+        if self.head_type == "mil":
+            h = self.norm(tok)
+            a = self.mil_att(h).float().masked_fill(pad.unsqueeze(-1), float("-inf")).softmax(1)  # [B,T,12]
+            ctx = torch.einsum("btn,btd->bnd", a, h.float())
+            logits = (ctx * self.head_w).sum(-1) + self.head_b
+        else:
+            h = self.norm(self.tf(tok, src_key_padding_mask=pad))
+            q = self.queries.unsqueeze(0).expand(B, -1, -1)
+            ctx, _ = self.xattn(q, h, h, key_padding_mask=pad)
+            ctx = self.qnorm(ctx + q)
+            logits = (ctx * self.head_w).sum(-1) + self.head_b
         if self.n_aux:
             m = (~pad).float().unsqueeze(-1)
             pooled = (h * m).sum(1) / m.sum(1).clamp(min=1)
