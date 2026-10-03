@@ -97,6 +97,8 @@ def main():
     ap.add_argument("--sources", nargs="+", default=["sol61"])
     ap.add_argument("--pub-weight", type=float, default=0.0)
     ap.add_argument("--out", default="")
+    ap.add_argument("--fold-specific", action="store_true",
+                    help="also write <out>_f{k}.csv calibrated without fold k's gold studies (leak-free OOF gold eval)")
     args = ap.parse_args()
     tr = pd.read_csv(V2 / "train.csv").set_index("StudyInstanceUID")
     gold = tr[tr.ACL.notna()][TARGETS].astype(int)
@@ -131,6 +133,18 @@ def main():
         lab.index.name = "StudyInstanceUID"
         lab.reset_index().to_csv(V2 / args.out, index=False)
         print(f"wrote {args.out}: {len(lab)} rows, {int(miss.sum())} from fallback; means", lab.mean().round(3).to_dict())
+        if args.fold_specific:
+            folds = pd.read_csv(V2 / "folds.csv").set_index("StudyInstanceUID")["fold"]
+            for k in sorted(folds.unique()):
+                g_k = gold[folds.reindex(gold.index).values != k]
+                cals = calibrate(sources, g_k, all_uids)
+                lk = combine(cals, pub, args.pub_weight)
+                miss = lk.isna().any(axis=1)
+                lk[miss] = fb[miss]
+                lk.index.name = "StudyInstanceUID"
+                path = V2 / args.out.replace(".csv", f"_f{k}.csv")
+                lk.reset_index().to_csv(path, index=False)
+                print("wrote", path.name, "gold used", len(g_k))
 
 
 if __name__ == "__main__":

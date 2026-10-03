@@ -68,6 +68,11 @@ class EMA:
             sd[k].copy_(v)
 
 
+def worker_init(_):
+    os.environ["OMP_NUM_THREADS"] = "1"
+    torch.set_num_threads(1)
+
+
 def collate(batch):
     out = {}
     for k in batch[0]:
@@ -142,7 +147,14 @@ def main():
     meta = load_series_table(sorted(glob.glob(args.meta)), args.series_csv)
     tr = pd.read_csv(args.train_csv)
     folds = pd.read_csv(args.folds_csv).set_index("StudyInstanceUID")
-    lab = pd.read_csv(args.labels).set_index("StudyInstanceUID")
+    lab_tables = {}
+
+    def labels_for(fold):
+        path = args.labels.replace("{fold}", str(fold)) if "{fold}" in args.labels else args.labels
+        if path not in lab_tables:
+            lab_tables[path] = pd.read_csv(path).set_index("StudyInstanceUID")
+        return lab_tables[path]
+    lab = labels_for(0 if "{fold}" in args.labels else -1)
     studies = [s for s in tr.StudyInstanceUID if s in set(meta.StudyInstanceUID)]
     gold = tr.set_index("StudyInstanceUID").loc[studies, TARGETS]
     is_gold = gold.notna().all(1).values
@@ -156,6 +168,12 @@ def main():
 
     run_folds = [-1] if args.full else [int(f) for f in args.folds.split(",")]
     for fold in run_folds:
+        lab = labels_for(fold if fold >= 0 else 0)
+        Y = lab.reindex(studies)[TARGETS].values.astype(np.float32)
+        Y = np.where(np.isnan(Y), 0.1, Y)
+        Yt = np.where(is_gold[:, None], gold.values.astype(np.float32), Y)
+        if args.label_smooth:
+            Yt = Yt * (1 - args.label_smooth) + 0.5 * args.label_smooth
         torch.manual_seed(args.seed + fold)
         np.random.seed(args.seed + fold)
         out = out_root / ("full" if fold < 0 else f"fold{fold}")
@@ -167,9 +185,10 @@ def main():
         ds_va = StudyDataset([studies[i] for i in va_idx], meta, args.vol_dir, Yt[va_idx], n_series=args.n_series,
                              k=args.k, train=False)
         dl_tr = DataLoader(ds_tr, batch_size=args.bs, shuffle=True, num_workers=args.workers, collate_fn=collate,
-                           pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4)
+                           pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4,
+                           worker_init_fn=worker_init)
         dl_va = DataLoader(ds_va, batch_size=2, shuffle=False, num_workers=args.workers, collate_fn=collate,
-                           pin_memory=True) if len(va_idx) else None
+                           pin_memory=True, worker_init_fn=worker_init) if len(va_idx) else None
         w_gold = torch.tensor(np.where(is_gold[tr_idx], args.gold_weight, 1.0), dtype=torch.float32)
 
         model = KneeNet(args.backbone, d=args.d, n_layers=args.layers, drop_path=args.drop_path,
@@ -211,7 +230,7 @@ def main():
                 loss = F.binary_cross_entropy_with_logits(logits.float(), y, reduction="none").mean(1)
                 loss = (loss * wg).sum() / wg.sum()
                 (loss / args.accum).backward()
-                run_loss += loss.item()
+                run_loss_t = loss.detach() if nb == 0 else run_loss_t + loss.detach()
                 nb += 1
                 if (it + 1) % args.accum == 0:
                     set_lr(step)
@@ -221,10 +240,12 @@ def main():
                     ema.update(model)
                     step += 1
                     if step % 50 == 0:
+                        run_loss = float(run_loss_t)
                         print(f"fold {fold} ep {epoch} step {step}/{total} loss {run_loss / nb:.4f} "
                               f"{(time.time() - t0) / nb:.3f}s/it", flush=True)
                     if args.max_steps and step >= args.max_steps:
                         break
+            run_loss = float(run_loss_t) if nb else 0.0
             rec = {"fold": fold, "epoch": epoch, "loss": run_loss / max(nb, 1), "train_s": time.time() - t0}
             if dl_va is not None:
                 ema.swap(model)

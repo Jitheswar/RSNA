@@ -2,6 +2,7 @@
 # usage: train_task.sh <run_name> <extra train.py args...>   (copies volumes to node-local disk first)
 set -euo pipefail
 cd /home/ch.jitheswar/RSNA
+bash scripts/v2/gpu_clean.sh
 RUN=$1; shift
 LOCAL=/tmp/rsna_v2_$USER/vol384
 mkdir -p "$(dirname $LOCAL)"

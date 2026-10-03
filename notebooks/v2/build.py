@@ -9,6 +9,7 @@ from pathlib import Path
 here = Path(__file__).parent
 slug, weight = sys.argv[1], float(sys.argv[2])
 only = "--only" in sys.argv
+sim = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--sim=")), 0)
 leg = (here / "leg.py").read_text().replace("__WEIGHT__", str(weight)).replace("__ONLY__", str(only))
 base_dir = here.parent / "blend"
 if only:
@@ -22,6 +23,25 @@ else:
         f"Appended: our v2 models, rank-blended at a pre-fixed weight {weight}; any v2 failure keeps the baseline output.\n"]})
 nb["cells"].append({"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
                     "source": leg.splitlines(keepends=True)})
+if sim:
+    sim_src = f"""# REHEARSAL ONLY: simulate a hidden test of {sim} studies from train data (timing), never submitted
+import os, time, pandas as pd
+_SIM_T0 = time.time()
+_c = [p for p in ['/kaggle/input/competitions/rsna-knee-abnormality-detection', '/kaggle/input/rsna-knee-abnormality-detection'] if os.path.exists(p + '/train.csv')][0]
+_sim = '/tmp/simroot'; os.makedirs(_sim, exist_ok=True)
+_tr = pd.read_csv(_c + '/train.csv', dtype=str); _ser = pd.read_csv(_c + '/train_series.csv', dtype=str)
+_ids = _tr.StudyInstanceUID.sample({sim}, random_state=0)
+pd.DataFrame({{'StudyInstanceUID': _ids}}).to_csv(_sim + '/test.csv', index=False)
+_ser[_ser.StudyInstanceUID.isin(set(_ids))].to_csv(_sim + '/test_series.csv', index=False)
+for _n, _t in [('test_series', 'train_series'), ('train_series', 'train_series'), ('train.csv', 'train.csv'), ('train_series.csv', 'train_series.csv'), ('sample_submission.csv', 'sample_submission.csv')]:
+    if not os.path.exists(_sim + '/' + _n): os.symlink(_c + '/' + _t, _sim + '/' + _n)
+os.environ['RSNA_COMP_ROOT'] = _sim
+print('SIM root', _sim, len(_ids), 'studies', flush=True)
+"""
+    nb["cells"].insert(0, {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
+                           "source": sim_src.splitlines(keepends=True)})
+    nb["cells"].append({"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
+                        "source": ["print(f'TOTAL REHEARSAL WALL {time.time()-_SIM_T0:.0f}s', flush=True)\n"]})
 nb.setdefault("metadata", {})["kernelspec"] = {"display_name": "Python 3", "language": "python", "name": "python3"}
 out = here / slug
 out.mkdir(exist_ok=True)

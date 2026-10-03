@@ -16,7 +16,7 @@ from sklearn.metrics import roc_auc_score
 TARGETS = ["ACL", "MCL", "Medial Meniscus", "Lateral Meniscus", "Medial OA", "Lateral OA", "PF OA",
            "Effusion", "Synovitis", "Baker's", "Contusion", "Fracture"]
 V2 = Path("artifacts/private/v2")
-SOURCES = {"sol61": V2 / "llm/sol61-high.jsonl", "qwen38": V2 / "llm/qwen38-think.jsonl", "gemma4": V2 / "llm/gemma4.jsonl"}
+SOURCES = {"sol61": V2 / "llm/sol61-high.jsonl", "qwen38": V2 / "llm/qwen38.jsonl", "gemma4": V2 / "llm/gemma4.jsonl"}
 
 
 def load_jsonl(path):

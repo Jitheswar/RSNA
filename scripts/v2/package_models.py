@@ -11,7 +11,7 @@ ap.add_argument("--ckpts", nargs="+", required=True)
 ap.add_argument("--out", required=True)
 args = ap.parse_args()
 out = Path(args.out)
-(out / "models").mkdir(parents=True, exist_ok=True)
+out.mkdir(parents=True, exist_ok=True)
 for f in ["prep.py", "data.py", "model.py", "kaggle_infer.py"]:
     shutil.copy(Path("scripts/v2") / f, out / f)
 paths = []
@@ -24,7 +24,7 @@ for p in paths:
     run, fold = Path(p).parent.parent.name, Path(p).parent.name
     name = f"{run}__{fold}__{Path(p).stem}.pt"
     keep_args = {k: ck["args"][k] for k in ["backbone", "d", "layers", "n_series", "k", "img"]}
-    torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / "models" / name)
+    torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
     manifest.append({"file": name, **keep_args})
 (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
 meta = {"title": "rsna-v2-models", "id": "jitheswar/rsna-v2-models", "licenses": [{"name": "apache-2.0"}]}
