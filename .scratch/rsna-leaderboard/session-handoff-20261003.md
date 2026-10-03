@@ -65,3 +65,11 @@ longer the main path to rank.
   0.05–0.30 is negative with CI below zero. **Blend only if the final OOF gives a non-negative CI.**
 - Fail-safe blended notebook prepared (`notebooks/blend/build.py`): public 0.946 + appended leg, verified
   locally (blend path; broken-model path keeps public CSV byte-identical). Needs dataset `jitheswar/rsna-fast-model`.
+
+## Update (≈12:05 UTC)
+
+- **56788419 COMPLETE: public 0.943** (author's label said 0.946). New best; rank 741/4,980; leader 0.961.
+  Submission ran ~8.5 h end to end, so the 9 h hidden budget leaves little room for an appended leg.
+- CPU folds after epoch 2: weak AUC 0.772–0.796; pooled Gold58 0.623 → 0.740 → **0.785**;
+  w=0.05 rank blend with the 0.936 anchor now neutral (95% [-0.0016, +0.0015]).
+- Owner approved all resources. Kaggle TPU smoke `jitheswar/rsna-fast-tpu-smoke2` queued >2 h (no TPU free yet).
