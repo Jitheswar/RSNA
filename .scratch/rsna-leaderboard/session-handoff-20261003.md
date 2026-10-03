@@ -82,3 +82,8 @@ baseline + our model; report baseline alone, ours alone (OOF + Gold58) and the b
 with bootstrap CIs. Keep negative results (Qwen3 relabelling, fp16 collapse) and parity evidence as paper material.
 - TPU v2 (`jitheswar/rsna-fast-tpu-v2`: ConvNeXt-Tiny, 24 slices, 15 epochs, 5 folds, in-session smoke) queued 17:06 UTC.
   XLA logic verified in a torch_xla 2.8 container on the XLA CPU backend; mesh_reduce payload bug fixed first.
+- Baseline switched (owner): best self-contained public notebook **`aastikrajan15/knee-s75-w50` (0.945)**; versia-5,
+  jiweiliu fast-2xT4 and dinosaur-v5 all 0.943. Its one private dataset entry is unreferenced in code. Diff vs the
+  0.943 baseline: Fracture added to `_RAD_EXCLUDE`, w50 CoAt weights, sequential CoAt readers.
+  Blend notebook: `python3 notebooks/blend/build.py <w> rsna-knee-s75w50-fastblend s75w50`.
+- Owner: if GPU/TPU are insufficient, use our cluster (CPU folds already there; GPU array 8186 queued).
