@@ -92,3 +92,29 @@ with bootstrap CIs. Keep negative results (Qwen3 relabelling, fp16 collapse) and
   OUR_WEIGHT 0.5/0.6; 0.943 public + that model = 0.945. Baseline reverted to the reproduced 0.943 notebook
   (`notebooks/blend/public0946.ipynb`, default stem). Their design (ConvNeXt-Tiny, 24 slices, 320 px, CV ~0.90–0.915)
   mirrors our TPU v2 and is external evidence that a ~0.90 weak-CV model adds ~+0.002 at a 0.5 blend.
+
+## SESSION END SNAPSHOT (≈18:00 UTC) — read this first in the next session
+
+**Leaderboard:** best 0.943 (56788419, unchanged fork of `yamadan96/rsna-knee-d4-public0946`), rank ~741/4,980; leader 0.961.
+**Owner:** wants 1st place; all resources approved (Kaggle GPU/TPU, cluster). Work also feeds a university paper:
+public notebooks = attributed baselines only (see memory `publication-baseline-framing`). s75-w50/w60 (0.945) are
+NOT usable baselines (private checkpoints).
+
+**Key discovery:** cluster GPUs are **A100-80GB** (`--partition=cluster1-gpu,cluster1-gpu-add --gres=gpu:1`).
+GPU array 8186 (`slurm/fast_train_folds.sbatch`) completed all 5 folds at **~140 s/epoch** (CPU: 74 min/epoch).
+Results `artifacts/private/fast-v1/run2`: weak AUC 0.828–0.849; **pooled Gold58 0.8437**; rank blend with anchor:
+w=0.05 −0.0003 [−0.0023,+0.0010], w≥0.10 negative. Not yet submission-worthy. CPU duplicate 8189 cancelled.
+
+**Running / queued:**
+- 320 px volume rebuild, array 8231 on cluster2 nodes 11/13/14/15/16 → `artifacts/private/fast-v2-320/{vol,index-*.csv}`
+  (~35 min from 17:53 UTC). Train with `RSNA_FAST_ROOT=artifacts/private/fast-v2-320`.
+- Kaggle TPU `jitheswar/rsna-fast-tpu-v2` (ConvNeXt-Tiny, 24 slices, 15 ep, 5 folds, bs1) QUEUED since 17:06 UTC
+  (TPU queue ~10 h). With A100s available it may be unnecessary; it costs nothing while queued.
+
+**Next steps (fast on A100):**
+1. Scale the model on cluster GPUs: ConvNeXt-Tiny/Small, 24 slices, 320 px (`--n-slices 24 --backbone ...`,
+   RSNA_FAST_ROOT=fast-v2-320), more epochs. Target: external evidence says ~0.90 weak-CV models add ~+0.002 at w≈0.5.
+2. Evaluate each run with `scripts/fast/eval_blend.py --run <dir>` (fixed weights, bootstrap CI).
+3. When a run's blend CI is non-negative, build `notebooks/blend/build.py <w> rsna-knee-d4-fastblend` (baseline
+   public0946), upload model package as dataset `jitheswar/rsna-fast-model` (infer.py, train.py, rsna_prep/,
+   models/fold*.pt), push, submit. Kaggle GPU quota: ~23 min left until Oct 10 → one visible run.
