@@ -65,8 +65,13 @@ class KneeNet(nn.Module):
         if smask is not None:
             vimg = vimg & (smask > 0.5)
         imgs = x[vimg].float()  # [N,3,H,W]
-        if micro and imgs.shape[0] > micro:
-            feats = torch.cat([self.encode(imgs[i:i + micro]) for i in range(0, imgs.shape[0], micro)])
+        n_img = imgs.shape[0]
+        if micro:
+            # fixed-size chunks (last one zero-padded) keep conv input shapes constant -> cuDNN autotunes once
+            pad_n = (-n_img) % micro
+            if pad_n:
+                imgs = torch.cat([imgs, imgs.new_zeros((pad_n,) + imgs.shape[1:])])
+            feats = torch.cat([self.encode(imgs[i:i + micro]) for i in range(0, imgs.shape[0], micro)])[:n_img]
         else:
             feats = self.encode(imgs)
         feats = feats.float()
