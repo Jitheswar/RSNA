@@ -134,6 +134,8 @@ def main():
     ap.add_argument("--micro", type=int, default=0)
     ap.add_argument("--max-steps", type=int, default=0)
     ap.add_argument("--save-every-epoch", action="store_true")
+    ap.add_argument("--aux-grades", default="", help="grades CSV (LLM ordinal grades) -> auxiliary severity head")
+    ap.add_argument("--aux-w", type=float, default=0.3)
     args = ap.parse_args()
 
     torch.backends.cudnn.benchmark = True
@@ -165,6 +167,16 @@ def main():
         Yt = Yt * (1 - args.label_smooth) + 0.5 * args.label_smooth
     fold_of = folds.reindex(studies)["fold"].values
     print(f"{len(studies)} studies with volumes, {is_gold.sum()} gold", flush=True)
+    AUX = None
+    if args.aux_grades:
+        from build_labels import ORDER
+        G = pd.read_csv(args.aux_grades).set_index("StudyInstanceUID").reindex(studies)[TARGETS]
+        AUX = np.full(G.shape, -1.0, np.float32)  # -1 = masked
+        for j, t_ in enumerate(TARGETS):
+            lv = np.array([ORDER.get(t_, {}).get(int(g), float(g)) if g == g and g >= 0 else np.nan for g in G[t_].values])
+            mx = np.nanmax(lv) if np.isfinite(lv).any() else 1.0
+            AUX[:, j] = np.where(np.isfinite(lv), lv / max(mx, 1e-6), -1.0)
+        print("aux grades: coverage", float((AUX >= 0).mean()), flush=True)
 
     run_folds = [-1] if args.full else [int(f) for f in args.folds.split(",")]
     for fold in run_folds:
@@ -181,7 +193,7 @@ def main():
         tr_idx = np.arange(len(studies)) if fold < 0 else np.where(fold_of != fold)[0]
         va_idx = np.array([], int) if fold < 0 else np.where(fold_of == fold)[0]
         ds_tr = StudyDataset([studies[i] for i in tr_idx], meta, args.vol_dir, Yt[tr_idx], n_series=args.n_series,
-                             k=args.k, train=True, seed=args.seed + fold)
+                             k=args.k, train=True, seed=args.seed + fold, aux=AUX[tr_idx] if AUX is not None else None)
         ds_va = StudyDataset([studies[i] for i in va_idx], meta, args.vol_dir, Yt[va_idx], n_series=args.n_series,
                              k=args.k, train=False)
         dl_tr = DataLoader(ds_tr, batch_size=args.bs, shuffle=True, num_workers=args.workers, collate_fn=collate,
@@ -192,7 +204,7 @@ def main():
         w_gold = torch.tensor(np.where(is_gold[tr_idx], args.gold_weight, 1.0), dtype=torch.float32)
 
         model = KneeNet(args.backbone, d=args.d, n_layers=args.layers, drop_path=args.drop_path,
-                        grad_ckpt=args.grad_ckpt).to(dev)
+                        grad_ckpt=args.grad_ckpt, n_aux=12 if AUX is not None else 0).to(dev)
         model.enc.to(memory_format=torch.channels_last)
         enc_params = list(model.enc.parameters())
         enc_ids = {id(p) for p in enc_params}
@@ -226,9 +238,14 @@ def main():
                 y = b["y"].to(dev)
                 wg = w_gold[b["idx"]].to(dev)
                 with torch.autocast("cuda", dtype=torch.bfloat16):
-                    logits, _ = model(x, b["types"].to(dev), b["pos"].to(dev), present, micro=args.micro)
+                    logits, aux_logits = model(x, b["types"].to(dev), b["pos"].to(dev), present, micro=args.micro)
                 loss = F.binary_cross_entropy_with_logits(logits.float(), y, reduction="none").mean(1)
                 loss = (loss * wg).sum() / wg.sum()
+                if aux_logits is not None and "aux" in b:
+                    a = b["aux"].to(dev)
+                    m = (a >= 0).float()
+                    la = F.binary_cross_entropy_with_logits(aux_logits.float(), a.clamp(min=0), reduction="none")
+                    loss = loss + args.aux_w * (la * m).sum() / m.sum().clamp(min=1)
                 (loss / args.accum).backward()
                 run_loss_t = loss.detach() if nb == 0 else run_loss_t + loss.detach()
                 nb += 1

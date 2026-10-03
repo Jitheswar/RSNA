@@ -40,3 +40,16 @@ gold58 vs frontier (gpt-6.1-sol high) severity grades — P(gold positive | grad
 => strict-definition LLM probabilities are mis-calibrated; use grade->P(gold) isotonic maps fit on gold58
    (`scripts/v2/build_labels.py`; LOO log-loss 0.40 vs public labels 0.57). Raw sol61 p AUC 0.894 vs pubv2 0.887.
 Paper material: "report-to-reference calibration".
+
+## Plan (2026-10-04 01:20 IST)
+Forum intel (topic 735304 etc.): single 5-fold models reach LB 0.95+ (ResNet50@224 0.954); resolution 224-320 fine
+(FOV 140-160 mm); main lever = labels + pseudo-label "soft bootstrapping" (labels = 0.5 report + 0.5 teacher OOF).
+Host (topic 733965): commercial LLM APIs for report labels explicitly allowed.
+1. Labels L0 = gold-calibrated grades from sol61 (+qwen38, gemma4) [build_labels.py --fold-specific].
+2. Teachers on L0 (fold-specific labels for leak-free gold OOF): T1 convnext_small 320 K12 10ep (+aux grades),
+   T2 tf_efficientnetv2_s 320 K12. ~1.4-1.8 h/fold on A100.
+3. Students: labels L1 = 0.5*L0 + 0.5*mean(T1,T2 OOF) -> retrain; evaluate gold OOF + LB.
+4. Submissions: ours alone vs blend with attributed baseline (pre-fixed weight), bootstrap CIs.
+Kaggle quota: GPU 24.4 h left this week (resets Oct 10) — NOT exhausted. Rehearsal kernel `jitheswar/rsna-v2-rehearsal`
+(baseline + v2 leg with dummy ConvNeXt-S x5 on 1300 simulated studies) measures hidden-run time.
+Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry & p>0.5); 29 train studies fixed.
