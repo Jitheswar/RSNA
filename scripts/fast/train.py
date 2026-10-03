@@ -27,7 +27,7 @@ TARGETS = ["ACL", "MCL", "Medial Meniscus", "Lateral Meniscus", "Medial OA", "La
            "PF OA", "Effusion", "Synovitis", "Baker's", "Contusion", "Fracture"]
 TYPES = {("Sagittal", 0): 0, ("Sagittal", 1): 1, ("Coronal", 0): 2, ("Coronal", 1): 3,
          ("Axial", 0): 4, ("Axial", 1): 5}
-ROOT = Path("artifacts/private/fast-v1")
+ROOT = Path(os.environ.get("RSNA_FAST_ROOT", "artifacts/private/fast-v1"))
 _SHARDS: dict = {}
 
 
