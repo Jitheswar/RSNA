@@ -22,7 +22,10 @@ import torch
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import train  # noqa: E402
 from train import TARGETS, StudyModel, series_type  # noqa: E402
+
+train.AMP_DTYPE = torch.float16
 
 DEPTH = 32
 
@@ -96,7 +99,7 @@ def main() -> None:
         xt = torch.from_numpy(x)[None].to(device)
         mask = torch.ones(1, len(keys), dtype=torch.bool, device=device)
         types = torch.tensor([[stype[k] for k in keys]], device=device)
-        with torch.no_grad(), torch.autocast(device.type, dtype=torch.float16, enabled=device.type == "cuda"):
+        with torch.no_grad():
             p = np.mean([torch.sigmoid(m(xt, mask, types).float()).cpu().numpy()[0] for m in models], 0)
         rows.append(p)
     out = pd.DataFrame(np.asarray(rows), columns=TARGETS)

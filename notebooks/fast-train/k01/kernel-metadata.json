@@ -10,7 +10,8 @@
  "enable_internet": true,
  "machine_shape": "NvidiaTeslaT4",
  "dataset_sources": [
-  "jitheswar/rsna-fast-vols"
+  "jitheswar/rsna-fast-vols",
+  "jitheswar/rsna-fast-gold"
  ],
  "competition_sources": [
   "rsna-knee-abnormality-detection"

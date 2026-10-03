@@ -34,7 +34,7 @@ def load_volume(row) -> np.ndarray:
     """Per-series file (cluster) or memory-mapped consolidated shard (Kaggle)."""
     if isinstance(row.path, str):
         return np.load(row.path, mmap_mode="r")
-    key = (row.root, int(row.shard))
+    key = (row.root, str(row.shard))
     if key not in _SHARDS:
         _SHARDS[key] = np.load(Path(row.root) / f"vols-{key[1]}.npy", mmap_mode="r")
     return _SHARDS[key][int(row.row)]
@@ -44,13 +44,18 @@ def series_type(plane: str, fluid: int) -> int:
     return TYPES.get((plane, int(fluid)), 0)
 
 
-def load_tables(labels_csv: Path, train_csv: Path, series_csv: Path, nfolds: int, vol_root: Path | None = None):
+def load_tables(labels_csv: Path, train_csv: Path, series_csv: Path, nfolds: int, vol_root: str | None = None):
     if vol_root is None:
-        index = pd.concat([pd.read_csv(p) for p in sorted(ROOT.glob("index-*.csv"))])
-    else:
-        index = pd.read_csv(vol_root / "index.csv")
-        index["path"] = None
-        index["root"] = str(vol_root)
+        index = pd.concat([pd.read_csv(p) for p in sorted(ROOT.glob("index-*.csv"))]
+                          + [pd.read_csv(p) for p in sorted((ROOT / "gold").glob("index-gold.csv"))])
+    else:  # comma-separated consolidated roots (Kaggle datasets)
+        parts = []
+        for root in str(vol_root).split(","):
+            part = pd.read_csv(Path(root) / "index.csv", dtype={"shard": str})
+            part["path"] = None
+            part["root"] = root
+            parts.append(part)
+        index = pd.concat(parts, ignore_index=True)
     meta = pd.read_csv(series_csv)
     index = index.merge(meta, left_on=["study", "series"],
                         right_on=["StudyInstanceUID", "SeriesInstanceUID"])
@@ -136,8 +141,9 @@ class StudyModel(nn.Module):
         b, n, s, c, h, w = x.shape
         flat = x[mask]  # (V, S, 3, H, W) only valid series
         v = flat.shape[0]
-        f = self.encoder(flat.reshape(v * s, c, h, w).float().div_(255).sub_(0.45).div_(0.25))
-        f = self.proj(f).reshape(v, s, -1) + self.pos[:, :s]
+        with torch.autocast("cuda", dtype=AMP_DTYPE, enabled=flat.is_cuda):
+            f = self.encoder(flat.reshape(v * s, c, h, w).float().div_(255).sub_(0.45).div_(0.25))
+        f = self.proj(f.float()).reshape(v, s, -1) + self.pos[:, :s]
         f = self.slice_tf(f)
         f = self.slice_pool(f, torch.ones(v, s, dtype=torch.bool, device=f.device))
         series = f.new_zeros(b, n, f.shape[-1])
@@ -183,7 +189,7 @@ AMP_DTYPE = torch.bfloat16
 def predict(model, loader, device):
     model.eval()
     out = []
-    with torch.no_grad(), torch.autocast("cuda", dtype=AMP_DTYPE):
+    with torch.no_grad():
         for x, m, t, _ in loader:
             out.append(torch.sigmoid(model(x.to(device), m.to(device), t.to(device)).float()).cpu().numpy())
     return np.concatenate(out)
@@ -196,7 +202,8 @@ def main() -> None:
     ap.add_argument("--backbone", default="convnext_nano.in12k_ft_in1k")
     ap.add_argument("--epochs", type=int, default=12)
     ap.add_argument("--bs", type=int, default=4)
-    ap.add_argument("--lr", type=float, default=2e-4)
+    ap.add_argument("--lr", type=float, default=1e-4)
+    ap.add_argument("--head-lr-mult", type=float, default=3.0)
     ap.add_argument("--n-slices", type=int, default=12)
     ap.add_argument("--max-series", type=int, default=6)
     ap.add_argument("--labels", type=Path, default=Path("artifacts/private/public-label-audit/llm_labels_v2.csv"))
@@ -204,7 +211,7 @@ def main() -> None:
     ap.add_argument("--series-csv", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--vol-root", type=Path, default=None)
+    ap.add_argument("--vol-root", default=None)
     ap.add_argument("--fp16", action="store_true")
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--max-hours", type=float, default=0.0)
@@ -236,10 +243,10 @@ def main() -> None:
     enc_ids = {id(p) for p in enc_params}
     other = [p for p in model.parameters() if id(p) not in enc_ids]
     opt = torch.optim.AdamW([{"params": enc_params, "lr": args.lr},
-                             {"params": other, "lr": args.lr * 5}], weight_decay=0.05)
+                             {"params": other, "lr": args.lr * args.head_lr_mult}], weight_decay=0.05)
     total = args.epochs * len(dl_tr)
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=[args.lr, args.lr * 5], total_steps=total,
-                                                pct_start=0.05, anneal_strategy="cos")
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=[args.lr, args.lr * args.head_lr_mult], total_steps=total,
+                                                pct_start=0.1, anneal_strategy="cos")
     log = []
     best = -1.0
     started = time.time()
@@ -251,8 +258,7 @@ def main() -> None:
         t0, losses = time.time(), []
         for x, m, t, y in dl_tr:
             x = augment(x.to(device, non_blocking=True))
-            with torch.autocast("cuda", dtype=AMP_DTYPE):
-                logits = model(x, m.to(device), t.to(device))
+            logits = model(x, m.to(device), t.to(device))
             loss = F.binary_cross_entropy_with_logits(logits.float(), y.to(device))
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -267,10 +273,13 @@ def main() -> None:
         weak = [auc((yv[:, j] > 0.6).astype(int), p[:, j]) for j in range(12)]
         gmask = np.array([s in gold.index for s in va])
         g_auc = [auc(yv[gmask, j].astype(int), p[gmask, j]) for j in range(12)] if gmask.sum() else []
-        rec = {"epoch": epoch, "loss": float(np.mean(losses)), "weak_macro": float(np.nanmean(weak)),
+        pred_std = float(p.std(0).mean())
+        rec = {"epoch": epoch, "loss": float(np.mean(losses)), "weak_macro": float(np.nanmean(weak)), "pred_std": pred_std,
                "gold_macro": float(np.nanmean(g_auc)) if g_auc else None, "seconds": time.time() - t0}
         log.append(rec)
         print(json.dumps(rec), flush=True)
+        if pred_std < 1e-3:
+            raise SystemExit(f"collapsed: prediction std {pred_std:.2e} after epoch {epoch}")
         if rec["weak_macro"] > best:
             best = rec["weak_macro"]
         torch.save(model.state_dict(), args.out / f"fold{args.fold}.pt")

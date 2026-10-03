@@ -9,6 +9,7 @@ def _find(name, marker):
                 return c
     raise FileNotFoundError(name)
 VOL = _find("rsna-fast-vols", "index.csv")
+GOLD = _find("rsna-fast-gold", "index.csv")
 COMP = _find("rsna-knee-abnormality-detection", "train.csv")
 print("inputs", VOL, COMP, flush=True)
 shutil.copy(f"{VOL}/train.py", "/kaggle/working/train.py")
@@ -17,7 +18,7 @@ procs = []
 for gpu, fold in enumerate(FOLDS):
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu))
     cmd = [sys.executable, "/kaggle/working/train.py", "--fold", fold, "--fp16", "--workers", "2",
-           "--vol-root", VOL, "--labels", f"{VOL}/llm_labels_v2.csv",
+           "--vol-root", f"{VOL},{GOLD}", "--labels", f"{VOL}/llm_labels_v2.csv",
            "--train-csv", f"{COMP}/train.csv", "--series-csv", f"{COMP}/train_series.csv",
            "--out", "/kaggle/working/out", "--epochs", os.environ.get("EPOCHS", "10"), "--max-hours", "10.5"] + sys.argv[1:]
     procs.append(subprocess.Popen(cmd, env=env, stdout=open(f"/kaggle/working/log{fold}.txt", "w"),
