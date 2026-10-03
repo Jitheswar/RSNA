@@ -136,6 +136,11 @@ def publish_pilot_checkpoint(packet: Mapping[str,Any], destination: str | Path, 
     ordered_masks: Sequence[torch.Tensor], byte_limit: int) -> str:
     """One immutable atomic CPU publication; no overwrite or partial retry."""
     validate_pilot_checkpoint(packet,expected_identity=expected_identity,ordered_masks=ordered_masks)
+    return _publish_validated_cpu_packet(packet,destination,byte_limit=byte_limit)
+
+
+def _publish_validated_cpu_packet(packet: Mapping[str,Any], destination: str | Path, *, byte_limit: int) -> str:
+    """Shared atomic writer; callers must complete their own schema admission."""
     require(type(byte_limit) is int and byte_limit > 0, 'Actual admitted checkpoint byte bound required')
     path = Path(destination)
     temporary = path.with_name(path.name + '.tmp')
