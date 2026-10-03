@@ -31,3 +31,12 @@ measured contribution (ours alone / baseline alone / blend at a pre-fixed weight
 - Evaluate label sources on gold58 (AUC per target) -> build ensemble labels `labels/ens_v1.csv`.
 - Train 5 folds with best labels; backbones: convnext_small 384, then diverse (efficientnetv2/maxvit/coatnet).
 - Build Kaggle inference notebook: v2 prep on test DICOM + our models (+ attributed baseline blend), 9 h limit.
+
+## Key finding (2026-10-04 ~00:40 IST): reference panel is more liberal than written definitions
+gold58 vs frontier (gpt-6.1-sol high) severity grades — P(gold positive | grade):
+- Effusion: small 10/22, unspecified 13/16, moderate 7/8, large 5/5.  Baker's: small 3/7 (5 mm cyst positive!).
+- MCL: grade-2 sprain/partial 7/10.  ACL: partial-unspecified 2/3.  Medial OA: grade 2 4/11; PF OA grade 1 3/7.
+- Synovitis NOT MENTIONED in report: 11/35 gold positive (image decides).  Fracture not mentioned 4/27.
+=> strict-definition LLM probabilities are mis-calibrated; use grade->P(gold) isotonic maps fit on gold58
+   (`scripts/v2/build_labels.py`; LOO log-loss 0.40 vs public labels 0.57). Raw sol61 p AUC 0.894 vs pubv2 0.887.
+Paper material: "report-to-reference calibration".
