@@ -125,7 +125,12 @@ class AttnPool(nn.Module):
 class StudyModel(nn.Module):
     def __init__(self, backbone: str, dim: int = 384, pretrained: bool = True):
         super().__init__()
-        self.encoder = timm.create_model(backbone, pretrained=pretrained, num_classes=0)
+        local = Path(os.environ.get("TIMM_WEIGHTS_DIR", "/nonexistent")) / f"{backbone}.safetensors"
+        if pretrained and local.exists():  # offline environments (Kaggle TPU without internet)
+            self.encoder = timm.create_model(backbone, pretrained=True, num_classes=0,
+                                             pretrained_cfg_overlay={"file": str(local)})
+        else:
+            self.encoder = timm.create_model(backbone, pretrained=pretrained, num_classes=0)
         feat = self.encoder.num_features
         self.proj = nn.Linear(feat, dim)
         self.pos = nn.Parameter(torch.zeros(1, 64, dim))
