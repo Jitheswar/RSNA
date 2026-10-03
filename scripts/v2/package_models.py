@@ -26,6 +26,10 @@ for p in paths:
     run, fold = Path(p).parent.parent.name, Path(p).parent.name
     name = f"{run}__{fold}__{Path(p).stem}.pt"
     keep_args = {k: ck["args"][k] for k in ["backbone", "d", "layers", "n_series", "k", "img"]}
+    a = ck["args"]
+    if a.get("k_sag") or a.get("k_cor") or a.get("k_ax"):
+        keep_args["k_plane"] = {"Sagittal": a.get("k_sag") or a["k"], "Coronal": a.get("k_cor") or a["k"],
+                                "Axial": a.get("k_ax") or a["k"]}
     torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
     manifest.append({"file": name, **keep_args})
 (out / "manifest.json").write_text(json.dumps(manifest, indent=1))

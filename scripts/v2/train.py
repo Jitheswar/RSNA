@@ -94,7 +94,8 @@ def predict(model, loader, dev, crop=None, micro=0):
             x = F.interpolate(x.view(-1, C, H, W).float(), size=(crop, crop), mode="bilinear",
                               align_corners=False).view(B, S, K, C, crop, crop)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            logits, _ = model(x, b["types"].to(dev), b["pos"].to(dev), b["present"].to(dev), micro=micro)
+            logits, _ = model(x, b["types"].to(dev), b["pos"].to(dev), b["present"].to(dev), micro=micro,
+                              smask=b["smask"].to(dev))
         preds.append(torch.sigmoid(logits.float()).cpu().numpy())
         idxs.append(b["idx"].numpy())
     return np.concatenate(preds), np.concatenate(idxs)
@@ -136,6 +137,10 @@ def main():
     ap.add_argument("--save-every-epoch", action="store_true")
     ap.add_argument("--aux-grades", default="", help="grades CSV (LLM ordinal grades) -> auxiliary severity head")
     ap.add_argument("--aux-w", type=float, default=0.3)
+    ap.add_argument("--no-lat-norm", action="store_true", help="ablation: undo laterality normalisation of left knees")
+    ap.add_argument("--k-sag", type=int, default=0, help="per-plane slice counts (0 = use --k for all planes)")
+    ap.add_argument("--k-cor", type=int, default=0)
+    ap.add_argument("--k-ax", type=int, default=0)
     args = ap.parse_args()
 
     torch.backends.cudnn.benchmark = True
@@ -178,6 +183,9 @@ def main():
             AUX[:, j] = np.where(np.isfinite(lv), lv / max(mx, 1e-6), -1.0)
         print("aux grades: coverage", float((AUX >= 0).mean()), flush=True)
 
+    k_plane = None
+    if args.k_sag or args.k_cor or args.k_ax:
+        k_plane = {"Sagittal": args.k_sag or args.k, "Coronal": args.k_cor or args.k, "Axial": args.k_ax or args.k}
     run_folds = [-1] if args.full else [int(f) for f in args.folds.split(",")]
     for fold in run_folds:
         lab = labels_for(fold if fold >= 0 else 0)
@@ -192,10 +200,17 @@ def main():
         out.mkdir(exist_ok=True)
         tr_idx = np.arange(len(studies)) if fold < 0 else np.where(fold_of != fold)[0]
         va_idx = np.array([], int) if fold < 0 else np.where(fold_of == fold)[0]
+        unnorm = {}
+        if args.no_lat_norm:
+            sides = meta.groupby("StudyInstanceUID").side.first()
+            flipped = set(pd.read_csv("artifacts/private/v2/lat_flip_v1.csv").StudyInstanceUID)
+            # effective normalisation flip = (side == L) XOR (checker re-flip)
+            unnorm = {s: ((v == "L") != (s in flipped)) for s, v in sides.items()}
         ds_tr = StudyDataset([studies[i] for i in tr_idx], meta, args.vol_dir, Yt[tr_idx], n_series=args.n_series,
-                             k=args.k, train=True, seed=args.seed + fold, aux=AUX[tr_idx] if AUX is not None else None)
+                             k=args.k, train=True, seed=args.seed + fold, aux=AUX[tr_idx] if AUX is not None else None,
+                             unnorm_lat=unnorm, k_plane=k_plane)
         ds_va = StudyDataset([studies[i] for i in va_idx], meta, args.vol_dir, Yt[va_idx], n_series=args.n_series,
-                             k=args.k, train=False)
+                             k=args.k, train=False, unnorm_lat=unnorm, k_plane=k_plane)
         dl_tr = DataLoader(ds_tr, batch_size=args.bs, shuffle=True, num_workers=args.workers, collate_fn=collate,
                            pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4,
                            worker_init_fn=worker_init)
@@ -238,7 +253,8 @@ def main():
                 y = b["y"].to(dev)
                 wg = w_gold[b["idx"]].to(dev)
                 with torch.autocast("cuda", dtype=torch.bfloat16):
-                    logits, aux_logits = model(x, b["types"].to(dev), b["pos"].to(dev), present, micro=args.micro)
+                    logits, aux_logits = model(x, b["types"].to(dev), b["pos"].to(dev), present, micro=args.micro,
+                                               smask=b["smask"].to(dev))
                 loss = F.binary_cross_entropy_with_logits(logits.float(), y, reduction="none").mean(1)
                 loss = (loss * wg).sum() / wg.sum()
                 if aux_logits is not None and "aux" in b:

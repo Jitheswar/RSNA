@@ -78,7 +78,8 @@ def slice_indices(depth: int, k: int, rng: np.random.Generator | None, lo=0.04, 
 
 class StudyDataset(Dataset):
     def __init__(self, studies, meta: pd.DataFrame, vol_dir: str, labels: np.ndarray | None,
-                 n_series=6, k=16, train=False, seed=0, aux: np.ndarray | None = None, series_drop=0.15):
+                 n_series=6, k=16, train=False, seed=0, aux: np.ndarray | None = None, series_drop=0.15,
+                 unnorm_lat: dict | None = None, k_plane: dict | None = None):
         self.studies = list(studies)
         self.by_study = {s: g for s, g in meta.groupby("StudyInstanceUID")}
         self.vol_dir = vol_dir
@@ -87,6 +88,8 @@ class StudyDataset(Dataset):
         self.n_series, self.k, self.train = n_series, k, train
         self.seed = seed
         self.series_drop = series_drop
+        self.unnorm_lat = unnorm_lat or {}  # study -> True: undo laterality normalisation (ablation)
+        self.k_plane = k_plane or {}  # per-plane slice counts, e.g. {"Sagittal": 20, "Coronal": 12, "Axial": 10}
         self.epoch = 0
 
     def __len__(self):
@@ -95,10 +98,11 @@ class StudyDataset(Dataset):
     def __getitem__(self, i):
         st = self.studies[i]
         rng = np.random.default_rng((self.seed, self.epoch, i)) if self.train else None
-        S, K = self.n_series, self.k
+        S = self.n_series
+        K = max([self.k] + list(self.k_plane.values())) if self.k_plane else self.k
         g = self.by_study.get(st)
-        x = np.zeros((S, K, 3, 0, 0), np.uint8)
         imgs, types, pos, present = None, np.zeros(S, np.int64), np.zeros((S, K, 2), np.float32), np.zeros(S, np.float32)
+        smask = np.zeros((S, K), np.float32)
         picks = choose_series(g, S, rng) if g is not None else []
         if self.train and len(picks) > 2:
             keep = [p for j, p in enumerate(picks) if not (j > 0 and rng.random() < self.series_drop)]
@@ -106,26 +110,31 @@ class StudyDataset(Dataset):
         for j, row in enumerate(picks):
             vol = np.load(f"{self.vol_dir}/{row.SeriesInstanceUID}.npy", mmap_mode="r")
             D = vol.shape[0]
-            idx = slice_indices(D, K, rng)
-            trip = np.stack([np.clip(idx - 1, 0, D - 1), idx, np.clip(idx + 1, 0, D - 1)], 1)  # [K,3]
+            Kp = int(self.k_plane.get(row.plane, self.k)) if self.k_plane else K
+            idx = slice_indices(D, Kp, rng)
+            trip = np.stack([np.clip(idx - 1, 0, D - 1), idx, np.clip(idx + 1, 0, D - 1)], 1)  # [Kp,3]
             uniq, inv = np.unique(trip, return_inverse=True)
             block = np.asarray(vol[uniq])  # [U,H,W]
             arr = block[inv.reshape(trip.shape)]  # [K,3,H,W]
+            if self.unnorm_lat.get(st):  # ablation: show the knee in its native (un-normalised) laterality
+                arr = arr[::-1, ::-1] if row.plane == "Sagittal" else arr[..., ::-1]
+                arr = np.ascontiguousarray(arr)
             if imgs is None:
                 imgs = np.zeros((S, K, 3) + arr.shape[-2:], np.uint8)
             if arr.shape[-2:] != imgs.shape[-2:]:
                 continue
-            imgs[j] = arr
+            imgs[j, :Kp] = arr
             types[j] = int(row.stype)
             present[j] = 1.0
+            smask[j, :Kp] = 1.0
             rel = idx / max(D - 1, 1)
             mm = (idx - (D - 1) / 2.0) * float(row.slice_mm if row.slice_mm == row.slice_mm else 3.0) / 50.0
-            pos[j, :, 0] = rel
-            pos[j, :, 1] = mm
+            pos[j, :Kp, 0] = rel
+            pos[j, :Kp, 1] = mm
         if imgs is None:
             imgs = np.zeros((S, K, 3, 384, 384), np.uint8)
         out = {"x": torch.from_numpy(imgs), "types": torch.from_numpy(types), "pos": torch.from_numpy(pos),
-               "present": torch.from_numpy(present), "idx": i}
+               "present": torch.from_numpy(present), "smask": torch.from_numpy(smask), "idx": i}
         if self.labels is not None:
             out["y"] = torch.from_numpy(self.labels[i].astype(np.float32))
         if self.aux is not None:

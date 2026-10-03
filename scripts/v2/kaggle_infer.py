@@ -111,7 +111,7 @@ def prepare_study(args):
     return study, out, time.time() - t0
 
 
-def study_tensors(vols, series_meta, n_series, k, shift=0.0):
+def study_tensors(vols, series_meta, n_series, k, shift=0.0, k_plane=None):
     """Build model inputs from prepared volumes using the training-time (deterministic) selection."""
     from data import choose_series, slice_indices, series_type, PRIORITY
     rank = {t: i for i, t in enumerate(PRIORITY)}
@@ -122,27 +122,31 @@ def study_tensors(vols, series_meta, n_series, k, shift=0.0):
         rows.append({"SeriesInstanceUID": se, "plane": plane, "depth": vol.shape[0], "slice_mm": info["slice_mm"],
                      "Fat_Suppression": fs, "Fluid_Sensitive": fl, "stype": series_type(plane, fs, fl),
                      "prio": rank.get((plane, fs, fl), 99)})
-    S, K = n_series, k
+    S = n_series
+    K = max([k] + list(k_plane.values())) if k_plane else k
     x = np.zeros((S, K, 3, prep.SIZE, prep.SIZE), np.uint8)
     types = np.zeros(S, np.int64)
     pos = np.zeros((S, K, 2), np.float32)
     present = np.zeros(S, np.float32)
+    smask = np.zeros((S, K), np.float32)
     if rows:
         g = pd.DataFrame(rows)
         for j, row in enumerate(choose_series(g, S, None)):
             vol = vols[row.SeriesInstanceUID][0]
             D = vol.shape[0]
-            idx = slice_indices(D, K, None)
+            Kp = int(k_plane.get(row.plane, k)) if k_plane else K
+            idx = slice_indices(D, Kp, None)
             if shift:
-                step = 0.92 * (D - 1) / max(K - 1, 1)
+                step = 0.92 * (D - 1) / max(Kp - 1, 1)
                 idx = np.clip(np.rint(idx + shift * step), 0, D - 1).astype(int)
             trip = np.stack([np.clip(idx - 1, 0, D - 1), idx, np.clip(idx + 1, 0, D - 1)], 1)
-            x[j] = vol[trip]
+            x[j, :Kp] = vol[trip]
             types[j] = int(row.stype)
             present[j] = 1.0
-            pos[j, :, 0] = idx / max(D - 1, 1)
-            pos[j, :, 1] = (idx - (D - 1) / 2.0) * float(row.slice_mm or 3.0) / 50.0
-    return x, types, pos, present
+            smask[j, :Kp] = 1.0
+            pos[j, :Kp, 0] = idx / max(D - 1, 1)
+            pos[j, :Kp, 1] = (idx - (D - 1) / 2.0) * float(row.slice_mm or 3.0) / 50.0
+    return x, types, pos, present, smask
 
 
 def main():
@@ -189,7 +193,11 @@ def main():
             models[d].append(net)
     print(f"{len(paths)} models on {len(devs)} devices; {len(ids)} studies", flush=True)
     S = max(a["n_series"] for a in cfgs)
-    Ks = sorted({a["k"] for a in cfgs})
+
+    def sampler_key(a):
+        kp = a.get("k_plane")
+        return (a["k"], tuple(sorted(kp.items())) if kp else None)
+    samplers = sorted({sampler_key(a) for a in cfgs}, key=str)
 
     preds = {}
     q: queue.Queue = queue.Queue(maxsize=16)
@@ -204,18 +212,18 @@ def main():
             with torch.no_grad():
                 inputs = {}
                 shifts = [0.0, 0.5][: max(1, args.tta)]
-                for kk in Ks:
+                for key in samplers:
+                    kk, kp = key
                     for sh in shifts:
-                        x, types, pos, present = study_tensors(vols, smeta, S, kk, shift=sh)
-                        inputs[(kk, sh)] = (torch.from_numpy(x)[None].to(dev), torch.from_numpy(types)[None].to(dev),
-                                            torch.from_numpy(pos)[None].to(dev), torch.from_numpy(present)[None].to(dev))
+                        x, types, pos, present, sm = study_tensors(vols, smeta, S, kk, shift=sh, k_plane=dict(kp) if kp else None)
+                        inputs[(key, sh)] = tuple(torch.from_numpy(v)[None].to(dev) for v in (x, types, pos, present, sm))
                 for net, a in zip(models[dev], cfgs):
                     tta_probs = []
                     for sh in shifts:
-                        x, types, pos, present = inputs[(a["k"], sh)]
+                        x, types, pos, present, sm = inputs[(sampler_key(a), sh)]
                         ns = a["n_series"]
                         if ns < S:
-                            x, types, pos, present = x[:, :ns], types[:, :ns], pos[:, :ns], present[:, :ns]
+                            x, types, pos, present, sm = x[:, :ns], types[:, :ns], pos[:, :ns], present[:, :ns], sm[:, :ns]
                         if present.sum() == 0:
                             break
                         img = a.get("img", 384)
@@ -227,9 +235,9 @@ def main():
                                                                  ).view(B_, S_, K_, C_, img, img)
                         if args.fp16 and dev.type == "cuda":
                             with torch.autocast("cuda", dtype=torch.float16):
-                                logits, _ = net(xx, types, pos.half(), present, micro=48)
+                                logits, _ = net(xx, types, pos.half(), present, micro=48, smask=sm)
                         else:
-                            logits, _ = net(xx, types, pos, present, micro=48)
+                            logits, _ = net(xx, types, pos, present, micro=48, smask=sm)
                         tta_probs.append(torch.sigmoid(logits.float())[0].cpu().numpy())
                     per_model.append(np.mean(tta_probs, 0) if tta_probs else np.full(12, np.nan, np.float32))
             preds[study] = np.stack(per_model)

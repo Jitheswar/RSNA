@@ -57,24 +57,30 @@ class KneeNet(nn.Module):
             return f.mean(1)
         return self.pool(f)
 
-    def forward(self, x, types, pos, present, micro=0):
-        """x: uint8/float [B,S,K,3,H,W]; types [B,S]; pos [B,S,K,2]; present [B,S]."""
+    def forward(self, x, types, pos, present, micro=0, smask=None):
+        """x: uint8/float [B,S,K,3,H,W]; types [B,S]; pos [B,S,K,2]; present [B,S]; smask [B,S,K] (slice valid)."""
         B, S, K = x.shape[:3]
         valid = present > 0.5  # [B,S]
-        flat = x[valid]  # [V,K,3,H,W]
-        imgs = flat.reshape(-1, *flat.shape[-3:]).float()
+        vimg = valid.unsqueeze(2).expand(B, S, K)
+        if smask is not None:
+            vimg = vimg & (smask > 0.5)
+        imgs = x[vimg].float()  # [N,3,H,W]
         if micro and imgs.shape[0] > micro:
             feats = torch.cat([self.encode(imgs[i:i + micro]) for i in range(0, imgs.shape[0], micro)])
         else:
             feats = self.encode(imgs)
         feats = feats.float()
-        tok_v = self.proj(feats).view(-1, K, self.proj[1].out_features)  # [V,K,d]
+        tok_v = self.proj(feats)  # [N,d]
         d = tok_v.shape[-1]
         tok = tok_v.new_zeros(B, S, K, d)
-        tok[valid] = tok_v
+        tok[vimg] = tok_v
         tok = tok + self.type_emb(types).unsqueeze(2) + self.pos(pos)
         tok = tok.view(B, S * K, d)
-        pad = (~valid).unsqueeze(2).expand(B, S, K).reshape(B, S * K)
+        pad = (~vimg).reshape(B, S * K)
+        allpad = pad.all(1)
+        if allpad.any():  # never let a study attend to nothing
+            pad = pad.clone()
+            pad[allpad, 0] = False
         h = self.norm(self.tf(tok, src_key_padding_mask=pad))
         q = self.queries.unsqueeze(0).expand(B, -1, -1)
         ctx, _ = self.xattn(q, h, h, key_padding_mask=pad)
