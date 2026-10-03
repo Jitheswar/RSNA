@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -141,7 +142,7 @@ class StudyModel(nn.Module):
         b, n, s, c, h, w = x.shape
         flat = x[mask]  # (V, S, 3, H, W) only valid series
         v = flat.shape[0]
-        with torch.autocast("cuda", dtype=AMP_DTYPE, enabled=flat.is_cuda):
+        with torch.autocast(flat.device.type, dtype=AMP_DTYPE if flat.is_cuda else torch.bfloat16):
             f = self.encoder(flat.reshape(v * s, c, h, w).float().div_(255).sub_(0.45).div_(0.25))
         f = self.proj(f.float()).reshape(v, s, -1) + self.pos[:, :s]
         f = self.slice_tf(f)
@@ -223,7 +224,9 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.fold)
     np.random.seed(args.fold)
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cpu":
+        torch.set_num_threads(int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count())) - args.workers)
 
     studies, fold, groups, soft, gold = load_tables(args.labels, args.train_csv, args.series_csv, args.nfolds, args.vol_root)
     labels = soft.copy()

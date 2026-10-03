@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=rsna-fast-train
-#SBATCH --partition=cluster1-gpu-add
+#SBATCH --partition=cluster1-gpu,cluster1-gpu-add
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
