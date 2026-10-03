@@ -10,14 +10,16 @@ import importlib
 import importlib.metadata
 import os
 import platform
+from pathlib import Path
 import time
 
 import torch
 
 from rsna_knee.full_backbone import ResNet18FullBackboneStudyModel
 from rsna_knee.replicated_masked_loss import replica_masked_bce
-from rsna_knee.tpu_pilot_checkpoint import validate_pilot_checkpoint
-from rsna_knee.tpu_pilot_state import restore_host_rng
+from rsna_knee.tpu_pilot_checkpoint import validate_pilot_checkpoint, build_pilot_checkpoint, publish_pilot_checkpoint, IDENTITY_KEYS
+from rsna_knee.tpu_pilot_capture import convert_checkpoint_tree, checkpoint_tree_sha256, collect_rank_captures, collect_master_publication
+from rsna_knee.tpu_pilot_state import restore_host_rng, capture_host_rng
 from rsna_knee.tpu_pilot_telemetry import PilotUpdateObservation, validate_rank_update
 
 
@@ -169,6 +171,8 @@ class XlaPilotUpdate:
         self.last_update_evidence = None
         self.checkpoint_restore_consumed = False
         self.restored_checkpoint = None
+        self.checkpoint_captures_consumed = set()
+        self.last_checkpoint_evidence = None
 
     def graph_hash(self, tensors):
         value = self.xla._XLAC._get_graph_hash(tensors)
@@ -221,6 +225,84 @@ class XlaPilotUpdate:
         self.restored_checkpoint = dict(identity=dict(expected_identity),rank=self.rank,successful_steps=8)
         return model,optimizer,scheduler,dict(restored_successful_steps=8,next_batch_index=8,rank=self.rank,
             fresh_worker_generation=1,actual_complete_pilot_verified=False,competition_submission=False,candidate_promotion=False)
+
+    def capture_checkpoint(self, model, optimizer, scheduler, *, expected_identity, ordered_masks,
+        expected_config, path, successful_step, worker_generation, destination, byte_limit):
+        """All ranks convert/agree; only global rank0 atomically publishes once."""
+        require(not self.failed_or_inflight, 'Failed or in-flight worker cannot capture a checkpoint')
+        require(set(expected_identity) == set(IDENTITY_KEYS) and all(type(v) is str and len(v) == 64
+            and all(c in '0123456789abcdef' for c in v) for v in expected_identity.values()), 'Exact admitted checkpoint identity required')
+        require(path in ('continuous','staged') and type(successful_step) is int and successful_step in (0,3,8,16)
+            and type(worker_generation) is int and worker_generation == int(path == 'staged' and successful_step == 16),
+            'Exact registered checkpoint path/boundary/generation required')
+        require((successful_step == 0 and self.worker_identity is None and self.next_step is None
+                and not self.checkpoint_restore_consumed)
+            or (successful_step > 0 and self.worker_identity == (path,worker_generation)
+                and self.next_step == successful_step+1), 'Only the actual completed original worker prefix may be captured')
+        require(type(model) is ResNet18FullBackboneStudyModel and model.config.to_dict() == expected_config['model']
+            and next(model.parameters()).device == self.device and type(self.rank) is int and self.rank in range(8),
+            'Actual original full-model config/device/rank required')
+        validate_optimizer(model,optimizer,scheduler,successful_step)
+        boundary = (path,worker_generation,successful_step)
+        require(boundary not in self.checkpoint_captures_consumed, 'Consumed checkpoint boundary; preserve without retry')
+        require(type(byte_limit) is int and byte_limit > 0, 'Exact admitted publication byte bound required')
+        names = [[f'encoder.{name}' for name,_ in model.encoder.named_parameters()],
+            [f'head.{name}' for name,_ in model.head.named_parameters()]]
+        self.checkpoint_captures_consumed.add(boundary)
+        self.failed_or_inflight = True
+        started = time.perf_counter()
+        self.last_checkpoint_evidence = dict(rank=self.rank,path=path,successful_steps=successful_step,
+            worker_generation=worker_generation,status='IN_FLIGHT',phase='checkpoint-export',
+            actual_complete_pilot_verified=False,competition_submission=False,candidate_promotion=False)
+        self.xla.sync(wait=True)
+        metrics_before = metrics_snapshot(self.metrics)
+        host = capture_host_rng()
+        seed = self.xm.get_rng_state(device=self.device)
+        require(type(seed) is int, 'Actual integer device RNG state required')
+        context = dict(identity=dict(expected_identity),path=path,successful_steps=successful_step,worker_generation=worker_generation,
+            destination=str(Path(destination).resolve()),byte_limit=byte_limit)
+        normalization = self.normalization if self.normalization is not None else {name:value.detach().clone()
+            for name,value in model.named_buffers() if name.endswith(('running_mean','running_var','num_batches_tracked'))}
+        state = convert_checkpoint_tree(dict(model_state_dict=model.state_dict(),optimizer_state_dict=optimizer.state_dict(),
+            scheduler_state_dict=scheduler.state_dict(),parameter_names=names,config=expected_config,ordered_masks=ordered_masks,normalization=normalization),
+            lambda tensors:self.xm._maybe_convert_to_cpu(tensors,convert=True))
+        require(all(torch.equal(state['model_state_dict'][name],value) for name,value in state.pop('normalization').items()),
+            'Original normalization changed before checkpoint capture')
+        state_sha = checkpoint_tree_sha256(state)
+        self.last_checkpoint_evidence.update(status='CPU_CONVERTED',complete_state_sha256=state_sha,metrics_before=metrics_before)
+        local = dict(rank=self.rank,context=context,state_sha256=state_sha,rng=dict(host=host,xla_seed=seed))
+        tag = f"rsna-ticket75-{expected_identity['pilot_request_sha256']}-{path}-{worker_generation}-{successful_step}"
+        collected = self.xm.mesh_reduce(tag+'-capture',local,
+            lambda rows:collect_rank_captures(rows,expected_context=context,expected_state_sha256=state_sha))
+        require(collected['state_sha256'] == state_sha and collected['replicas_checked'] == 8
+            and checkpoint_tree_sha256(collected['rank_rng_states'][self.rank]['host']) == checkpoint_tree_sha256(host)
+            and collected['rank_rng_states'][self.rank]['xla_seed'] == seed, 'Exact local and complete collective capture required')
+        self.last_checkpoint_evidence.update(status='RANKS_AGREED',all_eight_rank_states_agreed=True)
+        sha = None
+        if self.rank == 0:
+            packet = build_pilot_checkpoint(identity=expected_identity,path=path,step=successful_step,worker_generation=worker_generation,
+                ordered_masks=state['ordered_masks'],rank_rng_states=collected['rank_rng_states'],model_state=state['model_state_dict'],
+                optimizer_state=state['optimizer_state_dict'],scheduler_state=state['scheduler_state_dict'],
+                parameter_names=state['parameter_names'],config=state['config'])
+            sha = publish_pilot_checkpoint(packet,destination,expected_identity=expected_identity,ordered_masks=state['ordered_masks'],byte_limit=byte_limit)
+        published = self.xm.mesh_reduce(tag+'-published',dict(rank=self.rank,context=context,sha256=sha),
+            lambda rows:collect_master_publication(rows,expected_context=context))
+        require(type(published) is str and len(published) == 64 and all(c in '0123456789abcdef' for c in published)
+            and (self.rank != 0 or published == sha), 'Exact acknowledged global-master checkpoint SHA required')
+        self.last_checkpoint_evidence.update(status='PUBLISHED',published_checkpoint_sha256=published)
+        self.xla.sync(wait=True)
+        require(checkpoint_tree_sha256(capture_host_rng()) == checkpoint_tree_sha256(host)
+            and self.xm.get_rng_state(device=self.device) == seed, 'Checkpoint I/O must preserve complete host/device RNG')
+        result = dict(rank=self.rank,path=path,successful_steps=successful_step,worker_generation=worker_generation,
+            complete_state_sha256=state_sha,published_checkpoint_sha256=published,
+            global_master_writer=self.rank == 0,all_eight_rank_states_agreed=True,all_eight_rank_rng_states_captured=True,
+            local_host_device_rng_preserved=True,global_post_capture_rng_preservation_verified=False,
+            synchronized_capture_and_publication_seconds=time.perf_counter()-started,
+            phase='checkpoint-export',metrics_before=metrics_before,metrics_after=metrics_snapshot(self.metrics),
+            actual_complete_pilot_verified=False,actual_fresh_PJRT_replay_verified=False,competition_submission=False,candidate_promotion=False)
+        self.last_checkpoint_evidence = dict(result,status='COMPLETE')
+        self.failed_or_inflight = False
+        return result
 
     def update(self, model, optimizer, scheduler, replica, *, path, successful_step, worker_generation):
         require(path in ('continuous','staged') and type(successful_step) is int and successful_step in range(1,17)
