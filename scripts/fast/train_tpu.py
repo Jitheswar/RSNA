@@ -130,13 +130,14 @@ def worker(index: int, args) -> None:
             for x, m, t, _ in pl.MpDeviceLoader(dl_va, device):
                 with torch.autocast("xla", dtype=torch.bfloat16):
                     preds.append(torch.sigmoid(fixed_forward(model, x.float(), m, t).float()).cpu())
-        p_local = torch.cat(preds).numpy() if preds else np.zeros((0, 12), np.float32)
-        gathered = xm.mesh_reduce("preds", (va_idx, p_local), lambda parts: parts)
+        p_local = torch.cat(preds) if preds else torch.zeros((0, 12))
+        # mesh_reduce serialises with torch.load(weights_only=True): send tensors, not numpy
+        gathered = xm.mesh_reduce("preds", (torch.tensor(va_idx, dtype=torch.long), p_local), lambda parts: parts)
         if rank == 0:
             order, rows = [], []
             for idx, p in gathered:
-                order += idx
-                rows.append(p)
+                order += idx.tolist()
+                rows.append(p.numpy())
             p = np.zeros((len(va), 12), np.float32)
             p[order] = np.concatenate(rows)
             yv = labels.loc[va].values
