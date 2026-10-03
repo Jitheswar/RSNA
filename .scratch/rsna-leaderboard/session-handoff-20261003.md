@@ -87,3 +87,8 @@ with bootstrap CIs. Keep negative results (Qwen3 relabelling, fp16 collapse) and
   0.943 baseline: Fracture added to `_RAD_EXCLUDE`, w50 CoAt weights, sequential CoAt readers.
   Blend notebook: `python3 notebooks/blend/build.py <w> rsna-knee-s75w50-fastblend s75w50`.
 - Owner: if GPU/TPU are insufficient, use our cluster (CPU folds already there; GPU array 8186 queued).
+- **Correction:** s75-w50/w60 are not reproducible baselines. Their final cell runs an embedded "S10 stage" that loads the
+  author's private checkpoints `f{0..4}_convnext_tiny_320x24_pt_v5_cv9xxx_best.pt` (asserts on them) and rank-blends at
+  OUR_WEIGHT 0.5/0.6; 0.943 public + that model = 0.945. Baseline reverted to the reproduced 0.943 notebook
+  (`notebooks/blend/public0946.ipynb`, default stem). Their design (ConvNeXt-Tiny, 24 slices, 320 px, CV ~0.90–0.915)
+  mirrors our TPU v2 and is external evidence that a ~0.90 weak-CV model adds ~+0.002 at a 0.5 blend.
