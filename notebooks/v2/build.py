@@ -33,7 +33,11 @@ _tr = pd.read_csv(_c + '/train.csv', dtype=str); _ser = pd.read_csv(_c + '/train
 _ids = _tr.StudyInstanceUID.sample({sim}, random_state=0)
 pd.DataFrame({{'StudyInstanceUID': _ids}}).to_csv(_sim + '/test.csv', index=False)
 _ser[_ser.StudyInstanceUID.isin(set(_ids))].to_csv(_sim + '/test_series.csv', index=False)
-for _n, _t in [('test_series', 'train_series'), ('train_series', 'train_series'), ('train.csv', 'train.csv'), ('train_series.csv', 'train_series.csv'), ('sample_submission.csv', 'sample_submission.csv')]:
+_ss = pd.read_csv(_c + '/sample_submission.csv', nrows=1)
+_sub = pd.DataFrame({{'StudyInstanceUID': _ids}})
+for _col in _ss.columns[1:]: _sub[_col] = 0.5
+_sub.to_csv(_sim + '/sample_submission.csv', index=False)
+for _n, _t in [('test_series', 'train_series'), ('train_series', 'train_series'), ('train.csv', 'train.csv'), ('train_series.csv', 'train_series.csv')]:
     if not os.path.exists(_sim + '/' + _n): os.symlink(_c + '/' + _t, _sim + '/' + _n)
 os.environ['RSNA_COMP_ROOT'] = _sim
 print('SIM root', _sim, len(_ids), 'studies', flush=True)

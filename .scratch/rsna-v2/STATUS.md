@@ -53,3 +53,12 @@ Host (topic 733965): commercial LLM APIs for report labels explicitly allowed.
 Kaggle quota: GPU 24.4 h left this week (resets Oct 10) — NOT exhausted. Rehearsal kernel `jitheswar/rsna-v2-rehearsal`
 (baseline + v2 leg with dummy ConvNeXt-S x5 on 1300 simulated studies) measures hidden-run time.
 Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry & p>0.5); 29 train studies fixed.
+
+## 2026-10-04 01:40 IST
+- Codex usage limit hit (sol61 1,550/4,407 labelled); auto-resume script at 05:02 IST (6 workers).
+- Astra (GPT-6-astra medium, user's earlier run) states for all 4,407 recovered -> labels/astra_grades.csv (categorical).
+- LOO log-loss: sol61x2+astra+pubv2 calibrated 0.390 (best so far).
+- Per-plane slice counts implemented (sag 20 / cor 12 / ax 10, slice masks) because ACL weak AUC lagged (0.79 @ep4).
+- Rehearsal v1 failed in A5 stage (sim sample_submission mismatch) after DINOv2 stage = 2,600 s for 1,300 studies;
+  v2 pushed with fixed sim. Kaggle GPU quota 23.7 h left.
+- Auto: make_teachers.sh fires when Qwen labelling finishes (scratchpad/auto_teachers.sh).
