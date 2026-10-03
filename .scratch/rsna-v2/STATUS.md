@@ -75,3 +75,10 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   E2 same + cal_v1 labels.
 - Gemma-4 labels done (raw AUC 0.842); adds nothing to calibration (LOO ll 0.389). sol61 1,650/4,407 (resume 05:02).
 - Workers: 8250, 8254 running (8249 exited idle); 8258 queued.
+
+## 2026-10-04 05:35 IST — label decision
+- Same bag recipe (coat384) fold 0, epoch 4: E1 public labels weak 0.791 / gold12 0.823 vs E2 cal_v1 weak 0.866 /
+  gold12 0.909 (E2 ahead at every epoch) -> commit to calibrated labels; E1 stopped (paper ablation can rerun later).
+- Queue now (interleaved): family A = e2_coat384_cal1 (bag recipe, folds 0-4), family B = t1_cnxs320_cal1 (all-slice
+  transformer recipe, folds 0-4). Fold 0 of each = recipe comparison under cal labels. ETA ~17:30 IST on 2 GPUs.
+- Public label sets scored vs gold58: pubv2 0.887, pilkwang 0.870, GPT-5.6-Sol 0.835; dread soft labels exclude gold.
