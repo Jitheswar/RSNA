@@ -207,6 +207,7 @@ def main() -> None:
     ap.add_argument("--vol-root", type=Path, default=None)
     ap.add_argument("--fp16", action="store_true")
     ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--max-hours", type=float, default=0.0)
     args = ap.parse_args()
     global AMP_DTYPE
     if args.fp16:
@@ -241,7 +242,11 @@ def main() -> None:
                                                 pct_start=0.05, anneal_strategy="cos")
     log = []
     best = -1.0
+    started = time.time()
     for epoch in range(args.epochs):
+        if args.max_hours and log and (time.time() - started) + log[-1]["seconds"] > args.max_hours * 3600:
+            print(json.dumps({"stopped_early_at_epoch": epoch}), flush=True)
+            break
         model.train()
         t0, losses = time.time(), []
         for x, m, t, y in dl_tr:
