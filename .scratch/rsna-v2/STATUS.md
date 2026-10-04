@@ -140,3 +140,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - DINOv2 support (model.py: ViT img_size, [CLS, mean-patch] readout; train.py --layer-decay). Queued
   s_dinob_mix1 f0 (ViT-B/14 reg4, 280 px, lr 5e-5, layer decay 0.8; same stud_mix1 labels) at prio 00250 =
   diversity candidate before the 384 students.
+- Mirror augmentation (`--mirror p`, data.py): mirror the whole study (sagittal slice order + window channels
+  reversed, coronal/axial horizontal flip) so a normalised right knee becomes a left knee; labels kept (anatomical
+  identity is mirror-invariant). reeval.py --mirror-tta scores plain / mirrored / average. Queued s_mix1_mir f0
+  (prio 00251) to compare with s_mix1 f0 (0.9175 vs cal_v3).

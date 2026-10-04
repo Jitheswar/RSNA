@@ -79,7 +79,8 @@ def slice_indices(depth: int, k: int, rng: np.random.Generator | None, lo=0.04, 
 class StudyDataset(Dataset):
     def __init__(self, studies, meta: pd.DataFrame, vol_dir: str, labels: np.ndarray | None,
                  n_series=6, k=16, train=False, seed=0, aux: np.ndarray | None = None, series_drop=0.15,
-                 unnorm_lat: dict | None = None, k_plane: dict | None = None, random_pos: bool = False):
+                 unnorm_lat: dict | None = None, k_plane: dict | None = None, random_pos: bool = False,
+                 mirror_p: float = 0.0):
         self.studies = list(studies)
         self.by_study = {s: g for s, g in meta.groupby("StudyInstanceUID")}
         self.vol_dir = vol_dir
@@ -91,6 +92,7 @@ class StudyDataset(Dataset):
         self.unnorm_lat = unnorm_lat or {}  # study -> True: undo laterality normalisation (ablation)
         self.k_plane = k_plane or {}  # per-plane slice counts, e.g. {"Sagittal": 20, "Coronal": 12, "Axial": 10}
         self.random_pos = random_pos  # training bag sampling: random window centres instead of an even grid
+        self.mirror_p = mirror_p  # training: mirror the whole study (a right knee becomes a left knee; labels kept)
         self.epoch = 0
 
     def __len__(self):
@@ -105,6 +107,9 @@ class StudyDataset(Dataset):
         imgs, types, pos, present = None, np.zeros(S, np.int64), np.zeros((S, K, 2), np.float32), np.zeros(S, np.float32)
         smask = np.zeros((S, K), np.float32)
         picks = choose_series(g, S, rng) if g is not None else []
+        mirror = bool(self.unnorm_lat.get(st))
+        if self.train and self.mirror_p > 0 and rng.random() < self.mirror_p:
+            mirror = not mirror
         if self.train and len(picks) > 2:
             keep = [p for j, p in enumerate(picks) if not (j > 0 and rng.random() < self.series_drop)]
             picks = keep
@@ -122,7 +127,7 @@ class StudyDataset(Dataset):
             uniq, inv = np.unique(trip, return_inverse=True)
             block = np.asarray(vol[uniq])  # [U,H,W]
             arr = block[inv.reshape(trip.shape)]  # [K,3,H,W]
-            if self.unnorm_lat.get(st):  # ablation: show the knee in its native (un-normalised) laterality
+            if mirror:  # native (un-normalised) laterality ablation and/or mirror augmentation
                 arr = arr[::-1, ::-1] if row.plane == "Sagittal" else arr[..., ::-1]
                 arr = np.ascontiguousarray(arr)
             if imgs is None:

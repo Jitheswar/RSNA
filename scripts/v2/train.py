@@ -146,6 +146,7 @@ def main():
     ap.add_argument("--pos-weight", action="store_true", help="BCE pos_weight = clip((1-prev)/prev, 1, 10)")
     ap.add_argument("--aug", default="full", choices=["full", "light", "none"])
     ap.add_argument("--random-pos", action="store_true", help="bag sampling: random window centres in training")
+    ap.add_argument("--mirror", type=float, default=0.0, help="training: prob. of mirroring a whole study (labels kept)")
     ap.add_argument("--ktr-sag", type=int, default=0, help="training per-plane window counts (default = eval counts)")
     ap.add_argument("--ktr-cor", type=int, default=0)
     ap.add_argument("--ktr-ax", type=int, default=0)
@@ -230,7 +231,7 @@ def main():
             unnorm = {s: ((v == "L") != (s in flipped)) for s, v in sides.items()}
         ds_tr = StudyDataset([studies[i] for i in tr_idx], meta, args.vol_dir, Yt[tr_idx], n_series=args.n_series,
                              k=args.k, train=True, seed=args.seed + fold, aux=AUX[tr_idx] if AUX is not None else None,
-                             unnorm_lat=unnorm, k_plane=k_plane_tr, random_pos=args.random_pos)
+                             unnorm_lat=unnorm, k_plane=k_plane_tr, random_pos=args.random_pos, mirror_p=args.mirror)
         ds_va = StudyDataset([studies[i] for i in va_idx], meta, args.vol_dir, Yt[va_idx], n_series=args.n_series,
                              k=args.k, train=False, unnorm_lat=unnorm, k_plane=k_plane)
         dl_tr = DataLoader(ds_tr, batch_size=args.bs, shuffle=True, num_workers=args.workers, collate_fn=collate,

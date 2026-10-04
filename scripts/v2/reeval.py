@@ -28,6 +28,7 @@ def main():
     ap.add_argument("--vol-dir", required=True)
     ap.add_argument("--grid", nargs="+", default=["6,4,4", "12,8,8"])
     ap.add_argument("--labels", default="")
+    ap.add_argument("--mirror-tta", action="store_true", help="also score the mirrored study and the average")
     args = ap.parse_args()
     V2 = "artifacts/private/v2"
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
@@ -49,15 +50,24 @@ def main():
     net.to(dev).eval()
     for g in args.grid:
         ks, kc, ka = (int(v) for v in g.split(","))
-        ds = StudyDataset(va, meta, args.vol_dir, lab, n_series=a["n_series"], k=a["k"], train=False,
-                          k_plane={"Sagittal": ks, "Coronal": kc, "Axial": ka})
-        dl = DataLoader(ds, batch_size=2, shuffle=False, num_workers=8, collate_fn=collate)
-        p, idx = predict(net, dl, dev, crop=a["img"] if a["img"] != 384 else None, micro=a.get("micro", 0) or 28,
-                         zoom=a.get("zoom", 1.0))
-        y = lab[idx]
-        wk, _ = auc_macro((y > 0.5).astype(int), p)
-        gm = auc_macro(gold.values[idx][is_gold[idx]].astype(int), p[is_gold[idx]])[0] if is_gold.sum() >= 5 else np.nan
-        print(f"eval windows sag/cor/ax={g}: weak {wk:.4f} gold{int(is_gold.sum())} {gm:.4f}", flush=True)
+        kp = {"Sagittal": ks, "Coronal": kc, "Axial": ka}
+        variants = [("plain", {})] + ([("mirror", {s: True for s in va})] if args.mirror_tta else [])
+        preds = {}
+        for name, unnorm in variants:
+            ds = StudyDataset(va, meta, args.vol_dir, lab, n_series=a["n_series"], k=a["k"], train=False,
+                              k_plane=kp, unnorm_lat=unnorm)
+            dl = DataLoader(ds, batch_size=2, shuffle=False, num_workers=8, collate_fn=collate)
+            p, idx = predict(net, dl, dev, crop=a["img"] if a["img"] != 384 else None,
+                             micro=a.get("micro", 0) or 28, zoom=a.get("zoom", 1.0))
+            order = np.argsort(idx)
+            preds[name] = (p[order], np.asarray(idx)[order])
+        if args.mirror_tta:
+            preds["avg"] = ((preds["plain"][0] + preds["mirror"][0]) / 2, preds["plain"][1])
+        for name, (p, idx) in preds.items():
+            y = lab[idx]
+            wk, _ = auc_macro((y > 0.5).astype(int), p)
+            gm = auc_macro(gold.values[idx][is_gold[idx]].astype(int), p[is_gold[idx]])[0] if is_gold.sum() >= 5 else np.nan
+            print(f"eval windows sag/cor/ax={g} [{name}]: weak {wk:.4f} gold{int(is_gold.sum())} {gm:.4f}", flush=True)
 
 
 if __name__ == "__main__":
