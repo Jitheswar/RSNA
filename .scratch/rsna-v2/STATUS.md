@@ -199,3 +199,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 00:05 IST (Oct 5) OWNER PRIORITY: 1st = winning, 2nd = paper. -> GPU order: round-2 students, s_mix2_384 + DINO
   families, recipe tests for round 3; paper ablations (abl_noaux, abl_uniK) only on otherwise-idle GPUs (abl_nolat
   already ~60% done, left to finish). External MRI data still excluded (prize-eligibility / DQ risk).
+- 00:15 IST silence-aware mixing (report weight 0.5 if a frontier source addresses the finding, else 0.25): gold58
+  label AUC 0.9238 vs uniform 0.5 0.9221 (fold-specific cal_v4 + s_mix1 OOF) -> within noise, keep uniform 0.5.
+  (fuse_labels' 0.946 for stud_mix2 uses non-fold-specific cal_v4 -> optimistic; leak-free = 0.922.)
