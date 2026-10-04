@@ -10,6 +10,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--ckpts", nargs="+", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--k-infer", default="", help="override eval windows per plane at inference, e.g. 18,12,12 (sag,cor,ax)")
+ap.add_argument("--weight", nargs="*", default=[], help="per-run ensemble weights, e.g. s_mix1=2 t1_cnxs320_cal1=1")
 args = ap.parse_args()
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -25,6 +26,7 @@ for p in paths:
     ck = torch.load(p, map_location="cpu", weights_only=False)
     state = {k: (v.half() if v.is_floating_point() else v) for k, v in ck["state"].items()}
     run, fold = Path(p).parent.parent.name, Path(p).parent.name
+    wmap = dict(kv.split("=") for kv in args.weight)
     name = f"{run}__{fold}__{Path(p).stem}.pt"
     keep_args = {k: ck["args"][k] for k in ["backbone", "d", "layers", "n_series", "k", "img"]}
     a = ck["args"]
@@ -39,6 +41,7 @@ for p in paths:
         s_, c_, x_ = (int(v) for v in args.k_infer.split(","))
         keep_args["k_plane"] = {"Sagittal": s_, "Coronal": c_, "Axial": x_}
     torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
+    keep_args["weight"] = float(wmap.get(run, 1.0))
     manifest.append({"file": name, **keep_args})
 (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
 meta = {"title": "rsna-v2-models", "id": "jitheswar/rsna-v2-models", "licenses": [{"name": "apache-2.0"}]}

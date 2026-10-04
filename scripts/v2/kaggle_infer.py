@@ -266,7 +266,10 @@ def main():
         rows.append(np.full((len(paths), 12), np.nan, np.float32) if p is None else p)
     arr = np.stack(rows)  # [N, M, 12]
     np.save(Path(args.out).with_suffix(".npy"), arr)
-    mean = np.nanmean(arr, 1)
+    w = np.array([float(a.get("weight", 1.0)) for a in cfgs], np.float64)[None, :, None]
+    ok = ~np.isnan(arr)
+    mean = (np.where(ok, arr, 0.0) * w).sum(1) / np.maximum((ok * w).sum(1), 1e-9)
+    mean = np.where(ok.any(1), mean, np.nan)
     mean = np.where(np.isnan(mean), 0.5, mean)
     df = pd.DataFrame(mean, columns=TARGETS)
     df.insert(0, "StudyInstanceUID", ids)
