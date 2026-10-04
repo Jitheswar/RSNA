@@ -5,7 +5,7 @@ set -euo pipefail
 cd /home/ch.jitheswar/RSNA
 PY=~/rsna-gpu2/bin/python
 TAG=$1; MIX=$2; P=$3; shift 3
-$PY scripts/v2/fuse_labels.py --report labels/cal_v3.csv --oof "$@" --mix $MIX --out labels/stud_${TAG}.csv
+$PY scripts/v2/fuse_labels.py --report ${REPORT:-labels/cal_v3.csv} --oof "$@" --mix $MIX --out labels/stud_${TAG}.csv
 L=artifacts/private/v2/labels/stud_${TAG}.csv
 A=artifacts/private/v2/labels/aux_grades_v2.csv
 for f in 0 1 2 3 4; do

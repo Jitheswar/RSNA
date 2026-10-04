@@ -172,3 +172,12 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 21:25 IST s_mix1 f4 done. Student vs teacher (weak vs cal_v3 | fold gold): f0 0.918/0.907 | 0.958/0.927;
   f2 0.914/0.913 | 0.912/0.895; f3 0.916/0.905 | 0.911/0.864; f4 0.924/0.913 | 0.913/0.881 -> gold +0.032 mean.
   Running: mirror f0 (8250), EffNetV2-S 384 student f0 (8254), s_mix1 f1 (A30, ~23:30); pending abl_nolat f0.
+- 21:45 IST **Cross-target calibration (paper)**: panel Fracture is ranked better by the report's CONTUSION statement
+  than by its fracture statement (gold58 LOO: fracture-only 0.788, contusion-only 0.885, logistic fusion 0.893; fold-
+  specific leak-free 0.788 -> 0.899; report-label macro 0.855 -> 0.865). Coefficients stable across folds (fracture
+  0.65-0.80, contusion 0.80-0.93). Pre-specified pairs Synovitis<-Effusion, Contusion<-Fracture, LatOA<-PF OA,
+  PF OA<-MedOA, Baker<-Effusion, MCL<-MedMen do NOT help (all LOO <= own) -> only Fracture changed.
+  `scripts/v2/xcal_labels.py` -> labels/cal_v4(+_f0.._f4) = cal_v3 with Fracture replaced. Round 2 now uses
+  REPORT=cal_v4 (auto_r2c.sh; make_students_t1.sh takes $REPORT).
+  Also: gold58 is trauma-enriched vs the training pool (calibrated means ACL 0.41 vs 0.16, MCL 0.16 vs 0.06,
+  contusion 0.33 vs 0.19, fracture 0.31 vs 0.15) -> the panel sample (and maybe the test) is not prevalence-matched.

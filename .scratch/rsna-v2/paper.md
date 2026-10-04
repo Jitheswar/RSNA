@@ -155,3 +155,11 @@ DICOM PatientSex (present for 90%) adds nothing beyond the image model (logistic
 
 **LB (public 30%, ~390 studies):** attributed baseline 0.946; ours-only 5-fold teachers 0.935; blend at pre-fixed
 rank weight 0.5 = 0.946 (no gain from teachers). Runtime: baseline + 5 of our models completes within the 9 h limit.
+
+### Cross-target calibration (Fracture)
+The panel's Fracture label is ranked better by the report's contusion statement than by its fracture statement
+(gold58 LOO AUC 0.885 vs 0.788); a two-feature logistic calibration (own grade + contusion grade, L2, C=0.3) reaches
+0.893 LOO and 0.899 with fold-specific fitting (coefficients stable across folds). Interpretation: impaction /
+trabecular fractures (included in the host definition) are often reported as bone bruises. Six other pre-specified
+anatomical pairs gave no gain and were not used. The gold sample is trauma-enriched relative to the training pool
+(calibrated ACL prevalence 0.41 vs 0.16), which matters for interpreting gold-based estimates.
