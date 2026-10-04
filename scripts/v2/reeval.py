@@ -44,7 +44,7 @@ def main():
     is_gold = gold.notna().all(1).values
     dev = torch.device("cuda")
     net = KneeNet(a["backbone"], d=a["d"], n_layers=a["layers"], pretrained=False, drop_path=0.0,
-                  n_aux=12 if "aux_head.weight" in ck["state"] else 0, head=a.get("head", "tf"))
+                  n_aux=12 if "aux_head.weight" in ck["state"] else 0, head=a.get("head", "tf"), img=a.get("img"))
     net.load_state_dict(ck["state"])
     net.to(dev).eval()
     for g in args.grid:

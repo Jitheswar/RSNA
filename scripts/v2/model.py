@@ -24,14 +24,17 @@ class GeM(nn.Module):
 
 class KneeNet(nn.Module):
     def __init__(self, backbone: str, n_targets=12, d=384, n_layers=2, n_heads=8, dropout=0.1,
-                 pretrained=True, drop_path=0.1, n_aux=0, grad_ckpt=False, head="tf"):
+                 pretrained=True, drop_path=0.1, n_aux=0, grad_ckpt=False, head="tf", img=None):
         super().__init__()
         self.head_type = head
         kw = {"drop_path_rate": drop_path} if drop_path else {}
+        self.is_vit = any(k in backbone for k in ("vit_", "eva02", "deit"))
+        if self.is_vit and img:
+            kw["img_size"] = img  # pretrained position embeddings are resampled to this grid at load time
         self.enc = timm.create_model(backbone, pretrained=pretrained, num_classes=0, global_pool="", **kw)
         if grad_ckpt:
             self.enc.set_grad_checkpointing(True)
-        C = self.enc.num_features
+        C = self.enc.num_features * (2 if self.is_vit else 1)  # ViT readout: [CLS, mean patch token]
         self.pool = GeM()
         self.proj = nn.Sequential(nn.LayerNorm(C), nn.Linear(C, d))
         self.type_emb = nn.Embedding(N_TYPES, d)
@@ -44,7 +47,7 @@ class KneeNet(nn.Module):
         self.xattn = nn.MultiheadAttention(d, n_heads, dropout=dropout, batch_first=True)
         self.qnorm = nn.LayerNorm(d)
         if head == "pool":  # simple: per-plane masked mean+max of encoder features -> MLP (no attention)
-            Cf = self.enc.num_features
+            Cf = C
             self.pool_head = nn.Sequential(nn.Dropout(0.3), nn.Linear(6 * Cf, 512), nn.GELU(), nn.Dropout(0.2),
                                            nn.Linear(512, n_targets))
         if head == "mil":  # per-finding gated attention-MIL over window tokens (no transformer)
@@ -61,6 +64,8 @@ class KneeNet(nn.Module):
     def encode(self, imgs):  # imgs float [N,3,H,W] in 0..255
         f = self.enc.forward_features((imgs - self.mean) / self.std)
         if f.ndim == 3:  # ViT-style tokens [N,L,C]
+            if self.is_vit:
+                return torch.cat([f[:, 0], f[:, self.enc.num_prefix_tokens:].mean(1)], -1).float()
             return f.mean(1)
         return self.pool(f)
 

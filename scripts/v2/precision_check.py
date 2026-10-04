@@ -44,7 +44,7 @@ def main():
 
     def build(half):
         net = KneeNet(a["backbone"], d=a["d"], n_layers=a["layers"], pretrained=False, drop_path=0.0, n_aux=n_aux,
-                      head=a.get("head", "tf"))
+                      head=a.get("head", "tf"), img=a.get("img"))
         net.load_state_dict(ck["state"])
         net.eval().to(dev)
         return net.half() if half else net

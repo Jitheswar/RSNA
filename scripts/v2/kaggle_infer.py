@@ -186,7 +186,7 @@ def main():
         for d in devs:
             n_aux = int(ck["state"]["aux_head.weight"].shape[0]) if "aux_head.weight" in ck["state"] else 0
             net = KneeNet(a["backbone"], d=a["d"], n_layers=a["layers"], pretrained=False, drop_path=0.0, n_aux=n_aux,
-                          head=a.get("head", "tf"))
+                          head=a.get("head", "tf"), img=a.get("img"))
             net.load_state_dict(ck["state"], strict=True)
             net.eval().to(d)
             if args.fp16 and d.type == "cuda":

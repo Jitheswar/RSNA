@@ -128,3 +128,15 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 17:05 IST active automations (scratchpad): auto_r2.sh -> round-2 students (s_mix2, prio 0029) when 5 s_mix1 folds
   done; auto_sub_v2.sh -> submit s_mix1 5-fold ours-only at >= 2026-10-05 05:33 IST. s_mix1 f0 final 0.9175 vs
   teacher 0.9074 (cal_v3). ConvNeXt-B f0 0.8955 (dropped). Blend submission (56819xxx) scoring, ETA ~21:30 IST.
+- 18:40 IST: public LB top = 0.963 (rhoskeri), 0.958-0.962 for ~20 teams; ours-only 0.935, baseline 0.946.
+  Forum (topic 745214): DINOv2 single models 0.942 LB (gold 0.917); label versions with gold 0.945 scored LB 0.910
+  -> do NOT tune labels on gold58 (our per-target LOO mix weights: 0.8974 vs fixed 0.5 = 0.8978 -> keep 0.5).
+  External MRI data: host allows only data accessible without institutional sign-off (KneeCoT ruled out, OAI
+  effectively out; MRNet no-derivatives) -> we use none (prize-eligibility + paper).
+- Report heterogeneity (paper): Spanish reports leave 26-65% of findings unaddressed vs 0-15% for most languages;
+  synovitis unaddressed in 62-92% everywhere -> image evidence matters for silent findings (students).
+- s_mix1 gold per fold (12 gold each): f0 0.958 / f2 0.912 / f3 0.914 vs teacher 0.927 / 0.895 / 0.864.
+  46-gold subset: student 0.907 vs teacher 0.876 (LatOA 0.839 vs 0.733, Synovitis 0.863 vs 0.802, Baker 0.973 vs 0.904).
+- DINOv2 support (model.py: ViT img_size, [CLS, mean-patch] readout; train.py --layer-decay). Queued
+  s_dinob_mix1 f0 (ViT-B/14 reg4, 280 px, lr 5e-5, layer decay 0.8; same stud_mix1 labels) at prio 00250 =
+  diversity candidate before the 384 students.

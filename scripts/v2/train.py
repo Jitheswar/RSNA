@@ -129,6 +129,7 @@ def main():
     ap.add_argument("--d", type=int, default=384)
     ap.add_argument("--layers", type=int, default=2)
     ap.add_argument("--drop-path", type=float, default=0.1)
+    ap.add_argument("--layer-decay", type=float, default=1.0, help="<1: layer-wise lr decay for ViT encoders")
     ap.add_argument("--grad-ckpt", action="store_true")
     ap.add_argument("--workers", type=int, default=10)
     ap.add_argument("--seed", type=int, default=42)
@@ -240,7 +241,8 @@ def main():
         w_gold = torch.tensor(np.where(is_gold[tr_idx], args.gold_weight, 1.0), dtype=torch.float32)
 
         model = KneeNet(args.backbone, d=args.d, n_layers=args.layers, drop_path=args.drop_path,
-                        grad_ckpt=args.grad_ckpt, n_aux=12 if AUX is not None else 0, head=args.head).to(dev)
+                        grad_ckpt=args.grad_ckpt, n_aux=12 if AUX is not None else 0, head=args.head,
+                        img=args.img).to(dev)
         pw = None
         if args.pos_weight:
             prev = np.clip(Yt[tr_idx].mean(0), 0.03, 0.7)
@@ -250,8 +252,17 @@ def main():
         enc_params = list(model.enc.parameters())
         enc_ids = {id(p) for p in enc_params}
         head_params = [p for p in model.parameters() if id(p) not in enc_ids]
-        opt = torch.optim.AdamW([{"params": enc_params, "lr": args.lr_enc},
-                                 {"params": head_params, "lr": args.lr_head}], weight_decay=args.wd, betas=(0.9, 0.999))
+        if args.layer_decay < 1.0:  # ViT fine-tuning: per-block lr scale (timm grouping), head at lr_head
+            from timm.optim._param_groups import param_groups_layer_decay
+            groups = param_groups_layer_decay(model.enc, weight_decay=args.wd, layer_decay=args.layer_decay)
+            for g in groups:
+                g["lr"] = args.lr_enc * g.pop("lr_scale", 1.0)
+            groups.append({"params": head_params, "lr": args.lr_head})
+            opt = torch.optim.AdamW(groups, weight_decay=args.wd, betas=(0.9, 0.999))
+        else:
+            opt = torch.optim.AdamW([{"params": enc_params, "lr": args.lr_enc},
+                                     {"params": head_params, "lr": args.lr_head}], weight_decay=args.wd,
+                                    betas=(0.9, 0.999))
         steps_per_epoch = len(dl_tr) // args.accum
         total = args.max_steps or steps_per_epoch * args.epochs
         warm = max(1, int(args.warmup * total))
