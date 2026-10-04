@@ -79,3 +79,26 @@ augmentation without flips (laterality preserved), 2 studies x 4 accumulation.
 | ConvNeXt-S 320 uniform K=12, transformer | public v2 | — | 0.896 |
 | CoAtNet-2 384 bag-of-windows + MIL | calibrated v1 | 0.873 | 0.896 |
 | ConvNeXt-S 320 per-plane K + aux | calibrated v1 | 0.904 | 0.911 |
+
+### Results (2026-10-04 update)
+**Label sources vs gold58 (raw probability AUC):** frontier GPT-6.1-Sol 0.894, public v2 0.887 (developed on gold58),
+pilkwang 0.870, Qwen3.8-27B 0.852, Gemma-4-31B 0.842, GPT-5.6-Sol public 0.835. Calibrated multi-source fusion
+LOO log-loss 0.387 (vs 0.573 raw public).
+
+**Recipe comparison (fold 0, same calibrated labels, OOF weak AUC vs cal_v3):**
+| model | weak AUC | public LB (1 fold) |
+|---|---|---|
+| CoAtNet-2 384, bag-of-12-windows + MIL (public recipe) | 0.873 (0.890 w/ 3x eval windows) | 0.896 |
+| ResNet34 256, per-plane mean/max pooling ("simple baseline") | 0.843 | — |
+| ConvNeXt-S 320, all-slice transformer, per-plane K, aux grades | 0.907 | 0.911 |
+| ConvNeXt-S 384 (same) | 0.908 | — |
+| ConvNeXt-B 320 (same) | 0.902 | — |
+| **student** (labels 0.5 cal_v3 + 0.5 teacher OOF) | **0.918** | pending |
+Public labels with the old uniform-K recipe: LB 0.896.
+
+**Ensembling:** 2-fold teacher 0.935 LB; 5-fold 0.935 LB. Fold-0: 320+384 rank average +0.0035 weak AUC.
+**Gold58 OOF (5-fold teacher):** 0.881 [0.841, 0.915]; ACL 0.988, effusion 0.984, medial meniscus 0.971, medial OA
+0.952; weakest lateral OA 0.754, synovitis 0.772, lateral meniscus 0.799, PF OA 0.822.
+**Student label quality on gold58:** report-only 0.915, image-only 0.881, 50/50 mix 0.927 (complementary).
+**Runtime (2xT4, 1300 simulated test studies):** attributed baseline 6.4 h; our leg 20 min (CPU-bound DICOM prep),
+~100 s per additional ConvNeXt-S model.
