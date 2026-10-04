@@ -209,3 +209,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   -> round 2 ~ round 1 alone (diminishing returns) but the two rounds ensemble well. Fracture weak (cal_v4) 0.942
   vs 0.940.
 - 02:05 IST slot-3 automation changed: auto_sub_mix12.sh submits round-1 + round-2 students (10 models) ours-only after the s_mix1 blend is submitted and s_mix2 has 5 folds (replaces auto_sub_mix2.sh).
+- 02:25 IST s_mix2 f2: weak(cal_v4) 0.9197 vs s_mix1 0.9155; gold11 0.900 vs 0.912. Folds 1+2: round 2 >= round 1
+  on weak labels but -0.012..-0.017 on fold gold (23 studies, noisy) -> watch for confirmation drift; decide with the
+  5-fold gold58 paired bootstrap when f0/f3/f4 finish (~06:10). 384 + DINO families train on stud_mix2.
