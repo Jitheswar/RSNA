@@ -169,3 +169,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   completed within 9 h (runtime OK for baseline + 5 ConvNeXt-S). Teachers (0.935 alone) add nothing at w=0.5 on the
   public 30% (+-0.004 noise). Next: students (fold gold +0.017..+0.047 over teachers) ours-only at 05:33 IST, then
   blend baseline + s_mix1 at the same pre-fixed w=0.5 (auto_blend2.sh, after the ours-only submission).
+- 21:25 IST s_mix1 f4 done. Student vs teacher (weak vs cal_v3 | fold gold): f0 0.918/0.907 | 0.958/0.927;
+  f2 0.914/0.913 | 0.912/0.895; f3 0.916/0.905 | 0.911/0.864; f4 0.924/0.913 | 0.913/0.881 -> gold +0.032 mean.
+  Running: mirror f0 (8250), EffNetV2-S 384 student f0 (8254), s_mix1 f1 (A30, ~23:30); pending abl_nolat f0.
