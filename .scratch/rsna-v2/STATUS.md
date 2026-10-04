@@ -222,3 +222,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   compare with s_mix1 f0). Killed auto_384to_mix2 / auto_dino_mix2. s_mix2 models kept only as ensemble candidates.
   Next round (if any) should use a DIFFERENT teacher family/ensemble (e.g. ConvNeXt+DINO+384 OOF), not self-distil.
 - 04:30 IST final folds 1-4 (46 gold): round-1 0.9147, round-2 0.9076, rank-avg 0.9135 -> round 2 confirmed worse; avg no better than round 1. Running: s_mix2 f0 (A30), s_mix1_pw f0 (8254), s_mix1_k24 f0 (8250); next s_mix1_384 f0-4, s_dinob_mix1 f1-4.
+- 04:40 IST Oct 5 submission plan (UTC day starts 05:30 IST): slot 1 auto_sub_v2 (05:33, s_mix1 ours-only); slot 2
+  auto_blend2 (baseline + s_mix1, w=0.5); slot 3 auto_blend3 = blend-weight PROBE (w=0.65 if ours-only >= 0.943
+  baseline else 0.35; same dataset version) -- paired comparison on the same public studies is far less noisy than
+  independent scores. (auto_sub_mix12 cancelled: round 2 adds nothing on gold.)
