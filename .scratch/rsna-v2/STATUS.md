@@ -118,3 +118,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   v2 leg (1 model) 1174s (prep-bound, 1157s for 1300 studies on 4 CPUs) -> total 24222s (6.73 h).
   => ~2 h headroom: 10-20 ConvNeXt-S models feasible (~100 s inference per model on 2xT4) if hidden N ~1300.
 - Student s_mix1 f0 @ep4 vs cal_v3: 0.9113 > teacher 0.9074 (fair yardstick).
+- 15:45 IST fold-0 fair comparison (weak vs cal_v3 / gold12): teacher 0.9074/0.927, **student s_mix1 (ep6)
+  0.9170/0.960**, ConvNeXt-B 0.9021/0.917 (no gain -> no 5-fold), 384 0.9078/0.920. Student+teacher 0.9148 (<student)
+  -> final ensemble should be student-family based. Round-2 students (mix2 = 0.5 cal_v3 + 0.5 mean(T1,s_mix1) OOF,
+  prio 004) auto-launch when s_mix1 5 folds finish.
