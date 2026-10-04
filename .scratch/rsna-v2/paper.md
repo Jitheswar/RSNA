@@ -168,3 +168,11 @@ anatomical pairs gave no gain and were not used. The gold sample is trauma-enric
 Mirroring whole studies (p=0.5; a normalised right knee shown as a left knee, labels unchanged) lowers OOF weak AUC
 0.9175 -> 0.9133 (0.9145 with mirror TTA). A consistent anatomical frame is better than asking the network to infer
 medial/lateral from anatomy. (The no-normalisation ablation abl_nolat is running.)
+
+**Students vs teachers, full 5-fold OOF (headline result for contribution 4):**
+| model | OOF weak AUC (cal_v3) | gold58 AUC [95% CI] |
+|---|---|---|
+| teacher (ConvNeXt-S 320, calibrated report labels) | 0.9046 | 0.881 [0.840, 0.915] |
+| student (labels 0.5 calibrated report + 0.5 teacher OOF) | 0.9179 | 0.920 [0.892, 0.943] |
+Paired bootstrap (4,000 resamples of the 58 gold studies): +0.038 [+0.020, +0.061], P(diff <= 0) < 0.001.
+Every finding improves; largest gains lateral OA (+0.030), MCL (+0.022), lateral meniscus (+0.017), contusion (+0.017).

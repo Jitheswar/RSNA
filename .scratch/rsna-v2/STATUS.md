@@ -191,3 +191,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   **Round 2 launched 23:28** (auto_r2c): stud_mix2 = 0.5 cal_v4 + 0.5 s_mix1 OOF (label gold58 AUC 0.946 vs mix1
   0.927; image part alone 0.9195). Queue: s_mix2 f0 (A30) + f1 running, f2-f4, then s_mix2_384 f0-4 (003x), then
   s_dinob_mix2 f0-4 (004x); abl_nolat f0 running (8250).
+- 23:50 IST paired bootstrap gold58 student - teacher = +0.038 [+0.020, +0.061] (P<0.001).
