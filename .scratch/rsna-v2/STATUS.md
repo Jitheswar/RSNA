@@ -212,3 +212,12 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 02:25 IST s_mix2 f2: weak(cal_v4) 0.9197 vs s_mix1 0.9155; gold11 0.900 vs 0.912. Folds 1+2: round 2 >= round 1
   on weak labels but -0.012..-0.017 on fold gold (23 studies, noisy) -> watch for confirmation drift; decide with the
   5-fold gold58 paired bootstrap when f0/f3/f4 finish (~06:10). 384 + DINO families train on stud_mix2.
+- 04:10 IST **Round 2 is WORSE on gold** (46 gold, folds 1-4; f3/f4 = best-so-far ckpts): macro 0.9042 vs round-1
+  0.9147 (-0.010), lower in 4/4 folds. Fracture -0.032 (cal_v4 cross-calibration helps REPORT labels but hurts the
+  image student's fracture ranking), MCL -0.029, MedMen -0.019, LatOA -0.024, Effusion -0.014 (labels unchanged ->
+  confirmation drift from self-distilling the same architecture). Weak AUC (report labels) was flat/up -> report
+  metric misleads here; trust panel (gold) direction.
+  DECISION: revert to round-1 labels (stud_mix1 = 0.5 cal_v3 + 0.5 T1 OOF) for all new families. Switched pending
+  tasks: s_mix1_384 f0-4 (003x), s_dinob_mix1 f1-4 (004x; f0 exists), recipe tests s_mix1_pw / s_mix1_k24 (0029x,
+  compare with s_mix1 f0). Killed auto_384to_mix2 / auto_dino_mix2. s_mix2 models kept only as ensemble candidates.
+  Next round (if any) should use a DIFFERENT teacher family/ensemble (e.g. ConvNeXt+DINO+384 OOF), not self-distil.

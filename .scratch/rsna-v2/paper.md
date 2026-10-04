@@ -176,3 +176,12 @@ medial/lateral from anatomy. (The no-normalisation ablation abl_nolat is running
 | student (labels 0.5 calibrated report + 0.5 teacher OOF) | 0.9179 | 0.920 [0.892, 0.943] |
 Paired bootstrap (4,000 resamples of the 58 gold studies): +0.038 [+0.020, +0.061], P(diff <= 0) < 0.001.
 Every finding improves; largest gains lateral OA (+0.030), MCL (+0.022), lateral meniscus (+0.017), contusion (+0.017).
+
+### Negative results: a second self-training round and cross-calibrated fracture labels
+Round 2 (labels 0.5 calibrated report [Fracture cross-calibrated with contusion] + 0.5 round-1 student OOF, same
+architecture) matched round 1 on report-label AUC but was lower on the reference standard in 4/4 folds (46 gold
+studies: 0.904 vs 0.915). The cross-calibrated fracture label, although better as a report label on gold (0.788 ->
+0.899), made the image model's fracture ranking worse (0.929 -> 0.897): the image model was already better than the
+report at fracture, and contusion-driven targets blurred the fracture/contusion distinction. Unchanged targets also
+dropped (MCL, medial meniscus, effusion), consistent with confirmation drift when a model distils itself.
+Lesson: report-label AUC is not a safe yardstick for label changes; gold-panel direction must decide.
