@@ -270,6 +270,31 @@ def main():
     ok = ~np.isnan(arr)
     mean = (np.where(ok, arr, 0.0) * w).sum(1) / np.maximum((ok * w).sum(1), 1e-9)
     mean = np.where(ok.any(1), mean, np.nan)
+    ens_path = os.path.join(HERE, "ens_weights.json")
+    if os.path.exists(ens_path):  # per-target family weights in rank space
+        import json as _json
+        ew = _json.load(open(ens_path))
+        fams = ew["runs"]
+        fam_of = [a.get("family", "") for a in cfgs]
+        fam_pred = []
+        for fam in fams:
+            cols = [m for m, f in enumerate(fam_of) if f == os.path.basename(fam.rstrip("/"))]
+            if not cols:
+                fam_pred = None
+                break
+            fp = np.nanmean(arr[:, cols, :], 1)
+            fam_pred.append(fp)
+        if fam_pred is not None:
+            mixed = np.zeros_like(mean)
+            for j, t in enumerate(TARGETS):
+                wt = np.array(ew["weights"][t], np.float64)
+                cols = []
+                for fp in fam_pred:
+                    col = pd.Series(fp[:, j]).rank(pct=True).values
+                    cols.append(np.nan_to_num(col, nan=0.5))
+                mixed[:, j] = np.stack(cols, 1) @ (wt / wt.sum())
+            mean = mixed
+            print("applied per-target family weights for", fams, flush=True)
     mean = np.where(np.isnan(mean), 0.5, mean)
     df = pd.DataFrame(mean, columns=TARGETS)
     df.insert(0, "StudyInstanceUID", ids)

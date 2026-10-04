@@ -11,6 +11,7 @@ ap.add_argument("--ckpts", nargs="+", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--k-infer", default="", help="override eval windows per plane at inference, e.g. 18,12,12 (sag,cor,ax)")
 ap.add_argument("--weight", nargs="*", default=[], help="per-run ensemble weights, e.g. s_mix1=2 t1_cnxs320_cal1=1")
+ap.add_argument("--ens-json", default="", help="per-target family weights JSON (from ens_weights.py --out)")
 args = ap.parse_args()
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -42,8 +43,11 @@ for p in paths:
         keep_args["k_plane"] = {"Sagittal": s_, "Coronal": c_, "Axial": x_}
     torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
     keep_args["weight"] = float(wmap.get(run, 1.0))
+    keep_args["family"] = run
     manifest.append({"file": name, **keep_args})
 (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
+if args.ens_json:
+    shutil.copy(args.ens_json, out / "ens_weights.json")
 meta = {"title": "rsna-v2-models", "id": "jitheswar/rsna-v2-models", "licenses": [{"name": "apache-2.0"}]}
 (out / "dataset-metadata.json").write_text(json.dumps(meta, indent=1))
 print(len(manifest), "models ->", out)
