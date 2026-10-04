@@ -153,3 +153,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   ~21:00), DINO f0 (8250, ~20:50), s_mix1 f1 (A30, ~22:20); pending: mirror f0 (00251), EffNetV2-S 384 student f0
   (00252); 384 students held until stud_mix2 exists (auto_384to_mix2.sh releases them as s_mix2_384).
   family_eval.py: fold-0 student alone beats student+teacher / +384-teacher (weak and gold).
+- 20:30 IST DINOv2-B fp16 inference check (300 fold-0 val studies): fp16 == bf16 == fp32 (weak 0.9620/0.9620/0.9621, no NaN, mean|dp| 1e-4) -> ViT safe on T4 fp16.
