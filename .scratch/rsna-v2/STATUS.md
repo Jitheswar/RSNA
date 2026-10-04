@@ -94,3 +94,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Simple ResNet34 pool head (forum advice) much weaker here (0.804 @ep4 vs 0.899).
 - Queue: v1 cnxs384 f0, t1 f2/f3/f4, v2 convnext_base f0; e2 coat folds on hold. Then students from T1 OOF.
 - Frontier labels 3,050/4,407; resume 10:08 IST.
+- 09:25 IST: **2-fold ConvNeXt-S (f0+f1) ours-only = 0.935** (sub 56813074) vs 1-fold 0.911 -> fold averaging +0.024.
+- Label fusion check on 24 gold (folds 0-1): report cal_v2 AUC 0.915, image OOF 0.912, 50/50 mix 0.944 -> students.
+- Fold-0 blends: t1 + e2 (bag) adds nothing (0.9056 max at t1 weight 0.8+); simple ResNet34 pool final 0.843.
