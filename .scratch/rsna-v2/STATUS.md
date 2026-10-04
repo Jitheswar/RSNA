@@ -97,3 +97,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 09:25 IST: **2-fold ConvNeXt-S (f0+f1) ours-only = 0.935** (sub 56813074) vs 1-fold 0.911 -> fold averaging +0.024.
 - Label fusion check on 24 gold (folds 0-1): report cal_v2 AUC 0.915, image OOF 0.912, 50/50 mix 0.944 -> students.
 - Fold-0 blends: t1 + e2 (bag) adds nothing (0.9056 max at t1 weight 0.8+); simple ResNet34 pool final 0.843.
+- 10:57 IST: frontier sol61 labels COMPLETE (4,407/4,407). cal_v3 (+_f0.._f4) = sol61x3+astra+pubv2x2+qwen38+gemma4;
+  aux_grades_v2 = sol61 grades (full). Students will use mix(cal_v3, T1 OOF).
+- V1 (ConvNeXt-S 384) tracks 320 (slightly below at ep5) -> resolution not a lever. Ablations queued at prio 9000.
