@@ -107,3 +107,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Synovitis 0.77, LatMen 0.80, PF OA 0.82. Student labels stud_mix1 = 0.5 cal_v3 + 0.5 T1 OOF (gold58 AUC 0.927 vs
   report 0.915 / image 0.881). Students s_mix1 f0-f4 queued (prio 002x). 5-fold ours-only submission pushed (v5).
   Ablations moved to queue/hold (release when GPUs idle). V2 ConvNeXt-B f0 running.
+- 14:25 IST: **5-fold T1 ours-only = 0.935** (same as 2-fold; LB noise ~0.005). Blend submission (baseline +
+  T1 5-fold, rank w=0.5) pushed as jitheswar/rsna-v2-blend v1 (auto-submits after commit run). Rehearsal2 still
+  running (>5.5 h for 1300 studies) -> runtime risk; the blend's hidden run answers it. Kaggle quota 10.75 h.
