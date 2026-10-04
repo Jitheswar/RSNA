@@ -122,3 +122,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   0.9170/0.960**, ConvNeXt-B 0.9021/0.917 (no gain -> no 5-fold), 384 0.9078/0.920. Student+teacher 0.9148 (<student)
   -> final ensemble should be student-family based. Round-2 students (mix2 = 0.5 cal_v3 + 0.5 mean(T1,s_mix1) OOF,
   prio 004) auto-launch when s_mix1 5 folds finish.
+- 16:20 IST: 3rd worker 8258 got KLEF-G-NODE2 = **A30 24 GB** (not A100): train.py auto-adapts (bs1, accum x2,
+  grad ckpt, micro 16) -> ~6.6 h/fold. Round-2 automation re-armed (scratchpad/auto_r2.sh, prio 0029 = before
+  384 students). Tip: never pkill -f with a pattern contained in the same command line (kills own shell).
