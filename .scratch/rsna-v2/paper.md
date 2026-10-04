@@ -102,3 +102,30 @@ Public labels with the old uniform-K recipe: LB 0.896.
 **Student label quality on gold58:** report-only 0.915, image-only 0.881, 50/50 mix 0.927 (complementary).
 **Runtime (2xT4, 1300 simulated test studies):** attributed baseline 6.4 h; our leg 20 min (CPU-bound DICOM prep),
 ~100 s per additional ConvNeXt-S model.
+
+### Image-informed label refinement (students)
+Teacher OOF predictions (5-fold, each study predicted by the model that did not train on it) are mixed with the
+calibrated report labels: y_student = 0.5 * y_report_cal + 0.5 * p_teacher_OOF (soft bootstrapping; no fitting on
+gold58, the mixing weight is fixed a priori). Gold studies keep their reference labels when in a training fold.
+Students use the same recipe as teachers (ConvNeXt-S 320, per-plane K, aux grades, 10 epochs).
+Round 2 mixes with the round-1 student OOF only (on the 34 gold studies of finished folds, student OOF alone 0.907
+vs mean(teacher, student) 0.890, so the teacher would dilute the image term).
+Per-target mixing weights chosen by leave-one-out on gold58 did not beat the fixed 0.5 (0.897 vs 0.898 macro AUC),
+consistent with forum reports of gold-tuned label sets that overfit (gold 0.945 -> LB 0.910).
+
+**Fold-level results (gold = 12 reference studies per validation fold; weak = AUC vs cal_v3 > 0.5):**
+| fold | teacher weak / gold | student weak / gold |
+|---|---|---|
+| 0 | 0.907 / 0.927 | 0.918 / 0.958 |
+| 2 | 0.913 / 0.895 | 0.914 / 0.912 |
+| 3 | 0.905 / 0.864 | 0.916 / 0.911 |
+Largest gold gains on findings that reports leave silent or under-call: lateral OA 0.733 -> 0.839, synovitis
+0.802 -> 0.863, Baker's cyst 0.904 -> 0.973, contusion 0.868 -> 0.931 (46 gold studies, partial OOF).
+
+### Reporting heterogeneity across sites/languages (supports image-informed refinement)
+Language of the report (stopword heuristic): English 1,738, Spanish 681, Turkish 548, Croatian/Serbian 401,
+Greek 321, German 263, Bulgarian 220, Dutch 151, French 79. Fraction of findings *not addressed* by the report
+(frontier LLM grade = -1): Spanish reports 26-65% per finding vs 0-15% for most other languages (e.g. ACL 41% vs
+0-10%); synovitis unaddressed in 62-92% of reports in every language; OA unaddressed in 47-59% of Turkish reports.
+Silence therefore carries site-dependent meaning, which a report-only label cannot resolve but image evidence can.
+DICOM PatientSex (present for 90%) adds nothing beyond the image model (logistic AUC change <= 0.0015 per finding).
