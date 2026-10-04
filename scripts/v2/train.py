@@ -153,6 +153,14 @@ def main():
     ap.add_argument("--k-ax", type=int, default=0)
     args = ap.parse_args()
 
+    gpu_mem = torch.cuda.get_device_properties(0).total_memory / 2**30
+    if gpu_mem < 40:  # e.g. A30 24 GB: keep the effective batch, trade speed for memory
+        if args.bs > 1:
+            args.accum *= args.bs
+            args.bs = 1
+        args.grad_ckpt = True
+        args.micro = min(args.micro or 16, 16)
+        print(f"small GPU ({gpu_mem:.0f} GB): bs=1 accum={args.accum} grad_ckpt micro={args.micro}", flush=True)
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
