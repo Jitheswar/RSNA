@@ -41,9 +41,11 @@ for p in paths:
     if args.k_infer and a.get("random_pos"):
         s_, c_, x_ = (int(v) for v in args.k_infer.split(","))
         keep_args["k_plane"] = {"Sagittal": s_, "Coronal": c_, "Axial": x_}
-    torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
-    keep_args["weight"] = float(wmap.get(run, 1.0))
+    if a.get("mirror", 0.0) > 0:
+        keep_args["mirror"] = float(a["mirror"])  # trained with mirror augmentation -> mirror TTA at inference
+    keep_args["weight"] = float(wmap.get(run, 1.0))  # must be saved in the checkpoint: kaggle_infer reads ck["args"]
     keep_args["family"] = run
+    torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
     manifest.append({"file": name, **keep_args})
 (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
 if args.ens_json:

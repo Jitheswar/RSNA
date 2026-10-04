@@ -149,6 +149,21 @@ def study_tensors(vols, series_meta, n_series, k, shift=0.0, k_plane=None):
     return x, types, pos, present, smask
 
 
+def mirror_study(x, types, present, smask):
+    """Mirror a whole study like data.py (a right knee becomes a left knee): sagittal series reverse slice order and
+    window channels, coronal/axial series flip horizontally. x [1,S,K,3,H,W]; only valid slots are touched."""
+    x = x.clone()
+    for j in range(x.shape[1]):
+        if float(present[0, j]) < 0.5:
+            continue
+        kp = int(smask[0, j].sum().item())
+        if int(types[0, j]) // 4 == 0:
+            x[0, j, :kp] = x[0, j, :kp].flip(0).flip(1)
+        else:
+            x[0, j] = x[0, j].flip(-1)
+    return x
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--comp", required=True)
@@ -220,8 +235,11 @@ def main():
                         inputs[(key, sh)] = tuple(torch.from_numpy(v)[None].to(dev) for v in (x, types, pos, present, sm))
                 for net, a in zip(models[dev], cfgs):
                     tta_probs = []
-                    for sh in shifts:
+                    views = [(sh, False) for sh in shifts] + ([(sh, True) for sh in shifts] if a.get("mirror", 0) > 0 else [])
+                    for sh, mir in views:
                         x, types, pos, present, sm = inputs[(sampler_key(a), sh)]
+                        if mir:
+                            x = mirror_study(x, types, present, sm)
                         ns = a["n_series"]
                         if ns < S:
                             x, types, pos, present, sm = x[:, :ns], types[:, :ns], pos[:, :ns], present[:, :ns], sm[:, :ns]
