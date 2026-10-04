@@ -144,3 +144,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   reversed, coronal/axial horizontal flip) so a normalised right knee becomes a left knee; labels kept (anatomical
   identity is mirror-invariant). reeval.py --mirror-tta scores plain / mirrored / average. Queued s_mix1_mir f0
   (prio 00251) to compare with s_mix1 f0 (0.9175 vs cal_v3).
+- 19:16 IST inference window count (s_mix1 f0, weak vs cal_v3 / gold12): 14/8/7 0.9158/0.954, trained 20/12/10
+  0.9175/0.958, 30/18/15 0.9181/0.958, 40/24/20 0.9185/0.958 -> keep 20/12/10; spend inference time on more models.
+  PatientSex (DICOM, 90% present) adds nothing beyond the image model. Round-2 labels switched to
+  0.5 cal_v3 + 0.5 s_mix1 OOF (auto_r2b.sh); 384 students will be switched to stud_mix2 (auto_384to_mix2.sh).
