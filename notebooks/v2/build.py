@@ -37,7 +37,10 @@ _ss = pd.read_csv(_c + '/sample_submission.csv', nrows=1)
 _sub = pd.DataFrame({{'StudyInstanceUID': _ids}})
 for _col in _ss.columns[1:]: _sub[_col] = 0.5
 _sub.to_csv(_sim + '/sample_submission.csv', index=False)
-for _n, _t in [('test_series', 'train_series'), ('train_series', 'train_series'), ('train.csv', 'train.csv'), ('train_series.csv', 'train_series.csv')]:
+os.makedirs(_sim + '/test_series', exist_ok=True)
+for _st in _ids:  # only the sampled studies, so directory walks match a real 1300-study hidden test
+    if not os.path.exists(_sim + '/test_series/' + _st): os.symlink(_c + '/train_series/' + _st, _sim + '/test_series/' + _st)
+for _n, _t in [('train_series', 'train_series'), ('train.csv', 'train.csv'), ('train_series.csv', 'train_series.csv')]:
     if not os.path.exists(_sim + '/' + _n): os.symlink(_c + '/' + _t, _sim + '/' + _n)
 os.environ['RSNA_COMP_ROOT'] = _sim
 print('SIM root', _sim, len(_ids), 'studies', flush=True)
