@@ -154,3 +154,9 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   (00252); 384 students held until stud_mix2 exists (auto_384to_mix2.sh releases them as s_mix2_384).
   family_eval.py: fold-0 student alone beats student+teacher / +384-teacher (weak and gold).
 - 20:30 IST DINOv2-B fp16 inference check (300 fold-0 val studies): fp16 == bf16 == fp32 (weak 0.9620/0.9620/0.9621, no NaN, mean|dp| 1e-4) -> ViT safe on T4 fp16.
+- 20:45 IST **DINOv2-B student f0 done**: weak vs cal_v3 0.9105 (ConvNeXt-S student 0.9175, teacher 0.9074), gold12
+  0.925. Per target DINO better on LatMen 0.911/0.907, Synovitis 0.856/0.850, Contusion 0.953/0.948, Fracture
+  0.935/0.926; much worse on ACL 0.923/0.958 (patch-14 at 280 px too coarse for the thin ligament?).
+  Ensemble with ConvNeXt student: uniform rank-avg 0.9179 (+0.0004), per-target weights (ens_weights, shrink 0.5,
+  in-sample) 0.9196 (+0.002). Modest but positive -> DINOv2 family queued on round-2 labels (s_dinob_mix2 prio 004x,
+  auto_dino_mix2.sh once stud_mix2 exists).
