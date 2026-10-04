@@ -160,8 +160,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Ensemble with ConvNeXt student: uniform rank-avg 0.9179 (+0.0004), per-target weights (ens_weights, shrink 0.5,
   in-sample) 0.9196 (+0.002). Modest but positive -> DINOv2 family queued on round-2 labels (s_dinob_mix2 prio 004x,
   auto_dino_mix2.sh once stud_mix2 exists).
-- 21:10 IST FIX package_models.py: per-run `weight` and `family` were added to args AFTER torch.save, so packaged
+- 21:00 IST FIX package_models.py: per-run `weight` and `family` were added to args AFTER torch.save, so packaged
   checkpoints lacked them and kaggle_infer silently used uniform weights / skipped ens_weights.json (no submission
   used non-uniform weights yet). Now saved. kaggle_infer: mirror TTA (orig + mirrored study) for models trained with
   --mirror (args.mirror kept in the package); parity verified vs data.py on 4 studies (plain and mirrored).
-- 21:25 IST end-to-end kaggle_infer test (3 public test studies, packaged ConvNeXt s_mix1 w=2 + DINOv2 w=1 with forced mirror TTA, fp16): runs, weights applied correctly (weighted mean verified).
+- 21:07 IST end-to-end kaggle_infer test (3 public test studies, packaged ConvNeXt s_mix1 w=2 + DINOv2 w=1 with forced mirror TTA, fp16): runs, weights applied correctly (weighted mean verified).
