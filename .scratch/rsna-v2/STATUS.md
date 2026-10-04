@@ -100,3 +100,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 10:57 IST: frontier sol61 labels COMPLETE (4,407/4,407). cal_v3 (+_f0.._f4) = sol61x3+astra+pubv2x2+qwen38+gemma4;
   aux_grades_v2 = sol61 grades (full). Students will use mix(cal_v3, T1 OOF).
 - V1 (ConvNeXt-S 384) tracks 320 (slightly below at ep5) -> resolution not a lever. Ablations queued at prio 9000.
+- 12:50 IST: T1 folds 0-2 weak 0.904/0.911/0.909; OOF gold35 0.897 [0.846,0.936]. V1 384 = 0.903 (no gain).
+  T1 f3/f4 running (done ~14:00). Auto: students (mix1 = 0.5 cal_v3 + 0.5 T1 OOF, prio 002) + 5-fold ours-only submit.
+  Rehearsal2 (fixed sim dir, baseline + 1 v2 model, 1300 studies) running >4 h. Kaggle quota 13 h left.
