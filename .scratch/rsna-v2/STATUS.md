@@ -208,3 +208,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   gold12 0.936 (s_mix1 0.953; 12 studies, noisy). Rank-avg s_mix1 + s_mix2 0.9227 vs cal_v4 (+0.002 over either)
   -> round 2 ~ round 1 alone (diminishing returns) but the two rounds ensemble well. Fracture weak (cal_v4) 0.942
   vs 0.940.
+- 02:05 IST slot-3 automation changed: auto_sub_mix12.sh submits round-1 + round-2 students (10 models) ours-only after the s_mix1 blend is submitted and s_mix2 has 5 folds (replaces auto_sub_mix2.sh).
