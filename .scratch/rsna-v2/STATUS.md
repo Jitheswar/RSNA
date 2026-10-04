@@ -196,3 +196,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   s_mix2_k24 (24/16/14 windows) prio 00296 -> compare with s_mix2 f0. Automations for Oct 5 (UTC day starts
   05:30 IST): auto_sub_v2 (05:33 s_mix1 ours-only) -> auto_blend2 (baseline + s_mix1, w=0.5) -> auto_sub_mix2
   (s_mix2 5-fold ours-only once its 5 folds are done AND the blend is submitted, so dataset versions don't clash).
+- 00:05 IST (Oct 5) OWNER PRIORITY: 1st = winning, 2nd = paper. -> GPU order: round-2 students, s_mix2_384 + DINO
+  families, recipe tests for round 3; paper ablations (abl_noaux, abl_uniK) only on otherwise-idle GPUs (abl_nolat
+  already ~60% done, left to finish). External MRI data still excluded (prize-eligibility / DQ risk).
