@@ -32,3 +32,50 @@ Multilingual Radiology Reports with LLM Severity Grades and Anatomical Normalisa
 ## Reproducibility
 - Code: scripts/v2/*; labels: artifacts/private/v2/labels/*; folds fixed (seed 42, gold spread 12/12/11/11/12).
 - Compute: 2x A100-80GB (cluster), Kaggle 2xT4 for inference (9 h limit).
+
+## Methods (draft, 2026-10-04)
+
+### Data and splits
+4,407 training studies (24,371 series, 819k DICOM slices; all uncompressed Explicit VR LE), 58 with reference labels.
+Five-fold multilabel-stratified split (seed 42; stratified on public-label positives >0.6 plus the gold flag, so gold
+studies spread 12/12/11/11/12). All OOF statistics use this split; gold studies are trained on (with their reference
+labels) only when outside the validation fold.
+
+### Canonical volume preparation (`scripts/v2/prep.py`)
+Slices are ordered by projection of ImagePositionPatient on the series normal (InstanceNumber fallback); duplicate
+positions removed. Each series is rotated/flipped (no resampling across planes) to a canonical LPS frame per plane
+(sagittal: columns posterior, rows inferior, slices +x; coronal: columns patient-left, rows inferior; axial: columns
+patient-left, rows posterior). Laterality: DICOM Laterality tag, else image-centre x (|x|>=20 mm), else weak geometry;
+left knees are mirrored so every knee appears as a right knee (medial on image right for coronal/axial; sagittal slice
+0 lateral). A self-supervised laterality checker (ResNet-18 on three posterior coronal slices, trained to detect
+horizontally flipped normalised slices; 99.0% held-out accuracy) re-flips studies with p>0.99, or p>0.5 when the side
+came from weak geometry (29/4,407 training studies; validated against report-stated sides). Square physical crop of
+min(160 mm, FOV) centred on the foreground centroid; per-series 0.5/99.7 percentile window; 384 px uint8; depth cap 64.
+Training/inference parity: byte-identical volumes from the packing (zip) and inference (file) paths.
+
+### Report labels and reference calibration (`llm_label.py`, `frontier_label.py`, `build_labels.py`)
+Prompt states the host definitions and asks, per finding, for an English evidence phrase, an ordinal severity grade
+(finding-specific scale) and P(panel positive). Sources: GPT-6.1-Sol (high reasoning, via Codex; allowed by host
+clarification topic 733965), GPT-6-Astra (medium, categorical states), open-weight Qwen3.8-27B and Gemma-4-31B (bf16,
+vLLM), and the public llm_labels_v2 table. Raw strict-definition probabilities are mis-calibrated w.r.t. the reference
+panel (e.g. "small effusion" gold-positive 10/22). Each source is mapped to P(gold+|grade) per finding on the gold
+studies (isotonic regression over ordered grades with Beta(1,1)-style smoothing toward prevalence; categorical
+states: smoothed per-state rates; probabilities: isotonic); calibrated sources are averaged with weights over the
+sources available per study. Fold-specific tables exclude the validation fold's gold studies (leak-free gold OOF).
+
+### Image model (`model.py`, `train.py`)
+Up to six series per study chosen by type priority (fat-suppressed fluid-sensitive sagittal/coronal/axial first, then
+non-FS). 2.5D windows (slice i-1,i,i+1 as RGB) sampled per plane (sagittal 20, coronal 12, axial 10; evenly spaced
+with jitter in training), shared ImageNet-pretrained encoder (ConvNeXt-S in22k-ft-1k), GeM pooling, linear projection
+to d=384, learned series-type (plane x FS x fluid) and slice-position (relative, mm) embeddings, 2-layer transformer
+over all window tokens, 12 learned finding queries (cross-attention) -> logits. Auxiliary head regresses normalised
+LLM severity grades (weight 0.3, masked when unaddressed). Training: BCE on soft calibrated labels, AdamW
+(encoder 1e-4, head 5e-4, wd 0.05), 5% warmup + cosine, 10 epochs, EMA (0.998), bf16, GPU affine/intensity
+augmentation without flips (laterality preserved), 2 studies x 4 accumulation.
+
+### Results so far
+| single fold-0 model | labels | OOF weak AUC (cal labels) | public LB |
+|---|---|---|---|
+| ConvNeXt-S 320 uniform K=12, transformer | public v2 | — | 0.896 |
+| CoAtNet-2 384 bag-of-windows + MIL | calibrated v1 | 0.873 | 0.896 |
+| ConvNeXt-S 320 per-plane K + aux | calibrated v1 | 0.904 | 0.911 |
