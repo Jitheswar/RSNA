@@ -148,3 +148,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   0.9175/0.958, 30/18/15 0.9181/0.958, 40/24/20 0.9185/0.958 -> keep 20/12/10; spend inference time on more models.
   PatientSex (DICOM, 90% present) adds nothing beyond the image model. Round-2 labels switched to
   0.5 cal_v3 + 0.5 s_mix1 OOF (auto_r2b.sh); 384 students will be switched to stud_mix2 (auto_384to_mix2.sh).
+- 20:00 IST DINOv2-B student f0 per epoch (weak vs stud_mix1 / gold12): e3 0.936/0.929, e5 0.949/0.916 vs ConvNeXt-S
+  student e3 0.955/0.933, e5 0.959/0.940 (slower convergence; judge by ensemble gain at e9). Queue: s_mix1 f4 (8254,
+  ~21:00), DINO f0 (8250, ~20:50), s_mix1 f1 (A30, ~22:20); pending: mirror f0 (00251), EffNetV2-S 384 student f0
+  (00252); 384 students held until stud_mix2 exists (auto_384to_mix2.sh releases them as s_mix2_384).
+  family_eval.py: fold-0 student alone beats student+teacher / +384-teacher (weak and gold).
