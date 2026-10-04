@@ -204,3 +204,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   (fuse_labels' 0.946 for stud_mix2 uses non-fold-specific cal_v4 -> optimistic; leak-free = 0.922.)
 - 23:50 IST abl_nolat was only ~30% done (not 60%) -> stopped (winning first) and returned to hold
   (9000a0_abl_nolat_f0.task); 8250 now runs s_mix2 f2. All three paper ablations wait for idle GPUs.
+- 02:00 IST round-2 s_mix2 f1 done: weak vs cal_v3 0.9179 (s_mix1 0.9174, teacher 0.9072); vs cal_v4 0.9208 (0.9209);
+  gold12 0.936 (s_mix1 0.953; 12 studies, noisy). Rank-avg s_mix1 + s_mix2 0.9227 vs cal_v4 (+0.002 over either)
+  -> round 2 ~ round 1 alone (diminishing returns) but the two rounds ensemble well. Fracture weak (cal_v4) 0.942
+  vs 0.940.
