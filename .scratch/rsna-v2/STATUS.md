@@ -128,7 +128,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 17:05 IST active automations (scratchpad): auto_r2.sh -> round-2 students (s_mix2, prio 0029) when 5 s_mix1 folds
   done; auto_sub_v2.sh -> submit s_mix1 5-fold ours-only at >= 2026-10-05 05:33 IST. s_mix1 f0 final 0.9175 vs
   teacher 0.9074 (cal_v3). ConvNeXt-B f0 0.8955 (dropped). Blend submission (56819xxx) scoring, ETA ~21:30 IST.
-- 18:40 IST: public LB top = 0.963 (rhoskeri), 0.958-0.962 for ~20 teams; ours-only 0.935, baseline 0.946.
+- 18:40 IST: public LB top = 0.963 (rhoskeri), 0.958-0.962 for ~20 teams; ours-only 0.935, baseline 0.943 (yamadan96/rsna-knee-d4-public0946 scores 0.943 despite its name).
   Forum (topic 745214): DINOv2 single models 0.942 LB (gold 0.917); label versions with gold 0.945 scored LB 0.910
   -> do NOT tune labels on gold58 (our per-target LOO mix weights: 0.8974 vs fixed 0.5 = 0.8978 -> keep 0.5).
   External MRI data: host allows only data accessible without institutional sign-off (KneeCoT ruled out, OAI
@@ -165,9 +165,9 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   used non-uniform weights yet). Now saved. kaggle_infer: mirror TTA (orig + mirrored study) for models trained with
   --mirror (args.mirror kept in the package); parity verified vs data.py on 4 studies (plain and mirrored).
 - 21:07 IST end-to-end kaggle_infer test (3 public test studies, packaged ConvNeXt s_mix1 w=2 + DINOv2 w=1 with forced mirror TTA, fp16): runs, weights applied correctly (weighted mean verified).
-- 21:20 IST **BLEND (baseline + T1 5-fold teachers, rank w=0.5) = 0.946** (sub 56819531) = baseline alone 0.946;
-  completed within 9 h (runtime OK for baseline + 5 ConvNeXt-S). Teachers (0.935 alone) add nothing at w=0.5 on the
-  public 30% (+-0.004 noise). Next: students (fold gold +0.017..+0.047 over teachers) ours-only at 05:33 IST, then
+- 21:20 IST **BLEND (baseline + T1 5-fold teachers, rank w=0.5) = 0.946** (sub 56819531) vs baseline alone 0.943
+  (CORRECTED by owner: the 'public0946' notebook scores 0.943) -> +0.003 from our teachers (0.935 alone) at the
+  pre-fixed w=0.5 (public 30%, +-0.004 noise); completed within 9 h (runtime OK for baseline + 5 ConvNeXt-S). Next: students (fold gold +0.017..+0.047 over teachers) ours-only at 05:33 IST, then
   blend baseline + s_mix1 at the same pre-fixed w=0.5 (auto_blend2.sh, after the ours-only submission).
 - 21:25 IST s_mix1 f4 done. Student vs teacher (weak vs cal_v3 | fold gold): f0 0.918/0.907 | 0.958/0.927;
   f2 0.914/0.913 | 0.912/0.895; f3 0.916/0.905 | 0.911/0.864; f4 0.924/0.913 | 0.913/0.881 -> gold +0.032 mean.

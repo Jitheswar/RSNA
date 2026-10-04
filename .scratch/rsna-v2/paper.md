@@ -153,8 +153,8 @@ Greek 321, German 263, Bulgarian 220, Dutch 151, French 79. Fraction of findings
 Silence therefore carries site-dependent meaning, which a report-only label cannot resolve but image evidence can.
 DICOM PatientSex (present for 90%) adds nothing beyond the image model (logistic AUC change <= 0.0015 per finding).
 
-**LB (public 30%, ~390 studies):** attributed baseline 0.946; ours-only 5-fold teachers 0.935; blend at pre-fixed
-rank weight 0.5 = 0.946 (no gain from teachers). Runtime: baseline + 5 of our models completes within the 9 h limit.
+**LB (public 30%, ~390 studies):** attributed baseline 0.943; ours-only 5-fold teachers 0.935; blend at pre-fixed
+rank weight 0.5 = 0.946 (+0.003 over the baseline). Runtime: baseline + 5 of our models completes within the 9 h limit.
 
 ### Cross-target calibration (Fracture)
 The panel's Fracture label is ranked better by the report's contusion statement than by its fracture statement
