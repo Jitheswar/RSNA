@@ -82,3 +82,15 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Queue now (interleaved): family A = e2_coat384_cal1 (bag recipe, folds 0-4), family B = t1_cnxs320_cal1 (all-slice
   transformer recipe, folds 0-4). Fold 0 of each = recipe comparison under cal labels. ETA ~17:30 IST on 2 GPUs.
 - Public label sets scored vs gold58: pubv2 0.887, pilkwang 0.870, GPT-5.6-Sol 0.835; dread soft labels exclude gold.
+
+## 2026-10-04 08:15 IST — LB results
+| model (single fold 0) | labels | CV weak (cal_v1_f0) | public LB |
+|---|---|---|---|
+| ConvNeXt-S 320, K=12 uniform, tf head | pubv2 | (0.860 vs pubv2) | 0.896 |
+| CoAtNet-2 384 bag+MIL (6/4/4 eval) | cal_v1 | 0.873 | 0.896 |
+| ConvNeXt-S 320, K 20/12/10, tf head, aux grades | cal_v1 | 0.904 | **0.911** |
+- CV on cal-label weak AUC tracks LB. fp16 inference verified == bf16 (precision_check.py). Bag model gains +0.015
+  weak with 3x eval windows (reeval.py) -> k-infer override for bag models.
+- Simple ResNet34 pool head (forum advice) much weaker here (0.804 @ep4 vs 0.899).
+- Queue: v1 cnxs384 f0, t1 f2/f3/f4, v2 convnext_base f0; e2 coat folds on hold. Then students from T1 OOF.
+- Frontier labels 3,050/4,407; resume 10:08 IST.
