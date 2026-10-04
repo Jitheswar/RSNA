@@ -221,3 +221,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   tasks: s_mix1_384 f0-4 (003x), s_dinob_mix1 f1-4 (004x; f0 exists), recipe tests s_mix1_pw / s_mix1_k24 (0029x,
   compare with s_mix1 f0). Killed auto_384to_mix2 / auto_dino_mix2. s_mix2 models kept only as ensemble candidates.
   Next round (if any) should use a DIFFERENT teacher family/ensemble (e.g. ConvNeXt+DINO+384 OOF), not self-distil.
+- 04:30 IST final folds 1-4 (46 gold): round-1 0.9147, round-2 0.9076, rank-avg 0.9135 -> round 2 confirmed worse; avg no better than round 1. Running: s_mix2 f0 (A30), s_mix1_pw f0 (8254), s_mix1_k24 f0 (8250); next s_mix1_384 f0-4, s_dinob_mix1 f1-4.
