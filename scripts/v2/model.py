@@ -43,6 +43,10 @@ class KneeNet(nn.Module):
         self.queries = nn.Parameter(torch.randn(n_targets, d) * 0.02)
         self.xattn = nn.MultiheadAttention(d, n_heads, dropout=dropout, batch_first=True)
         self.qnorm = nn.LayerNorm(d)
+        if head == "pool":  # simple: per-plane masked mean+max of encoder features -> MLP (no attention)
+            Cf = self.enc.num_features
+            self.pool_head = nn.Sequential(nn.Dropout(0.3), nn.Linear(6 * Cf, 512), nn.GELU(), nn.Dropout(0.2),
+                                           nn.Linear(512, n_targets))
         if head == "mil":  # per-finding gated attention-MIL over window tokens (no transformer)
             self.mil_att = nn.Sequential(nn.Linear(d, 256), nn.Tanh(), nn.Dropout(0.2), nn.Linear(256, n_targets))
         self.head_w = nn.Parameter(torch.randn(n_targets, d) * 0.02)
@@ -78,6 +82,20 @@ class KneeNet(nn.Module):
         else:
             feats = self.encode(imgs)
         feats = feats.float()
+        if self.head_type == "pool":
+            Cf = feats.shape[-1]
+            full = feats.new_zeros(B, S, K, Cf)
+            full[vimg] = feats
+            plane = torch.div(types, 4, rounding_mode="floor")  # 0 sag, 1 cor, 2 ax
+            parts = []
+            for pl in range(3):
+                msk = (vimg & (plane == pl).unsqueeze(2)).float().unsqueeze(-1)  # [B,S,K,1]
+                cnt = msk.sum((1, 2)).clamp(min=1.0)
+                mean = (full * msk).sum((1, 2)) / cnt
+                mx = (full * msk + (msk - 1) * 1e4).amax((1, 2))
+                mx = torch.where(msk.sum((1, 2)) > 0, mx, torch.zeros_like(mx))
+                parts += [mean, mx]
+            return self.pool_head(torch.cat(parts, -1)), None
         tok_v = self.proj(feats)  # [N,d]
         d = tok_v.shape[-1]
         tok = tok_v.new_zeros(B, S, K, d)

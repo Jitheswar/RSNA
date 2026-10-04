@@ -141,7 +141,7 @@ def main():
     ap.add_argument("--aux-w", type=float, default=0.3)
     ap.add_argument("--no-lat-norm", action="store_true", help="ablation: undo laterality normalisation of left knees")
     ap.add_argument("--zoom", type=float, default=1.0, help="central zoom factor (1.6 ~ 100 mm field)")
-    ap.add_argument("--head", default="tf", choices=["tf", "mil"])
+    ap.add_argument("--head", default="tf", choices=["tf", "mil", "pool"])
     ap.add_argument("--pos-weight", action="store_true", help="BCE pos_weight = clip((1-prev)/prev, 1, 10)")
     ap.add_argument("--aug", default="full", choices=["full", "light", "none"])
     ap.add_argument("--random-pos", action="store_true", help="bag sampling: random window centres in training")

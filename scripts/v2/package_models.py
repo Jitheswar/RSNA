@@ -9,6 +9,7 @@ import torch
 ap = argparse.ArgumentParser()
 ap.add_argument("--ckpts", nargs="+", required=True)
 ap.add_argument("--out", required=True)
+ap.add_argument("--k-infer", default="", help="override eval windows per plane at inference, e.g. 18,12,12 (sag,cor,ax)")
 args = ap.parse_args()
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -34,6 +35,9 @@ for p in paths:
     if a.get("k_sag") or a.get("k_cor") or a.get("k_ax"):
         keep_args["k_plane"] = {"Sagittal": a.get("k_sag") or a["k"], "Coronal": a.get("k_cor") or a["k"],
                                 "Axial": a.get("k_ax") or a["k"]}
+    if args.k_infer and a.get("random_pos"):
+        s_, c_, x_ = (int(v) for v in args.k_infer.split(","))
+        keep_args["k_plane"] = {"Sagittal": s_, "Coronal": c_, "Axial": x_}
     torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
     manifest.append({"file": name, **keep_args})
 (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
