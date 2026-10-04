@@ -110,3 +110,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 14:25 IST: **5-fold T1 ours-only = 0.935** (same as 2-fold; LB noise ~0.005). Blend submission (baseline +
   T1 5-fold, rank w=0.5) pushed as jitheswar/rsna-v2-blend v1 (auto-submits after commit run). Rehearsal2 still
   running (>5.5 h for 1300 studies) -> runtime risk; the blend's hidden run answers it. Kaggle quota 10.75 h.
+- 14:35 IST: blend submitted (baseline + T1 5-fold, w=0.5); commit log OK (baseline COMPLETE, v2 leg 5 models 34 s).
+  Hidden scoring pending -> answers runtime. Queue: s_mix1 f0 running (8254), V2 cnxb f0 (8250), then s_mix1 f1-4,
+  s_mix1_384 f0-4 (ETA all ~Oct 5 05:00). Per-target: 384 vs 320 complementary (avg >= best on most targets).
