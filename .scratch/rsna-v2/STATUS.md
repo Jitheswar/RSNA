@@ -164,3 +164,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   checkpoints lacked them and kaggle_infer silently used uniform weights / skipped ens_weights.json (no submission
   used non-uniform weights yet). Now saved. kaggle_infer: mirror TTA (orig + mirrored study) for models trained with
   --mirror (args.mirror kept in the package); parity verified vs data.py on 4 studies (plain and mirrored).
+- 21:25 IST end-to-end kaggle_infer test (3 public test studies, packaged ConvNeXt s_mix1 w=2 + DINOv2 w=1 with forced mirror TTA, fp16): runs, weights applied correctly (weighted mean verified).
