@@ -125,3 +125,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 16:20 IST: 3rd worker 8258 got KLEF-G-NODE2 = **A30 24 GB** (not A100): train.py auto-adapts (bs1, accum x2,
   grad ckpt, micro 16) -> ~6.6 h/fold. Round-2 automation re-armed (scratchpad/auto_r2.sh, prio 0029 = before
   384 students). Tip: never pkill -f with a pattern contained in the same command line (kills own shell).
+- 17:05 IST active automations (scratchpad): auto_r2.sh -> round-2 students (s_mix2, prio 0029) when 5 s_mix1 folds
+  done; auto_sub_v2.sh -> submit s_mix1 5-fold ours-only at >= 2026-10-05 05:33 IST. s_mix1 f0 final 0.9175 vs
+  teacher 0.9074 (cal_v3). ConvNeXt-B f0 0.8955 (dropped). Blend submission (56819xxx) scoring, ETA ~21:30 IST.
