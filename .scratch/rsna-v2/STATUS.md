@@ -113,3 +113,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 14:35 IST: blend submitted (baseline + T1 5-fold, w=0.5); commit log OK (baseline COMPLETE, v2 leg 5 models 34 s).
   Hidden scoring pending -> answers runtime. Queue: s_mix1 f0 running (8254), V2 cnxb f0 (8250), then s_mix1 f1-4,
   s_mix1_384 f0-4 (ETA all ~Oct 5 05:00). Per-target: 384 vs 320 complementary (avg >= best on most targets).
+- 15:20 IST **Rehearsal2 (1300 studies, 2xT4) timings**: dinov2 2556s, a5 917s, radimagenet 1191s, public_raptor 5773s,
+  residual_coat 3678s, global96_coat 3691s, d4 2330s, repairv1_coat 2870s -> baseline 23038s (6.4 h);
+  v2 leg (1 model) 1174s (prep-bound, 1157s for 1300 studies on 4 CPUs) -> total 24222s (6.73 h).
+  => ~2 h headroom: 10-20 ConvNeXt-S models feasible (~100 s inference per model on 2xT4) if hidden N ~1300.
+- Student s_mix1 f0 @ep4 vs cal_v3: 0.9113 > teacher 0.9074 (fair yardstick).
