@@ -185,3 +185,9 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   (p=0.5 whole-study mirror) plain 0.9133/0.952, mirrored input 0.9138, mirror-TTA avg 0.9145/0.954. Ensemble
   s_mix1 + mir 0.9180 (+0.0005); + DINO 0.9187. -> keep laterality-normalised training without mirroring (supports
   contribution 1: a consistent anatomical frame beats asking the network to infer medial/lateral). No mirror family.
+- 23:40 IST **s_mix1 5-fold complete: OOF weak 0.9179 (teacher 0.9046), gold58 0.9195 [0.892, 0.943] vs teacher
+  0.881 [0.840, 0.915]** (+0.038; every target up: LatOA 0.873->0.903, MCL 0.869->0.892, Contusion 0.932->0.949).
+  EffNetV2-S 384 student f0 0.9004 weak (< ConvNeXt 0.9175, DINO 0.9105) and hurts ensembles -> dropped.
+  **Round 2 launched 23:28** (auto_r2c): stud_mix2 = 0.5 cal_v4 + 0.5 s_mix1 OOF (label gold58 AUC 0.946 vs mix1
+  0.927; image part alone 0.9195). Queue: s_mix2 f0 (A30) + f1 running, f2-f4, then s_mix2_384 f0-4 (003x), then
+  s_dinob_mix2 f0-4 (004x); abl_nolat f0 running (8250).
