@@ -192,3 +192,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   0.927; image part alone 0.9195). Queue: s_mix2 f0 (A30) + f1 running, f2-f4, then s_mix2_384 f0-4 (003x), then
   s_dinob_mix2 f0-4 (004x); abl_nolat f0 running (8250).
 - 23:50 IST paired bootstrap gold58 student - teacher = +0.038 [+0.020, +0.061] (P<0.001).
+- 23:55 IST queued recipe tests on stud_mix2 (fold 0): s_mix2_pw (--pos-weight, rare targets) prio 00295,
+  s_mix2_k24 (24/16/14 windows) prio 00296 -> compare with s_mix2 f0. Automations for Oct 5 (UTC day starts
+  05:30 IST): auto_sub_v2 (05:33 s_mix1 ours-only) -> auto_blend2 (baseline + s_mix1, w=0.5) -> auto_sub_mix2
+  (s_mix2 5-fold ours-only once its 5 folds are done AND the blend is submitted, so dataset versions don't clash).
