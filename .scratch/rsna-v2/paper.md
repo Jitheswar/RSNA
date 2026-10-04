@@ -3,6 +3,29 @@
 **Working title:** Report-to-Reference Calibration: Learning Multi-Finding Knee MRI Classification from
 Multilingual Radiology Reports with LLM Severity Grades and Anatomical Normalisation
 
+## Introduction (draft)
+Large clinical imaging datasets come with free-text reports, not reference labels. In the RSNA 2026 Knee Abnormality
+Detection challenge, 4,407 training MRI studies carry multilingual reports and only 58 carry image-based reference
+labels from a two-radiologist panel; the hidden test set is labelled by the same panel. Three gaps separate report
+text from the panel's image reading: (i) *semantic* — written definitions vs. the panel's liberal operational
+threshold (e.g. a "small effusion" is panel-positive 10/22 times); (ii) *silence* — reports omit findings
+(synovitis is unaddressed in 62-92% of reports; Spanish reports leave 26-65% of findings unaddressed), so absence of
+mention is not absence of disease; (iii) *anatomical* — DICOM orientation and laterality vary, so the same structure
+appears in different image positions. We address (i) with report-to-reference calibration of LLM severity grades,
+(ii) with image-informed soft bootstrapping (students trained on a fixed 50/50 mix of calibrated report labels and
+out-of-fold image predictions), and (iii) with canonical LPS reorientation, laterality normalisation and a
+self-supervised laterality checker. Every component is measured against a strong attributed public baseline,
+alone and in a blend at a pre-fixed weight.
+
+## Related work (to expand)
+- Report-derived weak labels for imaging: CheXpert/MIMIC-CXR labellers (rule-based, then LLM-based), label noise.
+- LLM extraction of structured findings from radiology reports; multilingual reports.
+- Noisy-label learning / soft bootstrapping (Reed et al. 2015), noisy student / self-training (Xie et al. 2020),
+  knowledge distillation.
+- Knee MRI deep learning: MRNet (Bien et al. 2018), fastMRI+ annotations, OAI-based OA grading; 2.5D multi-series
+  models; multiple-instance learning over slices.
+- Calibration (isotonic regression, Beta calibration) and its use for label construction.
+
 ## Problem
 - 4,407 training knee MRI studies (19 sites, ~10 languages of reports), only 58 with reference labels
   (two MSK radiologists + adjudication, image-based, 12 findings); ~1.3k hidden test studies; macro AUC.
