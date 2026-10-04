@@ -103,3 +103,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 12:50 IST: T1 folds 0-2 weak 0.904/0.911/0.909; OOF gold35 0.897 [0.846,0.936]. V1 384 = 0.903 (no gain).
   T1 f3/f4 running (done ~14:00). Auto: students (mix1 = 0.5 cal_v3 + 0.5 T1 OOF, prio 002) + 5-fold ours-only submit.
   Rehearsal2 (fixed sim dir, baseline + 1 v2 model, 1300 studies) running >4 h. Kaggle quota 13 h left.
+- 14:00 IST: **T1 5-fold complete**: OOF weak 0.9046 (vs cal_v3), gold58 0.881 [0.841,0.915]; weak spots LatOA 0.75,
+  Synovitis 0.77, LatMen 0.80, PF OA 0.82. Student labels stud_mix1 = 0.5 cal_v3 + 0.5 T1 OOF (gold58 AUC 0.927 vs
+  report 0.915 / image 0.881). Students s_mix1 f0-f4 queued (prio 002x). 5-fold ours-only submission pushed (v5).
+  Ablations moved to queue/hold (release when GPUs idle). V2 ConvNeXt-B f0 running.
