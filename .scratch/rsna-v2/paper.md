@@ -129,3 +129,6 @@ Greek 321, German 263, Bulgarian 220, Dutch 151, French 79. Fraction of findings
 0-10%); synovitis unaddressed in 62-92% of reports in every language; OA unaddressed in 47-59% of Turkish reports.
 Silence therefore carries site-dependent meaning, which a report-only label cannot resolve but image evidence can.
 DICOM PatientSex (present for 90%) adds nothing beyond the image model (logistic AUC change <= 0.0015 per finding).
+
+**LB (public 30%, ~390 studies):** attributed baseline 0.946; ours-only 5-fold teachers 0.935; blend at pre-fixed
+rank weight 0.5 = 0.946 (no gain from teachers). Runtime: baseline + 5 of our models completes within the 9 h limit.

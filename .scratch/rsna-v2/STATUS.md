@@ -165,3 +165,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   used non-uniform weights yet). Now saved. kaggle_infer: mirror TTA (orig + mirrored study) for models trained with
   --mirror (args.mirror kept in the package); parity verified vs data.py on 4 studies (plain and mirrored).
 - 21:07 IST end-to-end kaggle_infer test (3 public test studies, packaged ConvNeXt s_mix1 w=2 + DINOv2 w=1 with forced mirror TTA, fp16): runs, weights applied correctly (weighted mean verified).
+- 21:20 IST **BLEND (baseline + T1 5-fold teachers, rank w=0.5) = 0.946** (sub 56819531) = baseline alone 0.946;
+  completed within 9 h (runtime OK for baseline + 5 ConvNeXt-S). Teachers (0.935 alone) add nothing at w=0.5 on the
+  public 30% (+-0.004 noise). Next: students (fold gold +0.017..+0.047 over teachers) ours-only at 05:33 IST, then
+  blend baseline + s_mix1 at the same pre-fixed w=0.5 (auto_blend2.sh, after the ours-only submission).
