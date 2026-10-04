@@ -181,3 +181,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   REPORT=cal_v4 (auto_r2c.sh; make_students_t1.sh takes $REPORT).
   Also: gold58 is trauma-enriched vs the training pool (calibrated means ACL 0.41 vs 0.16, MCL 0.16 vs 0.06,
   contusion 0.33 vs 0.19, fracture 0.31 vs 0.15) -> the panel sample (and maybe the test) is not prevalence-matched.
+- 23:10 IST **Mirror augmentation = negative** (fold 0, weak vs cal_v3 / gold12): s_mix1 0.9175/0.958; s_mix1_mir
+  (p=0.5 whole-study mirror) plain 0.9133/0.952, mirrored input 0.9138, mirror-TTA avg 0.9145/0.954. Ensemble
+  s_mix1 + mir 0.9180 (+0.0005); + DINO 0.9187. -> keep laterality-normalised training without mirroring (supports
+  contribution 1: a consistent anatomical frame beats asking the network to infer medial/lateral). No mirror family.

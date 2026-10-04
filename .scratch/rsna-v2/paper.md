@@ -163,3 +163,8 @@ The panel's Fracture label is ranked better by the report's contusion statement 
 trabecular fractures (included in the host definition) are often reported as bone bruises. Six other pre-specified
 anatomical pairs gave no gain and were not used. The gold sample is trauma-enriched relative to the training pool
 (calibrated ACL prevalence 0.41 vs 0.16), which matters for interpreting gold-based estimates.
+
+### Ablation: mirror augmentation vs laterality normalisation (fold 0, students)
+Mirroring whole studies (p=0.5; a normalised right knee shown as a left knee, labels unchanged) lowers OOF weak AUC
+0.9175 -> 0.9133 (0.9145 with mirror TTA). A consistent anatomical frame is better than asking the network to infer
+medial/lateral from anatomy. (The no-normalisation ablation abl_nolat is running.)
