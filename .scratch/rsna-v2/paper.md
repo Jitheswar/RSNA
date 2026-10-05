@@ -126,7 +126,7 @@ contusion 0.892 -> 0.946, MCL 0.857 -> 0.896, lateral meniscus 0.799 -> 0.855 (g
 | variant | weak | gold12 | notable per-target change |
 |---|---|---|---|
 | student baseline | 0.9175 | 0.958 | — |
-| BCE pos_weight (rare findings) | 0.9197 | 0.966 | MCL 0.897 -> 0.918, fracture 0.926 -> 0.940 |
+| BCE pos_weight (rare findings) | 0.9197 (5-fold 0.9192) | 0.966 (gold58 0.9237) | MCL 0.897 -> 0.918, fracture 0.926 -> 0.940 |
 | 24/16/14 windows | 0.9191 | 0.967 | PF OA 0.886 -> 0.904 |
 | rank average of the two | 0.9222 | 0.975 | — |
 | DINOv2-B/14 280 | 0.9105 | 0.925 | better LatMen/synovitis/contusion/fracture, ACL 0.923 |
