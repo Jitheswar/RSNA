@@ -285,3 +285,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 14:00 IST implemented AUC-margin fine-tuning (train.py --init-ckpt, --aucm-w, --aucm-margin; Yuan et al. ICCV 2021
   DAM, CheXpert 1st place): loss = BCE(soft) + w * AUC-M(y>0.5), alpha by SGD ascent (maximize=True), a/b in AdamW.
   Smoke test OK. Queued s_mix1_aucm f0 (init s_mix1 f0, 3 epochs, lr 2e-5/1e-4) at prio 00350 (next free GPU).
+- 14:10 IST armed auto_aucm.sh (pre-registered: GO if s_mix1_aucm f0 weak >= s_mix1 f0 + 0.0015 and gold12 drop <= 0.01 -> queue AUC-M fine-tunes for s_mix1 f1-f4 at prio 0036a). Parser bug (matched the 'a + b' combo row) caught in dry run and fixed.
