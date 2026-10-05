@@ -76,7 +76,8 @@ class KneeNet(nn.Module):
         vimg = valid.unsqueeze(2).expand(B, S, K)
         if smask is not None:
             vimg = vimg & (smask > 0.5)
-        imgs = x[vimg].float()  # [N,3,H,W]
+        dt = self.mean.dtype  # float32 in training (bf16 autocast); float16 after net.half() for pure-fp16 inference
+        imgs = x[vimg].to(dt)  # [N,3,H,W]
         n_img = imgs.shape[0]
         if micro:
             # fixed-size chunks (last one zero-padded) keep conv input shapes constant -> cuDNN autotunes once
@@ -86,7 +87,7 @@ class KneeNet(nn.Module):
             feats = torch.cat([self.encode(imgs[i:i + micro]) for i in range(0, imgs.shape[0], micro)])[:n_img]
         else:
             feats = self.encode(imgs)
-        feats = feats.float()
+        feats = feats.to(dt)
         if self.head_type == "pool":
             Cf = feats.shape[-1]
             full = feats.new_zeros(B, S, K, Cf)
@@ -124,7 +125,7 @@ class KneeNet(nn.Module):
             ctx = self.qnorm(ctx + q)
             logits = (ctx * self.head_w).sum(-1) + self.head_b
         if self.n_aux:
-            m = (~pad).float().unsqueeze(-1)
+            m = (~pad).to(h.dtype).unsqueeze(-1)
             pooled = (h * m).sum(1) / m.sum(1).clamp(min=1)
             return logits, self.aux_head(pooled)
         return logits, None

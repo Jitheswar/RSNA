@@ -173,6 +173,7 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--fp16", action="store_true")
+    ap.add_argument("--pure-fp16", action="store_true", help="with --fp16: run fp16 weights on fp16 inputs without autocast")
     ap.add_argument("--tta", type=int, default=1, help="1 = none; 2 = add a half-step slice-offset pass")
     args = ap.parse_args()
     import torch
@@ -255,7 +256,11 @@ def main():
                             xx = torch.nn.functional.interpolate(x.view(-1, C_, H_, W_).float(), size=(img, img),
                                                                  mode="bilinear", align_corners=False
                                                                  ).view(B_, S_, K_, C_, img, img)
-                        if args.fp16 and dev.type == "cuda":
+                        if args.fp16 and dev.type == "cuda" and args.pure_fp16:
+                            # fp16 weights + fp16 inputs, no autocast (avoids fp32<->fp16 casts around every LayerNorm;
+                            # ~2x faster on T4 per forum measurements)
+                            logits, _ = net(xx, types, pos.half(), present, micro=48, smask=sm)
+                        elif args.fp16 and dev.type == "cuda":
                             with torch.autocast("cuda", dtype=torch.float16):
                                 logits, _ = net(xx, types, pos.half(), present, micro=48, smask=sm)
                         else:

@@ -19,7 +19,7 @@ try:
     models = sorted(glob.glob(os.path.join(pkg, "*.pt")) + glob.glob(os.path.join(pkg, "*", "*.pt")))
     print('v2 package', pkg, len(models), 'models', flush=True)
     cmd = [sys.executable, os.path.join(pkg, 'kaggle_infer.py'), '--comp', _comp, '--models', *models,
-           '--out', '/kaggle/working/v2_preds.csv', '--workers', '4', '--fp16']
+           '--out', '/kaggle/working/v2_preds.csv', '--workers', '4', '--fp16', '--pure-fp16']
     r = subprocess.run(cmd, capture_output=True, text=True)
     print(r.stdout[-3000:], r.stderr[-3000:], flush=True)
     ours = pd.read_csv('/kaggle/working/v2_preds.csv', dtype={'StudyInstanceUID': str})
