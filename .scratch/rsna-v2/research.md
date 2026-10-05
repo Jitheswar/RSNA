@@ -33,3 +33,15 @@ actions (with status).
   2026; MICCAI 2025 paper 0580; arxiv 2510.05664). Our grade->P(panel) calibration already encodes hedging.
 Sources: openaccess.thecvf.com/content/WACV2024/html/Radhakrishnan_Design_Choices_for_Enhancing_Noisy_Student_Self-Training_WACV_2024_paper.html ;
 arxiv.org/abs/2301.07294v1 ; papers.miccai.org/miccai-2025/0580-Paper3788.html ; arxiv.org/abs/2510.05664v1
+
+## 2026-10-05 12:35 IST — docs: faster T4 inference (decision: how many models fit; efficiency track)
+- TensorRT / Torch-TensorRT (ONNX -> trtexec FP16 engine; layer fusion, tensor cores) gives the largest T4 gains but
+  needs TensorRT available offline on Kaggle (wheels in a dataset, ~GBs) -> heavy; keep as a later efficiency option.
+  (docs.pytorch.org/TensorRT/_notebooks/Resnet50-example.html ; catalog.ngc.nvidia.com torch_tensorrt_notebooks)
+- torch.compile: mode="max-autotune" / "reduce-overhead" use CUDA graphs (static shapes only); our encoder already
+  sees fixed micro-chunks [48,3,320,320] -> compile the encoder only; Inductor/Triton supports T4 (sm75); compile time
+  per model is the cost, partly amortised by the FX graph cache for same-architecture models.
+  (huggingface.co/docs/transformers/v5.14.0/torch_compile ; docs.pytorch.org/docs/2.1/generated/torch.compile.html)
+  -> ACTION: benchmark encoder compile (reduce-overhead vs max-autotune-no-cudagraphs) on the A100; if >=1.3x, test on
+  Kaggle with the timing notebook.
+- Pure fp16 (no autocast): implemented 2026-10-05 (forum claim 2.08x on T4); Kaggle timing v2 running.
