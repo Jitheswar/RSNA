@@ -67,3 +67,13 @@ smartx.cse.ust.hk/2024/09/08/copas/ ; smartx.cse.ust.hk/2025/09/29/ecmknee/
   torch.compile(max-autotune-no-cudagraphs) gave 1.41x on A100 (Triton depthwise conv kernels) but 9 min autotune.
   -> next speed options if needed: compile with autotune cache shipped in the package, fewer windows (14/8/7 = 0.7x
   cost, -0.0017 AUC), or ViT families (DINOv2 tensor-core friendly) for the efficiency track.
+
+## 2026-10-05 14:05 IST — paper: Deep AUC Maximization (our metric is macro AUC; we train BCE)
+- Yuan et al., ICCV 2021 "Large-scale Robust Deep AUC Maximization" (arXiv 2012.03173): AUC-margin (min-max) loss;
+  two-stage = CE pre-training then AUC-M fine-tuning (PESG); 1st place Stanford CheXpert competition (report-derived
+  noisy radiology labels — closest public analogue to our setting); beats CE "by a large margin". LibAUC library
+  (docs.libauc.org; MultiLabelAUCM; margin bug fixed Feb 2024).
+  -> ACTION: implement AUC-M fine-tuning stage in train.py (--init-ckpt from a trained student, --aucm-w, binary
+  targets y>0.5 for the AUC term + BCE on soft labels), fold-0 test (~40 min).
+Sources: openaccess.thecvf.com/content/ICCV2021/html/Yuan_Large-Scale_Robust_Deep_AUC_Maximization_A_New_Surrogate_Loss_and_ICCV_2021_paper.html ;
+github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
