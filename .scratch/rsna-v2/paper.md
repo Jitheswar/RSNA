@@ -151,6 +151,8 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
   Lesson: report-label AUC is not a safe yardstick for label changes; the reference-panel direction must decide.
 - **Mirror augmentation** (whole-study mirror, labels kept): 0.9175 -> 0.9133 (0.9145 with mirror TTA) — a
   consistent anatomical frame beats asking the network to infer medial/lateral.
+- **AUC-margin fine-tuning** (Deep AUC Maximization, Yuan et al. ICCV 2021; BCE + AUC-M on y>0.5, 3 epochs from
+  the trained student): no gain (weak 0.9171 vs 0.9175, gold12 0.956 vs 0.958; pre-registered decision rule).
 - **Per-target or silence-aware mixing weights** fitted/defined on gold: no gain (0.8974 vs 0.8978; 0.9238 vs
   0.9221); forum reports of gold-tuned labels overfitting (gold 0.945 -> LB 0.910).
 - DICOM PatientSex adds nothing beyond the image model (AUC change <= 0.0015).

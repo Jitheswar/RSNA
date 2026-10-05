@@ -77,3 +77,8 @@ smartx.cse.ust.hk/2024/09/08/copas/ ; smartx.cse.ust.hk/2025/09/29/ecmknee/
   targets y>0.5 for the AUC term + BCE on soft labels), fold-0 test (~40 min).
 Sources: openaccess.thecvf.com/content/ICCV2021/html/Yuan_Large-Scale_Robust_Deep_AUC_Maximization_A_New_Surrogate_Loss_and_ICCV_2021_paper.html ;
 github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
+
+## 2026-10-05 16:17 IST — result: Deep AUC Maximization does not transfer here
+- s_mix1_aucm f0 (BCE + AUC-margin on y>0.5, 3 epochs from the trained student, lr 2e-5/1e-4): weak 0.9171 vs 0.9175,
+  gold12 0.9557 vs 0.9580 -> NOGO (pre-registered rule). Hypotheses: soft-label noise (binarisation), small data
+  (3.5k studies vs CheXpert 224k), BCE on calibrated soft labels already ranks well. Not pursued further.
