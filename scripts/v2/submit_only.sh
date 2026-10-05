@@ -6,6 +6,10 @@ set -euo pipefail
 cd /home/ch.jitheswar/RSNA
 CK=$1; MSG=$2; SLUG=${3:-rsna-v2-only}; W=${4:-1.0}; MODE=${5:---only}
 KG=~/rsna-gpu2/bin/kaggle
+# team-shared daily quota: skip (before spending Kaggle GPU on a commit run) if no slot is left today
+REM=$($KG competitions submission-limits rsna-knee-abnormality-detection 2>/dev/null | grep -o "Remaining today: [0-9]*" | grep -o "[0-9]*$")
+if [ "${REM:-1}" -lt 1 ]; then echo "NOT submitted (no submission slots left today; team quota)"; exit 0; fi
+echo "submission slots remaining today: ${REM:-unknown}"
 bash scripts/v2/release.sh "$CK" "$MSG"
 for i in $(seq 1 60); do s=$($KG datasets status jitheswar/rsna-v2-models 2>&1 | tail -1); [ "$s" = "ready" ] && break; sleep 20; done
 echo "dataset: $s"
