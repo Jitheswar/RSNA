@@ -130,7 +130,7 @@ contusion 0.892 -> 0.946, MCL 0.857 -> 0.896, lateral meniscus 0.799 -> 0.855 (g
 | 24/16/14 windows | 0.9191 | 0.967 | PF OA 0.886 -> 0.904 |
 | rank average of the two | 0.9222 | 0.975 | — |
 | DINOv2-B/14 280 | 0.9105 | 0.925 | better LatMen/synovitis/contusion/fracture, ACL 0.923 |
-| ConvNeXt-S 384 | 0.9147 (fold 1) | 0.947 | ensemble with 320: +0.0011 |
+| ConvNeXt-S 384 (5-fold) | 0.9179 | 0.9188 (gold58) | ensemble with 320: weak 0.9200, gold58 0.9212 |
 | EfficientNetV2-S 384 | 0.9004 | 0.938 | hurts ensembles |
 Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20 +0.0010 weak AUC.
 

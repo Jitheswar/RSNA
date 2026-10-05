@@ -286,3 +286,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   DAM, CheXpert 1st place): loss = BCE(soft) + w * AUC-M(y>0.5), alpha by SGD ascent (maximize=True), a/b in AdamW.
   Smoke test OK. Queued s_mix1_aucm f0 (init s_mix1 f0, 3 epochs, lr 2e-5/1e-4) at prio 00350 (next free GPU).
 - 14:10 IST armed auto_aucm.sh (pre-registered: GO if s_mix1_aucm f0 weak >= s_mix1 f0 + 0.0015 and gold12 drop <= 0.01 -> queue AUC-M fine-tunes for s_mix1 f1-f4 at prio 0036a). Parser bug (matched the 'a + b' combo row) caught in dry run and fixed.
+- 14:14 IST s_mix1_384 5-fold complete: weak 0.9179, gold58 0.9188 [0.890, 0.944] (= 320 family 0.9179 / 0.9195). Rank-avg 320+384: weak 0.9200, gold 0.9212 (best pair); 320+round2+384: 0.9207 / 0.9209. AUC-M test running on the A30.
