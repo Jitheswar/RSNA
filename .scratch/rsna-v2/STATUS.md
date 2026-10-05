@@ -246,3 +246,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   s_mix1_k24 f1-4 (0036x) BEFORE DINO f1-4 (004x); full-data seeds (006x) switched to the combined recipe
   (24/16/14 + pos_weight); make_students_t1.sh takes RECIPE/EXTRA; auto_r2e.sh now waits for 384+pw+k24+DINO and
   builds stud_mix1e from the 5-family ensemble OOF, students with the combined recipe (prio 005x).
+- 08:07 IST timing probe pushed: jitheswar/rsna-v2-timing v1 = ours-only, 12 models (10 ConvNeXt-S 320, DINOv2-B 280, ConvNeXt-S K24) on 1300 simulated studies (never submitted) -> real 2xT4 per-model cost for sizing the final ensemble (the earlier ~100 s/model was a FLOP estimate, not a measurement).
