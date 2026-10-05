@@ -292,3 +292,9 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 16:22 IST the freed A30 grabbed k24 f1 (~8.5 h on the A30 -> evening subs after midnight) -> moved z140 test to the queue head (00355), stopped k24 f1 on the A30 (it now runs z140), re-queued k24 f1 for the next A100 (~17:10). k24 family ETA ~22:35 -> evening submissions ~22:40.
 - 16:21 IST queued s_mix1_pwk24 f0 (pos_weight + 24/16/14 windows combined; untested combination used by the ensemble-teacher round and full-data seeds) at prio 00365 (after k24 folds, before DINO) -> check vs pw / k24 alone before the round starts (~03:00).
 - 18:16 IST **s_mix1_pw 5-fold** (BCE pos_weight): weak 0.9192 (+0.0013 vs s_mix1), gold58 0.9237 [0.897, 0.946] (+0.004) -> best single family; MCL weak 0.892 -> 0.912, PF OA 0.883 -> 0.876. Ensembles: 384+pw 0.9210/0.9244; 384+pw+round2 0.9214/0.9250 (best gold); all four 0.9215/0.9233. k24 family (PF OA) due ~22:35.
+- 21:30 IST **MULTIMODAL LABELS (GPT-6.1-Sol via Codex, 3 FS montages x 6 slices + report; host 733965 allows
+  Competition Data to LLM APIs)**: gold58 AUC (leak-free, no fitting) 0.930 vs report-only raw sol61 0.894, calibrated
+  fusion 0.855, student OOF 0.919/0.924 (pw). Rank-avg student + multimodal 0.943. Per target multimodal: PF OA 0.953
+  (student 0.842), MCL 0.992, LatMen 0.909, synovitis 0.833, Baker 0.944, contusion 0.901, fracture 0.914.
+  Also: raw sol61 p ranks better than our calibrated fusion (0.894 vs 0.855 leak-free) -> calibration helps log-loss,
+  not AUC. NEXT: effort-low check, then label all 4,407 studies (usage limits!) -> students on mm+student mix.
