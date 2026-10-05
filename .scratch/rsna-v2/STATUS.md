@@ -263,3 +263,10 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Parity on 150 fold-0 studies: ConvNeXt AUC 0.9304 vs autocast 0.9305 (max|dp| 0.0015), DINOv2 0.9247 = 0.9247;
   A100 speed 1.23x / 1.18x (T4 gain expected larger).
 - 12:25 IST prep profile (3 test studies, warm cache): ~1.7 s/study CPU = dcmread 19%, pydicom pixel_array 19%, cv2.resize 12%, np.stack 11%, percentile 7% -> Kaggle prep is CPU-bound (4 vCPU). Added prep._raw_pixels (PixelData via np.frombuffer; bit-identical to pixel_array on 2,500 random train files; falls back to pydicom otherwise): volumes identical, prep ~15% faster. Main track unaffected (GPU-bound); helps the efficiency track.
+- 12:45 IST **RACE FIX (submission safety)**: timing probe v2 crashed in 8 s because the notebook mounted the PREVIOUS
+  rsna-v2-models version (old kaggle_infer without --pure-fp16): `datasets status` reported "ready" before the new
+  version existed. A real submission could silently run old models (this morning's 0.944 = students, so it was OK).
+  Now: release.sh writes a unique release_tag.txt, polls until Kaggle serves that tag; build.py bakes the tag into
+  leg.py, which raises on a stale mount (outside the try -> kernel ERROR -> nothing submitted).
+  torch.compile(enc.forward_features, max-autotune-no-cudagraphs): A100 1.41x (130 -> 92 ms/study) but 9 min
+  compile/autotune -> not used now (maybe later for big ensembles if the cache amortises it).

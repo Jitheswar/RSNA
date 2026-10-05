@@ -9,6 +9,14 @@ _pkg = [p for pat in ('/kaggle/input/*/kaggle_infer.py', '/kaggle/input/*/*/kagg
 _comp = [p for p in [os.environ.get('RSNA_COMP_ROOT', ''), '/kaggle/input/competitions/rsna-knee-abnormality-detection', '/kaggle/input/rsna-knee-abnormality-detection'] if os.path.exists(os.path.join(p, 'test.csv'))][0]
 _base_path = '/kaggle/working/submission.csv'
 TARGETS = ['ACL','MCL','Medial Meniscus','Lateral Meniscus','Medial OA','Lateral OA','PF OA','Effusion','Synovitis',"Baker's",'Contusion','Fracture']
+V2_TAG = '__TAG__'              # release tag of the model package this notebook was built for
+if not _pkg:
+    raise RuntimeError('v2 model package not mounted')
+_tag_file = os.path.join(os.path.dirname(_pkg[0]), 'release_tag.txt')
+_mounted = open(_tag_file).read().strip() if os.path.exists(_tag_file) else 'missing'
+if _mounted != V2_TAG:
+    raise RuntimeError(f'stale v2 model package mounted: tag {_mounted!r} != expected {V2_TAG!r}')
+print('v2 package tag OK', V2_TAG, flush=True)
 try:
     import gc, torch
     gc.collect(); torch.cuda.empty_cache()

@@ -48,6 +48,8 @@ for p in paths:
     torch.save({"state": state, "args": keep_args, "epoch": ck.get("epoch")}, out / name)
     manifest.append({"file": name, **keep_args})
 (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
+import os as _os
+(out / "release_tag.txt").write_text(_os.environ.get("RELEASE_TAG", "untagged"))  # notebook verifies the mounted version
 if args.ens_json:
     shutil.copy(args.ens_json, out / "ens_weights.json")
 meta = {"title": "rsna-v2-models", "id": "jitheswar/rsna-v2-models", "licenses": [{"name": "apache-2.0"}]}

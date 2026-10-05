@@ -10,7 +10,10 @@ here = Path(__file__).parent
 slug, weight = sys.argv[1], float(sys.argv[2])
 only = "--only" in sys.argv
 sim = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--sim=")), 0)
-leg = (here / "leg.py").read_text().replace("__WEIGHT__", str(weight)).replace("__ONLY__", str(only))
+_tagf = here.parent.parent / "artifacts/private/v2/kaggle/rsna-v2-models/release_tag.txt"
+tag = _tagf.read_text().strip() if _tagf.exists() else "untagged"
+leg = (here / "leg.py").read_text().replace("__WEIGHT__", str(weight)).replace("__ONLY__", str(only)).replace("__TAG__", tag)
+print("model package tag", tag)
 base_dir = here.parent / "blend"
 if only:
     nb = {"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
