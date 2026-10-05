@@ -130,6 +130,7 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--timeout", type=int, default=900)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--order", default="", help="'unaddressed': studies whose reports leave most findings unaddressed first")
     args = ap.parse_args()
     tr = pd.read_csv(V2 / "train.csv").set_index("StudyInstanceUID")
     studies = list(tr.index[tr.ACL.notna()]) if args.gold else list(tr.index)
@@ -137,7 +138,12 @@ def main():
     done = set()
     if out.exists():
         done = {json.loads(l)["StudyInstanceUID"] for l in out.read_text().splitlines() if l.strip()}
-    studies = [s for s in studies if s not in done][: args.limit or None]
+    studies = [s for s in studies if s not in done]
+    if args.order == "unaddressed":
+        gr = pd.read_csv(V2 / "labels/sol61_grades.csv").set_index("StudyInstanceUID")
+        n_un = (gr.reindex(studies)[TARGETS] == -1).sum(1).fillna(12)
+        studies = list(n_un.sort_values(ascending=False, kind="stable").index)
+    studies = studies[: args.limit or None]
     meta = load_series_table(sorted(glob.glob(str(V2 / "vol384/meta-train-*.csv"))), str(V2 / "train_series.csv"))
     surv = pd.read_csv(V2 / "survey-train.csv", usecols=["SeriesInstanceUID", "SeriesDescription"])
     series_desc = dict(zip(surv.SeriesInstanceUID, surv.SeriesDescription.astype(str)))

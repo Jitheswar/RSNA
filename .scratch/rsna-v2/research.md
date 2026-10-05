@@ -82,3 +82,17 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
 - s_mix1_aucm f0 (BCE + AUC-margin on y>0.5, 3 epochs from the trained student, lr 2e-5/1e-4): weak 0.9171 vs 0.9175,
   gold12 0.9557 vs 0.9580 -> NOGO (pre-registered rule). Hypotheses: soft-label noise (binarisation), small data
   (3.5k studies vs CheXpert 224k), BCE on calibrated soft labels already ranks well. Not pursued further.
+
+## 2026-10-05 21:25 IST — sweep + multimodal labelling
+- Host 733965 (official): "submitting Competition Data, including report text, to an external LLM or API for inference
+  ... will not, by itself, be considered prohibited PRIVATE SHARING" -> image+report LLM labelling allowed.
+- Host reply (Aug 27, same thread): non-commercial-licence datasets are not excluded for that reason; click-through /
+  straightforward registration datasets generally satisfy accessibility; institution-specific approvals / IRB /
+  negotiated agreements do not (OAI via NDA DUC, KneeCoT: out; MRNet / fastMRI(+) / SKM-TEA: likely in). Value for our
+  weak findings is limited (MRNet: ACL / meniscus (no side) / abnormal) -> not pursued now.
+- Topic 745949: others see the same synovitis ceiling (~73% of reports silent; image models ~0.86; LLM report+MRI
+  ~0.84-0.86 synovitis, 0.91-0.92 effusion).
+- RESULT (our pilot): GPT-6.1-Sol multimodal labels (3 FS montages + report) gold58 AUC 0.930 (low effort 0.9245),
+  student 0.919-0.924, rank-avg student + multimodal 0.943; raw report p 0.894 > calibrated fusion 0.855 (AUC).
+  -> ACTION: label all 4,407 with image+report (now via Opus subagents), students on 0.5 multimodal + 0.5 student OOF.
+- LB top unchanged (0.963 x2, 0.961 x2, 0.960 x3); no new high-score notebooks.
