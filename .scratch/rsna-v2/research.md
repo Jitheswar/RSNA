@@ -45,3 +45,19 @@ arxiv.org/abs/2301.07294v1 ; papers.miccai.org/miccai-2025/0580-Paper3788.html ;
   -> ACTION: benchmark encoder compile (reduce-overhead vs max-autotune-no-cudagraphs) on the A100; if >=1.3x, test on
   Kaggle with the timing notebook.
 - Pure fp16 (no autocast): implemented 2026-10-05 (forum claim 2.08x on T4); Kaggle timing v2 running.
+
+## 2026-10-05 12:45 IST — papers: report supervision + knee MRI architectures
+- "When are radiology reports useful for training medical image classifiers?" (arXiv 2510.24385v2, Oct 2025):
+  image-text alignment pre-training helps diagnostic labels well represented in text, HURTS findings weakly
+  represented in text; for noisy report-derived labels: avoid explicit alignment, combine SELF-SUPERVISED pre-training
+  with auxiliary text objectives; for findings rarely mentioned in reports (our synovitis): prioritise SSL
+  pre-training; distillation from an image+report teacher gives no advantage when text is highly predictive.
+  -> IDEA (cost/benefit TBD): domain SSL (continue DINOv2 self-distillation on our ~820k knee slices, then fine-tune
+  the DINO student) to help silent findings; our aux grade head already is an auxiliary text objective.
+- CoPAS (Nature Communications 2024, doi 10.1038/s41467-024-51888-4; HKUST SmartX): 1,748 subjects, 12 knee
+  abnormalities, Co-Plane Attention across MRI Sequences, decoupled per-sequence spatial features; beats junior
+  radiologists. Our joint transformer over all series tokens (type + position embeddings, finding queries) already
+  covers cross-plane/sequence attention; possible refinement: explicit plane-to-plane cross-attention blocks.
+- ECM-Knee (HKUST + SMU, EClinicalMedicine 2025): multi-task system, 9 knee abnormalities.
+Sources: arxiv.org/html/2510.24385v2 ; ideas.repec.org/a/nat/natcom/v15y2024i1d10.1038_s41467-024-51888-4.html ;
+smartx.cse.ust.hk/2024/09/08/copas/ ; smartx.cse.ust.hk/2025/09/29/ecmknee/
