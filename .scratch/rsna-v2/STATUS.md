@@ -277,3 +277,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   prep failures in 1,300 studies, 11 laterality-checker flips (0.8%, train 0.66%). **End-to-end Kaggle parity at scale**:
   held-out (OOF) predictions of s_mix1 / s_mix2 fold models through the exact Kaggle path on 1,300 simulated studies vs
   local OOF: mean|dp| 0.0008, max 0.024, corr 1.0000, weak AUC 0.9205 = 0.9205 (s_mix2 0.9209 vs 0.9208).
+- 13:51 IST **Pure-fp16 timing (Kaggle 2xT4, 12 models, 1300 studies)**: 3507 s vs 3918 s autocast -> 1.12x only
+  (forum's 2.08x was CoAtNet; ConvNeXt depthwise 7x7 convs dominate on T4). ~292 s/model. Blend budget: baseline
+  ~22,800 s + N*292 s + startup <= 32,400 - 2,700 margin -> N ~ 20 (family costs: ConvNeXt-S 320 x5 = 1,460 s,
+  K24 x5 ~1,880 s, 384 x5 ~2,100 s). Release-tag guard worked (v3 ran on the right package).

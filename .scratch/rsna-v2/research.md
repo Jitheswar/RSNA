@@ -61,3 +61,9 @@ arxiv.org/abs/2301.07294v1 ; papers.miccai.org/miccai-2025/0580-Paper3788.html ;
 - ECM-Knee (HKUST + SMU, EClinicalMedicine 2025): multi-task system, 9 knee abnormalities.
 Sources: arxiv.org/html/2510.24385v2 ; ideas.repec.org/a/nat/natcom/v15y2024i1d10.1038_s41467-024-51888-4.html ;
 smartx.cse.ust.hk/2024/09/08/copas/ ; smartx.cse.ust.hk/2025/09/29/ecmknee/
+
+## 2026-10-05 13:51 IST — measured: pure fp16 on Kaggle T4 = 1.12x (not 2x)
+- Forum's 2.08x (CoAtNet) does not transfer to ConvNeXt-S: T4 time is dominated by 7x7 depthwise convolutions.
+  torch.compile(max-autotune-no-cudagraphs) gave 1.41x on A100 (Triton depthwise conv kernels) but 9 min autotune.
+  -> next speed options if needed: compile with autotune cache shipped in the package, fewer windows (14/8/7 = 0.7x
+  cost, -0.0017 AUC), or ViT families (DINOv2 tensor-core friendly) for the efficiency track.
