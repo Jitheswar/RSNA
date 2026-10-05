@@ -19,3 +19,17 @@ actions (with status).
   -> not pursued (cost/accuracy), revisit if labels plateau.
 - goodpjw2008 notebook: stack 0.943 + own ConvNeXt-T 2.5D reader (0.929 alone) at 70/30 -> 0.944; notes synovitis
   labels are wrong when reports are silent (matches our analysis).
+
+## 2026-10-05 12:35 IST — literature: self-training drift, report-derived labels
+- Confirmation bias: students overfit teacher errors; gains saturate after 1-2 rounds; mitigations = re-initialise
+  each round (we do), entropy/confidence-based pseudo-label selection, calibration, noised/larger students
+  (Radhakrishnan et al., WACV 2024 "Design Choices for Enhancing Noisy Student Self-Training";
+  arxiv.org/abs/2301.07294 "Enhancing Self-Training Methods"). Matches our round-2 result (same-architecture
+  self-distillation: no gain, gold -0.004). -> ACTION (queued): round 2 from a 5-family ENSEMBLE teacher (s_mix1e);
+  candidate next: stronger student noise (drop_path 0.2-0.3, intensity aug) or confidence-weighted mixing
+  (more report weight where teacher entropy is high).
+- LLM-extracted radiology labels: LLMs beat rule labellers (fracture sensitivity 95% vs CheXpert 51%); image models
+  are fairly robust to label noise; hedging language should become soft/uncertain labels (GPT-4o MSK radiograph study,
+  2026; MICCAI 2025 paper 0580; arxiv 2510.05664). Our grade->P(panel) calibration already encodes hedging.
+Sources: openaccess.thecvf.com/content/WACV2024/html/Radhakrishnan_Design_Choices_for_Enhancing_Noisy_Student_Self-Training_WACV_2024_paper.html ;
+arxiv.org/abs/2301.07294v1 ; papers.miccai.org/miccai-2025/0580-Paper3788.html ; arxiv.org/abs/2510.05664v1
