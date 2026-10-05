@@ -170,10 +170,30 @@ synovitis 62-92% everywhere; OA 47-59% of Turkish reports.
 - Runtime on 2xT4 per 1,300 studies: ~290 s per ConvNeXt-S model (pure fp16; 326 s with autocast), DICOM preparation
   ~1,150 s on 4 CPUs (CPU-bound). Ours (5 models) ~30 min for 0.944 vs the baseline ~6.4 h for 0.943.
 
-## 7 Discussion and limitations (to write)
-- Gold58 is small and trauma-enriched; we use it for calibration and direction, never for tuning weights.
-- The report-label metric can mislead (round 2, fracture); the panel is the yardstick.
-- Test-time cost budget shapes the ensemble; efficiency matters (competition efficiency track).
+## 7 Discussion and limitations (draft)
+**Where the gains come from.** The largest single improvement came from the labels, not the network: calibrated
+report labels beat public labels by ~0.075 weak AUC on the same recipe, and image-informed students added +0.038
+gold58 AUC and +0.009 on the hidden test. Architecture changes within a fixed label set moved results by <= 0.005
+(resolution, backbone size, DINOv2, EfficientNetV2), while recipe changes that target specific findings helped where
+predicted (pos_weight -> rare findings such as MCL and fracture; denser axial sampling -> patellofemoral OA).
+
+**What the reference panel rewards.** The panel calls findings that reports under-call (small effusions, grade-2
+sprains, synovitis without mention) and the gold sample is trauma-enriched. Calibrating to the panel and letting image
+evidence fill report silence are therefore complementary: calibration fixes the operating point of what reports say;
+students fix what reports do not say.
+
+**When self-training stops helping.** One round of soft bootstrapping helps; a second round with the same
+architecture does not (gold -0.004), and changing a label because it matches the panel better as a *report label*
+(fracture <- contusion) can hurt the image model. Report-label AUC rose or stayed flat in both cases, so it is not a
+safe yardstick; we decide label changes on the reference panel's direction only and never tune weights on gold58.
+
+**Compute and efficiency.** On Kaggle 2xT4 our five-model ensemble scores 0.944 in ~30 min, the attributed public
+ensemble 0.943 in ~6.4 h. Inference cost (~290 s per ConvNeXt-S model per 1,300 studies, measured) bounds how many of
+our models fit beside the baseline in 9 h; we select families greedily by OOF objective per second.
+
+**Limitations.** Gold58 is small (CIs +-0.03) and not prevalence-matched; the public leaderboard covers ~390 studies
+(+-0.004); results on the private split are pending. Report languages were identified heuristically. Commercial LLM
+labels depend on proprietary models (we also report open-weight models). We used no external MRI data.
 
 ## Pending
 - Laterality-normalisation ablation (abl_nolat), aux-head and uniform-K ablations (queued on idle GPUs).
