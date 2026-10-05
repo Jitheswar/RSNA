@@ -240,3 +240,9 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 06:25 IST Oct 5 slots used 3/5: 56836780 students ours-only 0.944; 56837853 blend baseline + s_mix1 w=0.5 (PENDING);
   56838122 blend w=0.65 probe (PENDING; scores ~13:00 IST). Blend commit runs take ~8-10 min of Kaggle GPU.
 - 07:05 IST round 2 full 5-fold: weak vs cal_v3 0.9178 (round 1 0.9179); gold58 0.9155 vs 0.9195, diff -0.004 [-0.014, +0.006] (n.s.) -> no gain from self-distillation round; round-1 labels kept for new families. s_mix1_pw f0 done (own-label weak 0.9625 / gold12 0.966 vs s_mix1 0.9606 / 0.958); k24 at e7 0.9633 / 0.974.
+- 07:25 IST **recipe tests (fold 0, weak vs cal_v3 / gold12)**: baseline s_mix1 0.9175/0.958; --pos-weight 0.9197/0.966
+  (MCL 0.897->0.918, Fracture 0.926->0.940, LatMen, LatOA up); 24/16/14 windows 0.9191/0.967 (PF OA 0.886->0.904,
+  Synovitis, LatMen up); pw + k24 rank-avg 0.9222/0.975 (best pair so far). -> queued s_mix1_pw f1-4 (0035x) and
+  s_mix1_k24 f1-4 (0036x) BEFORE DINO f1-4 (004x); full-data seeds (006x) switched to the combined recipe
+  (24/16/14 + pos_weight); make_students_t1.sh takes RECIPE/EXTRA; auto_r2e.sh now waits for 384+pw+k24+DINO and
+  builds stud_mix1e from the 5-family ensemble OOF, students with the combined recipe (prio 005x).
