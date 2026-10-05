@@ -239,3 +239,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   ConvNeXt-S 320 students s_mix1e f0-4 at prio 005x (before the full-data seeds).
 - 06:25 IST Oct 5 slots used 3/5: 56836780 students ours-only 0.944; 56837853 blend baseline + s_mix1 w=0.5 (PENDING);
   56838122 blend w=0.65 probe (PENDING; scores ~13:00 IST). Blend commit runs take ~8-10 min of Kaggle GPU.
+- 07:05 IST round 2 full 5-fold: weak vs cal_v3 0.9178 (round 1 0.9179); gold58 0.9155 vs 0.9195, diff -0.004 [-0.014, +0.006] (n.s.) -> no gain from self-distillation round; round-1 labels kept for new families. s_mix1_pw f0 done (own-label weak 0.9625 / gold12 0.966 vs s_mix1 0.9606 / 0.958); k24 at e7 0.9633 / 0.974.
