@@ -247,3 +247,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   (24/16/14 + pos_weight); make_students_t1.sh takes RECIPE/EXTRA; auto_r2e.sh now waits for 384+pw+k24+DINO and
   builds stud_mix1e from the 5-family ensemble OOF, students with the combined recipe (prio 005x).
 - 08:07 IST timing probe pushed: jitheswar/rsna-v2-timing v1 = ours-only, 12 models (10 ConvNeXt-S 320, DINOv2-B 280, ConvNeXt-S K24) on 1300 simulated studies (never submitted) -> real 2xT4 per-model cost for sizing the final ensemble (the earlier ~100 s/model was a FLOP estimate, not a measurement).
+- 09:30 IST **TIMING (measured on Kaggle 2xT4)**: 12 models (10 ConvNeXt-S 320 K20/12/10, DINOv2-B 280, ConvNeXt-S K24)
+  on 1300 simulated studies = 3918 s, GPU-bound -> ~320 s per model per 1300 studies (NOT ~100 s). Budget: baseline
+  ~23,000 s + ours N*320 s <= 32,400 s - ~45 min margin -> N <= ~20-22 models. cudnn.benchmark / channels_last /
+  micro 96 give no speed-up (A100 bench 152-158 ms/study). -> pick the final ~20 models by greedy forward selection
+  on OOF rank-averages; consider fewer windows (14/8/7 = 0.7x cost, -0.0017 weak) only if needed.
