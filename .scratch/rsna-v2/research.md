@@ -68,7 +68,7 @@ smartx.cse.ust.hk/2024/09/08/copas/ ; smartx.cse.ust.hk/2025/09/29/ecmknee/
   -> next speed options if needed: compile with autotune cache shipped in the package, fewer windows (14/8/7 = 0.7x
   cost, -0.0017 AUC), or ViT families (DINOv2 tensor-core friendly) for the efficiency track.
 
-## 2026-10-05 14:05 IST — paper: Deep AUC Maximization (our metric is macro AUC; we train BCE)
+## 2026-10-05 13:58 IST — paper: Deep AUC Maximization (our metric is macro AUC; we train BCE)
 - Yuan et al., ICCV 2021 "Large-scale Robust Deep AUC Maximization" (arXiv 2012.03173): AUC-margin (min-max) loss;
   two-stage = CE pre-training then AUC-M fine-tuning (PESG); 1st place Stanford CheXpert competition (report-derived
   noisy radiology labels — closest public analogue to our setting); beats CE "by a large margin". LibAUC library

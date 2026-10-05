@@ -282,6 +282,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   ~22,800 s + N*292 s + startup <= 32,400 - 2,700 margin -> N ~ 20 (family costs: ConvNeXt-S 320 x5 = 1,460 s,
   K24 x5 ~1,880 s, 384 x5 ~2,100 s). Release-tag guard worked (v3 ran on the right package).
 - 13:58 IST armed auto_evening.sh: when 384+pw+k24 families complete (~21:00-21:30) -> slot 4 ours-only 25 models; then family_select (budget 6,400 s, 292 s/model) -> slot 5 blend baseline + selected families, w=0.6 (selection parsing dry-run OK). Skips if families are not ready by 03:00.
-- 14:15 IST implemented AUC-margin fine-tuning (train.py --init-ckpt, --aucm-w, --aucm-margin; Yuan et al. ICCV 2021
+- 14:00 IST implemented AUC-margin fine-tuning (train.py --init-ckpt, --aucm-w, --aucm-margin; Yuan et al. ICCV 2021
   DAM, CheXpert 1st place): loss = BCE(soft) + w * AUC-M(y>0.5), alpha by SGD ascent (maximize=True), a/b in AdamW.
   Smoke test OK. Queued s_mix1_aucm f0 (init s_mix1 f0, 3 epochs, lr 2e-5/1e-4) at prio 00350 (next free GPU).
