@@ -252,3 +252,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   ~23,000 s + ours N*320 s <= 32,400 s - ~45 min margin -> N <= ~20-22 models. cudnn.benchmark / channels_last /
   micro 96 give no speed-up (A100 bench 152-158 ms/study). -> pick the final ~20 models by greedy forward selection
   on OOF rank-averages; consider fewer windows (14/8/7 = 0.7x cost, -0.0017 weak) only if needed.
+- 10:05 IST s_mix1_384 f1 done: weak 0.9147 (320: 0.9174), gold12 0.947; 320+384 rank-avg 0.9185 (+0.0011; teachers gave +0.0035); 320+round2 0.9196. A30 384 f0 ~2,600 s/epoch -> done ~14:00.
