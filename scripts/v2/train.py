@@ -147,6 +147,9 @@ def main():
     ap.add_argument("--aug", default="full", choices=["full", "light", "none"])
     ap.add_argument("--random-pos", action="store_true", help="bag sampling: random window centres in training")
     ap.add_argument("--mirror", type=float, default=0.0, help="training: prob. of mirroring a whole study (labels kept)")
+    ap.add_argument("--init-ckpt", default="", help="initialise from a trained checkpoint (may contain {fold})")
+    ap.add_argument("--aucm-w", type=float, default=0.0, help=">0: add AUC-margin loss (Yuan et al. ICCV 2021) on y>0.5")
+    ap.add_argument("--aucm-margin", type=float, default=1.0)
     ap.add_argument("--ktr-sag", type=int, default=0, help="training per-plane window counts (default = eval counts)")
     ap.add_argument("--ktr-cor", type=int, default=0)
     ap.add_argument("--ktr-ax", type=int, default=0)
@@ -244,6 +247,18 @@ def main():
         model = KneeNet(args.backbone, d=args.d, n_layers=args.layers, drop_path=args.drop_path,
                         grad_ckpt=args.grad_ckpt, n_aux=12 if AUX is not None else 0, head=args.head,
                         img=args.img).to(dev)
+        if args.init_ckpt:
+            ck0 = torch.load(args.init_ckpt.replace("{fold}", str(fold)), map_location="cpu", weights_only=False)
+            model.load_state_dict(ck0["state"], strict=True)
+            print("initialised from", args.init_ckpt.replace("{fold}", str(fold)), flush=True)
+        aucm = None
+        if args.aucm_w > 0:  # min over (model, a, b), max over alpha >= 0
+            p_pos = torch.tensor(np.clip((Yt[tr_idx] > 0.5).mean(0), 0.02, 0.98), dtype=torch.float32, device=dev)
+            a_ = torch.zeros(12, device=dev, requires_grad=True)
+            b_ = torch.zeros(12, device=dev, requires_grad=True)
+            al_ = torch.zeros(12, device=dev, requires_grad=True)
+            opt_al = torch.optim.SGD([al_], lr=args.lr_head * 10, maximize=True)
+            aucm = (p_pos, a_, b_, al_, opt_al)
         pw = None
         if args.pos_weight:
             prev = np.clip(Yt[tr_idx].mean(0), 0.03, 0.7)
@@ -258,12 +273,12 @@ def main():
             groups = param_groups_layer_decay(model.enc, weight_decay=args.wd, layer_decay=args.layer_decay)
             for g in groups:
                 g["lr"] = args.lr_enc * g.pop("lr_scale", 1.0)
-            groups.append({"params": head_params, "lr": args.lr_head})
+            groups.append({"params": head_params + ([aucm[1], aucm[2]] if aucm else []), "lr": args.lr_head})
             opt = torch.optim.AdamW(groups, weight_decay=args.wd, betas=(0.9, 0.999))
         else:
             opt = torch.optim.AdamW([{"params": enc_params, "lr": args.lr_enc},
-                                     {"params": head_params, "lr": args.lr_head}], weight_decay=args.wd,
-                                    betas=(0.9, 0.999))
+                                     {"params": head_params + ([aucm[1], aucm[2]] if aucm else []),
+                                      "lr": args.lr_head}], weight_decay=args.wd, betas=(0.9, 0.999))
         steps_per_epoch = len(dl_tr) // args.accum
         total = args.max_steps or steps_per_epoch * args.epochs
         warm = max(1, int(args.warmup * total))
@@ -301,6 +316,15 @@ def main():
                                                smask=b["smask"].to(dev))
                 loss = F.binary_cross_entropy_with_logits(logits.float(), y, reduction="none", pos_weight=pw).mean(1)
                 loss = (loss * wg).sum() / wg.sum()
+                if aucm is not None:
+                    p_pos, a_, b_, al_, _ = aucm
+                    sc = torch.sigmoid(logits.float())
+                    yb = (y > 0.5).float()
+                    m_ = args.aucm_margin
+                    la_ = ((1 - p_pos) * (sc - a_) ** 2 * yb + p_pos * (sc - b_) ** 2 * (1 - yb)
+                           + 2 * al_ * (p_pos * (1 - p_pos) * m_ + p_pos * sc * (1 - yb) - (1 - p_pos) * sc * yb)
+                           - p_pos * (1 - p_pos) * al_ ** 2)
+                    loss = loss + args.aucm_w * la_.mean()
                 if aux_logits is not None and "aux" in b:
                     a = b["aux"].to(dev)
                     m = (a >= 0).float()
@@ -314,6 +338,11 @@ def main():
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
                     opt.step()
                     opt.zero_grad(set_to_none=True)
+                    if aucm is not None:
+                        aucm[4].step()
+                        aucm[4].zero_grad(set_to_none=True)
+                        with torch.no_grad():
+                            aucm[3].clamp_(min=0.0)
                     ema.update(model)
                     step += 1
                     if step % 50 == 0:
