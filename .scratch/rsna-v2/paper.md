@@ -190,3 +190,7 @@ Lesson: report-label AUC is not a safe yardstick for label changes; gold-panel d
 student gain measured on gold58 (+0.038 OOF) transfers to the hidden panel-labelled test (+0.009 public LB).
 
 **Blend (pre-fixed rank weight 0.5) of attributed baseline + 5-fold students = 0.948** (baseline 0.943, students 0.944).
+
+**Reproducibility (Kaggle 2xT4, end to end):** for 1,300 training studies run through the exact submission path (raw
+DICOM -> prep -> fp16 inference), held-out fold-model predictions match local OOF (mean |dp| 0.0008, corr 1.0000,
+identical AUC); 0 preparation failures. Blend weight 0.5 vs 0.65 gives the same public score (0.948).

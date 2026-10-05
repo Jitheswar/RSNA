@@ -271,3 +271,9 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   torch.compile(enc.forward_features, max-autotune-no-cudagraphs): A100 1.41x (130 -> 92 ms/study) but 9 min
   compile/autotune -> not used now (maybe later for big ensembles if the cache amortises it).
 - 12:57 IST **BLEND baseline + s_mix1 students (w=0.5) = 0.948** (sub 56837853) vs ours-only 0.944, baseline 0.943, teacher blend 0.946. w=0.65 probe pending.
+- 13:10 IST **blend w=0.65 = 0.948** (sub 56838122) = w=0.5 (0.948): weight insensitive in 0.5-0.65 -> use ~0.55-0.6.
+  Topic 744230 check (bf16 on T4 -> 50x slower emulation + silent 0.5 fallbacks): NOT our case. Inference is fp16 only
+  (no bf16 in kaggle_infer/model/data/prep/leg), no per-study time guard, measured T4 timing; timing-run log: 0 study /
+  prep failures in 1,300 studies, 11 laterality-checker flips (0.8%, train 0.66%). **End-to-end Kaggle parity at scale**:
+  held-out (OOF) predictions of s_mix1 / s_mix2 fold models through the exact Kaggle path on 1,300 simulated studies vs
+  local OOF: mean|dp| 0.0008, max 0.024, corr 1.0000, weak AUC 0.9205 = 0.9205 (s_mix2 0.9209 vs 0.9208).
