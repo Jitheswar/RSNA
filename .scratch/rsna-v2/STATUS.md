@@ -270,3 +270,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   leg.py, which raises on a stale mount (outside the try -> kernel ERROR -> nothing submitted).
   torch.compile(enc.forward_features, max-autotune-no-cudagraphs): A100 1.41x (130 -> 92 ms/study) but 9 min
   compile/autotune -> not used now (maybe later for big ensembles if the cache amortises it).
+- 12:57 IST **BLEND baseline + s_mix1 students (w=0.5) = 0.948** (sub 56837853) vs ours-only 0.944, baseline 0.943, teacher blend 0.946. w=0.65 probe pending.

@@ -188,3 +188,5 @@ Lesson: report-label AUC is not a safe yardstick for label changes; gold-panel d
 
 **LB update (public 30%):** ours-only 5-fold students 0.944 (teachers 0.935; attributed baseline 0.943) — the
 student gain measured on gold58 (+0.038 OOF) transfers to the hidden panel-labelled test (+0.009 public LB).
+
+**Blend (pre-fixed rank weight 0.5) of attributed baseline + 5-fold students = 0.948** (baseline 0.943, students 0.944).
