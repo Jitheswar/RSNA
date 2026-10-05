@@ -298,7 +298,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   (student 0.842), MCL 0.992, LatMen 0.909, synovitis 0.833, Baker 0.944, contusion 0.901, fracture 0.914.
   Also: raw sol61 p ranks better than our calibrated fusion (0.894 vs 0.855 leak-free) -> calibration helps log-loss,
   not AUC. NEXT: effort-low check, then label all 4,407 studies (usage limits!) -> students on mm+student mix.
-- 21:25 IST Codex usage unavailable (owner) -> stopped the Codex multimodal run (mm-sol61low.jsonl keeps the 56 gold
+- 21:20 IST Codex usage unavailable (owner) -> stopped the Codex multimodal run (mm-sol61low.jsonl keeps the 56 gold
   low-effort rows: gold AUC 0.9245 vs medium 0.9300). Switched to Claude Opus 5.5 subagents: mm_prepare.py renders
   montages (artifacts/private/v2/mm/montages/<uid>/{sagittal,coronal,axial}.png) + batch JSON + INSTRUCTIONS.md;
   subagents view images (Read) and write {uid: {target: p}}; mm_collect.py -> JSONL. Pilot: 58 gold studies, 6 Opus

@@ -83,7 +83,7 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   gold12 0.9557 vs 0.9580 -> NOGO (pre-registered rule). Hypotheses: soft-label noise (binarisation), small data
   (3.5k studies vs CheXpert 224k), BCE on calibrated soft labels already ranks well. Not pursued further.
 
-## 2026-10-05 21:25 IST — sweep + multimodal labelling
+## 2026-10-05 21:20 IST — sweep + multimodal labelling
 - Host 733965 (official): "submitting Competition Data, including report text, to an external LLM or API for inference
   ... will not, by itself, be considered prohibited PRIVATE SHARING" -> image+report LLM labelling allowed.
 - Host reply (Aug 27, same thread): non-commercial-licence datasets are not excluded for that reason; click-through /
