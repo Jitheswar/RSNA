@@ -237,3 +237,5 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   last.pt). Armed auto_r2e.sh: once s_mix1_384 (5 folds) and s_dinob_mix1 (f1-4) are done, labels stud_mix1e =
   0.5 cal_v3 + 0.5 mean(s_mix1, s_mix1_384, s_dinob_mix1 OOF) (ENSEMBLE teacher, not self-distillation) ->
   ConvNeXt-S 320 students s_mix1e f0-4 at prio 005x (before the full-data seeds).
+- 06:25 IST Oct 5 slots used 3/5: 56836780 students ours-only 0.944; 56837853 blend baseline + s_mix1 w=0.5 (PENDING);
+  56838122 blend w=0.65 probe (PENDING; scores ~13:00 IST). Blend commit runs take ~8-10 min of Kaggle GPU.
