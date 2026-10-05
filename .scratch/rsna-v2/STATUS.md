@@ -253,7 +253,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   micro 96 give no speed-up (A100 bench 152-158 ms/study). -> pick the final ~20 models by greedy forward selection
   on OOF rank-averages; consider fewer windows (14/8/7 = 0.7x cost, -0.0017 weak) only if needed.
 - 10:05 IST s_mix1_384 f1 done: weak 0.9147 (320: 0.9174), gold12 0.947; 320+384 rank-avg 0.9185 (+0.0011; teachers gave +0.0035); 320+round2 0.9196. A30 384 f0 ~2,600 s/epoch -> done ~14:00.
-- 12:40 IST **Forum/code scan**: (1) EFFICIENCY PRIZE track ($7k/$6k/$5k): score = AUC/(0.5 - maxAUC) + runtime/32400
+- 12:15 IST **Forum/code scan**: (1) EFFICIENCY PRIZE track ($7k/$6k/$5k): score = AUC/(0.5 - maxAUC) + runtime/32400
   (minimise) -> ~-2.1*AUC + hours/9: 1 h of runtime ~ 0.05 AUC; eligible only if the submission is one of our 2 final
   picks. Our ours-only (0.944 in ~30 min) is naturally efficient. Efficiency LB (Oct 4 snapshot) #1 Scott Willis 0.959.
   (2) speed tips (topic 743374): pure fp16 (no autocast) ~2.08x on T4; threaded DICOM reading 59 -> 372 MB/s.
