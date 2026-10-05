@@ -309,3 +309,10 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   studies -> 290 batches x 15 (artifacts/private/v2/mm/opus-all, ordered by #unaddressed findings), ~14 Opus subagents
   in flight (general-purpose + model opus), next-batch counter in scratchpad/opus_next.txt. Collect with
   mm_collect.py --tag opus-all.
+- 02:05 IST (Oct 6) evening submissions DID go in (k24 family finished 00:02): 56859633 ours-only 25 students (00:14 IST),
+  56859907 blend baseline + [s_mix1_pw, s_mix1_384, s_mix2] w=0.6 (00:30 IST; family_select obj 0.9232, gold 0.9250).
+  Claude session limit (reset 02:00) killed all 14 Opus labellers (0 batches done) -> relaunched batches 0-13.
+  GPU: DINO f3/f4 + pwk24 f0 running; full-data seeds pending; auto_r2e waits for DINO.
+  Slurm 3-day limit: 8250 ends ~00:00 Oct 7, 8254 ~04:00, 8258 ~15:40. worker.sh now refuses to claim a task with
+  < 4 h (A100) / 10 h (A30) left; scripts/v2/queue_watchdog.sh (detached, every 10 min) requeues tasks of dead jobs
+  and keeps 3 v2-gpu workers submitted while tasks are pending.
