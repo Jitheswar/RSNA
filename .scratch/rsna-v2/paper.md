@@ -1,196 +1,179 @@
-# Paper outline (working draft) — RSNA 2026 Knee Abnormality Detection
+# Report-to-Reference Calibration for Knee MRI: Learning Multi-Finding Classifiers from Multilingual Radiology Reports
 
-**Working title:** Report-to-Reference Calibration: Learning Multi-Finding Knee MRI Classification from
-Multilingual Radiology Reports with LLM Severity Grades and Anatomical Normalisation
+*Working draft (RSNA 2026 Knee Abnormality Detection). Numbers are from `.scratch/rsna-v2/STATUS.md`; every claim
+below has a run, file or submission reference there. Priority: competition first, paper second.*
 
-## Introduction (draft)
-Large clinical imaging datasets come with free-text reports, not reference labels. In the RSNA 2026 Knee Abnormality
-Detection challenge, 4,407 training MRI studies carry multilingual reports and only 58 carry image-based reference
-labels from a two-radiologist panel; the hidden test set is labelled by the same panel. Three gaps separate report
-text from the panel's image reading: (i) *semantic* — written definitions vs. the panel's liberal operational
-threshold (e.g. a "small effusion" is panel-positive 10/22 times); (ii) *silence* — reports omit findings
-(synovitis is unaddressed in 62-92% of reports; Spanish reports leave 26-65% of findings unaddressed), so absence of
-mention is not absence of disease; (iii) *anatomical* — DICOM orientation and laterality vary, so the same structure
-appears in different image positions. We address (i) with report-to-reference calibration of LLM severity grades,
-(ii) with image-informed soft bootstrapping (students trained on a fixed 50/50 mix of calibrated report labels and
-out-of-fold image predictions), and (iii) with canonical LPS reorientation, laterality normalisation and a
-self-supervised laterality checker. Every component is measured against a strong attributed public baseline,
-alone and in a blend at a pre-fixed weight.
+## Abstract (draft)
+Clinical knee MRI comes with free-text reports, not image-level reference labels. We study the RSNA 2026 knee
+challenge: 4,407 training studies with multilingual reports, 58 with labels from a two-radiologist reference panel,
+and a hidden test set labelled by the same panel (12 findings, macro AUC). We identify three gaps between reports and
+the panel — a *semantic* gap (the panel is more liberal than written definitions), *silence* (findings left unaddressed
+by reports, 26-92% depending on finding and language) and an *anatomical* gap (inconsistent DICOM orientation and
+laterality) — and close them with (1) canonical anatomical normalisation with a self-supervised laterality checker,
+(2) report-to-reference calibration of LLM severity grades from multiple LLMs, and (3) image-informed soft
+bootstrapping (students trained on a fixed 50/50 mix of calibrated report labels and out-of-fold image predictions).
+Students improve reference-standard AUC from 0.881 to 0.920 (paired bootstrap +0.038 [+0.020, +0.061]) and the hidden
+test AUC from 0.935 to 0.944, beating a strong attributed public ensemble (0.943) that needs 13x the compute; a
+pre-fixed rank blend reaches 0.948. We report negative results (a second self-training round, mirror augmentation,
+cross-calibrated fracture labels) and an end-to-end reproducibility check of the submission path.
 
-## Related work (to expand)
-- Report-derived weak labels for imaging: CheXpert/MIMIC-CXR labellers (rule-based, then LLM-based), label noise.
-- LLM extraction of structured findings from radiology reports; multilingual reports.
-- Noisy-label learning / soft bootstrapping (Reed et al. 2015), noisy student / self-training (Xie et al. 2020),
-  knowledge distillation.
-- Knee MRI deep learning: MRNet (Bien et al. 2018), fastMRI+ annotations, OAI-based OA grading; 2.5D multi-series
-  models; multiple-instance learning over slices.
-- Calibration (isotonic regression, Beta calibration) and its use for label construction.
+## 1 Introduction
+Large imaging datasets come with reports, not reference labels. Here 4,407 training studies carry reports in about
+nine languages and only 58 carry reference labels; the test set is labelled by the same panel. Three gaps separate
+report text from the panel's image reading:
+- **Semantic.** The panel is more liberal than the written definitions: a "small effusion" is panel-positive 10/22
+  times, a grade-2 MCL sprain 7/10, and synovitis is panel-positive in 11/35 studies whose report never mentions it.
+- **Silence.** Absence of mention is not absence of disease. Synovitis is unaddressed in 62-92% of reports in every
+  language; Spanish reports leave 26-65% of findings unaddressed versus 0-15% for most other languages.
+- **Anatomical.** DICOM orientation and laterality vary, so the same structure appears in different image positions.
 
-## Problem
-- 4,407 training knee MRI studies (19 sites, ~10 languages of reports), only 58 with reference labels
-  (two MSK radiologists + adjudication, image-based, 12 findings); ~1.3k hidden test studies; macro AUC.
-- Reports unavailable at test time -> weak supervision from report text.
+We address the semantic gap with report-to-reference calibration, silence with image-informed soft bootstrapping, and
+the anatomical gap with canonical reorientation, laterality normalisation and a laterality checker. Every component is
+measured on our own pipeline and against a strong attributed public baseline, alone and blended at a pre-fixed weight.
 
-## Contributions (each measured separately from the attributed public baseline)
-1. **Canonical anatomical normalisation**: LPS reorientation, laterality normalisation (every knee mapped to a
-   right knee), foreground-centred 160 mm crop; self-supervised laterality checker (99.0% held-out) that fixes
-   ambiguous DICOM geometry (29/4,407 training studies corrected; validated against report-stated side).
-2. **Report-to-reference calibration**: LLMs extract ordinal severity grades; the expert panel is more liberal
-   than the written definitions (e.g. P(gold+|"small effusion") = 10/22; grade-2 MCL sprain 7/10; synovitis
-   gold-positive in 11/35 reports that never mention it). Grade->P(gold) maps fit on gold58 (isotonic/Beta).
-   Multi-source (frontier GPT-6.1-sol, GPT-6-astra, open Qwen3.8-27B / Gemma-4-31B, public labels) fusion.
-   LOO log-loss vs gold58: 0.390 (fused) vs 0.406 (frontier alone) vs 0.422 (public, calibrated) vs 0.573 (public raw).
-3. **Multi-series 2.5D transformer** with series-type/position embeddings and per-finding queries; auxiliary
-   severity-grade head.
-4. **Report x image label refinement** (teacher OOF soft bootstrapping).
+## 2 Related work (to expand)
+- Report-derived labels: CheXpert/MIMIC-CXR labellers; LLM labellers beat rule-based ones (fracture sensitivity 95% vs
+  51%) and image models tolerate label noise; hedging language should become soft labels (MICCAI 2025 #0580;
+  arXiv 2510.05664; GPT-4o MSK radiograph study 2026).
+- When reports help training: image-text alignment helps well-represented findings but hurts rarely mentioned ones;
+  combine self-supervision with auxiliary text objectives (arXiv 2510.24385).
+- Noisy labels and self-training: soft bootstrapping (Reed et al. 2015), noisy student (Xie et al. 2020); confirmation
+  bias and saturation after few rounds (Radhakrishnan et al., WACV 2024).
+- Knee MRI: MRNet (Bien et al. 2018); CoPAS co-plane attention across sequences, 12 abnormalities (Nat. Commun. 2024);
+  ECM-Knee multi-task (EClinicalMedicine 2025); 2.5D multi-series models and multiple-instance learning over slices.
+- Calibration (isotonic, Beta) used to construct labels.
 
-## Experiments / tables to fill
-- T1 label sources: gold58 AUC/log-loss (raw, calibrated, fused), LOO.
-- T2 image models: OOF weak AUC, OOF gold58 AUC (+bootstrap CI), public LB, per target.
-- T3 ablations: labels (public vs calibrated vs fused), laterality normalisation on/off, aux head, student round.
-- T4 blend with attributed public baseline at pre-fixed weight: baseline alone / ours alone / blend.
-- Negative results: Qwen3-8B relabelling (0.835 gold), fp16 sequence-head collapse, strict-definition prompts
-  mis-calibrated (frontier p strict vs calibrated), Qwen thinking-mode cost.
+## 3 Data and task
+4,407 training studies (24,371 series, 819k DICOM slices; all uncompressed Explicit VR LE; 19 sites), 58 with
+reference labels (two MSK radiologists + adjudication, image-based, 12 findings: ACL, MCL, medial/lateral meniscus,
+medial/lateral/patellofemoral OA, effusion, synovitis, Baker's cyst, contusion, fracture). Hidden test about 1,300
+studies (public LB 30%, private 70%); macro AUC over the 12 findings. Reports are unavailable at test time. The gold
+sample is trauma-enriched relative to the training pool (calibrated ACL prevalence 0.41 vs 0.16; fracture 0.31 vs 0.15).
 
-## Reproducibility
-- Code: scripts/v2/*; labels: artifacts/private/v2/labels/*; folds fixed (seed 42, gold spread 12/12/11/11/12).
-- Compute: 2x A100-80GB (cluster), Kaggle 2xT4 for inference (9 h limit).
+## 4 Methods
 
-## Methods (draft, 2026-10-04)
+### 4.1 Canonical volume preparation (`scripts/v2/prep.py`)
+Slices are ordered by ImagePositionPatient projected on the series normal (InstanceNumber fallback), duplicates
+removed. Each series is rotated/flipped (no cross-plane resampling) to a canonical LPS frame per plane. Laterality
+comes from the DICOM tag, else the image-centre x position (|x| >= 20 mm), else weak geometry; left knees are mirrored
+so every knee appears as a right knee. A self-supervised laterality checker (ResNet-18 on three posterior coronal
+slices, trained to detect mirrored normalised slices; 99.0% held-out) re-flips studies at p > 0.99, or p > 0.5 when the
+side came from weak geometry (29/4,407 training studies; 11/1,300 in a simulated test run). Square physical crop of
+min(160 mm, FOV) centred on the foreground centroid, per-series 0.5/99.7 percentile window, 384 px uint8, depth <= 64.
 
-### Data and splits
-4,407 training studies (24,371 series, 819k DICOM slices; all uncompressed Explicit VR LE), 58 with reference labels.
-Five-fold multilabel-stratified split (seed 42; stratified on public-label positives >0.6 plus the gold flag, so gold
-studies spread 12/12/11/11/12). All OOF statistics use this split; gold studies are trained on (with their reference
-labels) only when outside the validation fold.
+### 4.2 Report labels and report-to-reference calibration
+The prompt states the host definitions and asks, per finding, for an English evidence phrase, an ordinal severity
+grade (finding-specific scale) and P(panel positive). Sources: GPT-6.1-Sol (high reasoning), GPT-6-Astra (categorical
+states), open-weight Qwen3.8-27B and Gemma-4-31B (bf16, vLLM), and a public LLM label table (use of commercial LLM APIs
+for report labels was explicitly allowed by the host). Each source is mapped to P(panel+ | grade) per finding on the
+gold studies (isotonic over ordered grades with smoothing toward prevalence; categorical states: smoothed rates;
+probabilities: isotonic) and calibrated sources are averaged. Fold-specific tables exclude the validation fold's gold
+studies, so gold OOF numbers are leak-free.
 
-### Canonical volume preparation (`scripts/v2/prep.py`)
-Slices are ordered by projection of ImagePositionPatient on the series normal (InstanceNumber fallback); duplicate
-positions removed. Each series is rotated/flipped (no resampling across planes) to a canonical LPS frame per plane
-(sagittal: columns posterior, rows inferior, slices +x; coronal: columns patient-left, rows inferior; axial: columns
-patient-left, rows posterior). Laterality: DICOM Laterality tag, else image-centre x (|x|>=20 mm), else weak geometry;
-left knees are mirrored so every knee appears as a right knee (medial on image right for coronal/axial; sagittal slice
-0 lateral). A self-supervised laterality checker (ResNet-18 on three posterior coronal slices, trained to detect
-horizontally flipped normalised slices; 99.0% held-out accuracy) re-flips studies with p>0.99, or p>0.5 when the side
-came from weak geometry (29/4,407 training studies; validated against report-stated sides). Square physical crop of
-min(160 mm, FOV) centred on the foreground centroid; per-series 0.5/99.7 percentile window; 384 px uint8; depth cap 64.
-Training/inference parity: byte-identical volumes from the packing (zip) and inference (file) paths.
+### 4.3 Image model (`model.py`, `train.py`)
+Up to six series per study by type priority (fat-suppressed fluid-sensitive first). 2.5D windows (slices i-1, i, i+1
+as RGB) per plane (sagittal 20, coronal 12, axial 10; evenly spaced, jittered in training) through a shared
+ImageNet-22k ConvNeXt-S encoder at 320 px, GeM pooling, projection to d = 384, learned series-type and slice-position
+(relative, mm) embeddings, a 2-layer transformer over all window tokens of all series, and 12 learned finding queries
+(cross-attention). An auxiliary head regresses the LLM severity grades (weight 0.3, masked when unaddressed).
+Training: BCE on soft labels, AdamW (encoder 1e-4, head 5e-4, wd 0.05), warm-up + cosine, 10 epochs, EMA 0.998,
+bf16, affine/intensity augmentation without flips. Variants: 384 px, DINOv2-B/14 (280 px, layer-wise lr decay 0.8),
+BCE pos_weight, 24/16/14 windows.
 
-### Report labels and reference calibration (`llm_label.py`, `frontier_label.py`, `build_labels.py`)
-Prompt states the host definitions and asks, per finding, for an English evidence phrase, an ordinal severity grade
-(finding-specific scale) and P(panel positive). Sources: GPT-6.1-Sol (high reasoning, via Codex; allowed by host
-clarification topic 733965), GPT-6-Astra (medium, categorical states), open-weight Qwen3.8-27B and Gemma-4-31B (bf16,
-vLLM), and the public llm_labels_v2 table. Raw strict-definition probabilities are mis-calibrated w.r.t. the reference
-panel (e.g. "small effusion" gold-positive 10/22). Each source is mapped to P(gold+|grade) per finding on the gold
-studies (isotonic regression over ordered grades with Beta(1,1)-style smoothing toward prevalence; categorical
-states: smoothed per-state rates; probabilities: isotonic); calibrated sources are averaged with weights over the
-sources available per study. Fold-specific tables exclude the validation fold's gold studies (leak-free gold OOF).
+### 4.4 Image-informed label refinement (students)
+Teacher OOF predictions (each study predicted by the fold model that did not train on it) are mixed with the
+calibrated report labels: y = 0.5 * y_report + 0.5 * p_teacher_OOF. The weight is fixed a priori; it is never fitted
+on gold. Gold studies keep their reference labels when in a training fold. Students are re-initialised from ImageNet.
 
-### Image model (`model.py`, `train.py`)
-Up to six series per study chosen by type priority (fat-suppressed fluid-sensitive sagittal/coronal/axial first, then
-non-FS). 2.5D windows (slice i-1,i,i+1 as RGB) sampled per plane (sagittal 20, coronal 12, axial 10; evenly spaced
-with jitter in training), shared ImageNet-pretrained encoder (ConvNeXt-S in22k-ft-1k), GeM pooling, linear projection
-to d=384, learned series-type (plane x FS x fluid) and slice-position (relative, mm) embeddings, 2-layer transformer
-over all window tokens, 12 learned finding queries (cross-attention) -> logits. Auxiliary head regresses normalised
-LLM severity grades (weight 0.3, masked when unaddressed). Training: BCE on soft calibrated labels, AdamW
-(encoder 1e-4, head 5e-4, wd 0.05), 5% warmup + cosine, 10 epochs, EMA (0.998), bf16, GPU affine/intensity
-augmentation without flips (laterality preserved), 2 studies x 4 accumulation.
+### 4.5 Ensembling and blending
+Fold models of a family are averaged; families are combined by rank averaging. Under the 9 h Kaggle limit (2xT4),
+families are selected greedily by OOF objective per second of measured inference cost. Blends with the attributed
+public baseline use per-target rank averaging at a pre-fixed weight.
 
-### Results so far
-| single fold-0 model | labels | OOF weak AUC (cal labels) | public LB |
+## 5 Experimental setup
+Five-fold multilabel-stratified split (seed 42; gold spread 12/12/11/11/12). Metrics: OOF weak AUC (vs calibrated
+report labels > 0.5, n = 4,407), OOF gold58 AUC (reference standard, with bootstrap CIs and paired bootstrap for
+differences), public LB (hidden panel labels, about 390 studies; about +-0.004 noise for single scores). Compute:
+2x A100-80GB (+ one A30) for training; Kaggle 2xT4 for inference.
+
+## 6 Results
+
+### 6.1 Label sources (gold58)
+Raw probability AUC: GPT-6.1-Sol 0.894, public v2 0.887, pilkwang 0.870, Qwen3.8-27B 0.852, Gemma-4-31B 0.842,
+GPT-5.6-Sol (public) 0.835. LOO log-loss: calibrated multi-source fusion 0.387-0.390, frontier alone 0.406, public
+calibrated 0.422, public raw 0.573. Fused label AUC (fold-specific, leak-free) 0.855.
+
+### 6.2 Image recipe (fold 0, single model)
+| model | labels | OOF weak AUC (cal_v3) | public LB (1 fold) |
 |---|---|---|---|
-| ConvNeXt-S 320 uniform K=12, transformer | public v2 | — | 0.896 |
-| CoAtNet-2 384 bag-of-windows + MIL | calibrated v1 | 0.873 | 0.896 |
-| ConvNeXt-S 320 per-plane K + aux | calibrated v1 | 0.904 | 0.911 |
+| ConvNeXt-S 320, uniform K=12, transformer | public | — | 0.896 |
+| CoAtNet-2 384, bag of 12 windows + MIL (public recipe) | calibrated | 0.873 | 0.896 |
+| ResNet-34 256, per-plane mean/max pooling | calibrated | 0.843 | — |
+| ConvNeXt-S 320, all-slice transformer, per-plane K, aux grades | calibrated | 0.907 | 0.911 |
+| ConvNeXt-S 384 / ConvNeXt-B 320 (same recipe) | calibrated | 0.908 / 0.902 | — |
+Calibrated vs public labels with the same bag recipe (fold 0, epoch 4): weak 0.866 vs 0.791, gold12 0.909 vs 0.823.
 
-### Results (2026-10-04 update)
-**Label sources vs gold58 (raw probability AUC):** frontier GPT-6.1-Sol 0.894, public v2 0.887 (developed on gold58),
-pilkwang 0.870, Qwen3.8-27B 0.852, Gemma-4-31B 0.842, GPT-5.6-Sol public 0.835. Calibrated multi-source fusion
-LOO log-loss 0.387 (vs 0.573 raw public).
+### 6.3 Students vs teachers (5-fold OOF; headline)
+| model | OOF weak AUC | gold58 AUC [95% CI] | public LB (5 folds) |
+|---|---|---|---|
+| teacher (calibrated report labels) | 0.9046 | 0.881 [0.840, 0.915] | 0.935 |
+| student (0.5 report + 0.5 teacher OOF) | 0.9179 | 0.920 [0.892, 0.943] | **0.944** |
+Paired bootstrap on gold58: +0.038 [+0.020, +0.061], P < 0.001. 11 of 12 findings improve on gold58 (ACL flat, 0.988 -> 0.984;
+all 12 improve on weak AUC); largest gains on findings the reports under-call or omit: lateral OA 0.754 -> 0.865, synovitis 0.772 -> 0.851, Baker's cyst 0.908 -> 0.978,
+contusion 0.892 -> 0.946, MCL 0.857 -> 0.896, lateral meniscus 0.799 -> 0.855 (gold58 per target).
 
-**Recipe comparison (fold 0, same calibrated labels, OOF weak AUC vs cal_v3):**
-| model | weak AUC | public LB (1 fold) |
-|---|---|---|
-| CoAtNet-2 384, bag-of-12-windows + MIL (public recipe) | 0.873 (0.890 w/ 3x eval windows) | 0.896 |
-| ResNet34 256, per-plane mean/max pooling ("simple baseline") | 0.843 | — |
-| ConvNeXt-S 320, all-slice transformer, per-plane K, aux grades | 0.907 | 0.911 |
-| ConvNeXt-S 384 (same) | 0.908 | — |
-| ConvNeXt-B 320 (same) | 0.902 | — |
-| **student** (labels 0.5 cal_v3 + 0.5 teacher OOF) | **0.918** | pending |
-Public labels with the old uniform-K recipe: LB 0.896.
+### 6.4 Recipe refinements (students, fold 0; weak AUC / gold12)
+| variant | weak | gold12 | notable per-target change |
+|---|---|---|---|
+| student baseline | 0.9175 | 0.958 | — |
+| BCE pos_weight (rare findings) | 0.9197 | 0.966 | MCL 0.897 -> 0.918, fracture 0.926 -> 0.940 |
+| 24/16/14 windows | 0.9191 | 0.967 | PF OA 0.886 -> 0.904 |
+| rank average of the two | 0.9222 | 0.975 | — |
+| DINOv2-B/14 280 | 0.9105 | 0.925 | better LatMen/synovitis/contusion/fracture, ACL 0.923 |
+| ConvNeXt-S 384 | 0.9147 (fold 1) | 0.947 | ensemble with 320: +0.0011 |
+| EfficientNetV2-S 384 | 0.9004 | 0.938 | hurts ensembles |
+Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20 +0.0010 weak AUC.
 
-**Ensembling:** 2-fold teacher 0.935 LB; 5-fold 0.935 LB. Fold-0: 320+384 rank average +0.0035 weak AUC.
-**Gold58 OOF (5-fold teacher):** 0.881 [0.841, 0.915]; ACL 0.988, effusion 0.984, medial meniscus 0.971, medial OA
-0.952; weakest lateral OA 0.754, synovitis 0.772, lateral meniscus 0.799, PF OA 0.822.
-**Student label quality on gold58:** report-only 0.915, image-only 0.881, 50/50 mix 0.927 (complementary).
-**Runtime (2xT4, 1300 simulated test studies):** attributed baseline 6.4 h; our leg 20 min (CPU-bound DICOM prep),
-~100 s per additional ConvNeXt-S model.
+### 6.5 Leaderboard (public 30%)
+| submission | public AUC |
+|---|---|
+| attributed public baseline (yamadan96/rsna-knee-d4-public0946), unchanged | 0.943 |
+| ours: 5-fold teachers / 5-fold students | 0.935 / 0.944 |
+| blend, rank weight 0.5: baseline + teachers | 0.946 |
+| blend, rank weight 0.5 / 0.65: baseline + students | 0.948 / 0.948 |
 
-### Image-informed label refinement (students)
-Teacher OOF predictions (5-fold, each study predicted by the model that did not train on it) are mixed with the
-calibrated report labels: y_student = 0.5 * y_report_cal + 0.5 * p_teacher_OOF (soft bootstrapping; no fitting on
-gold58, the mixing weight is fixed a priori). Gold studies keep their reference labels when in a training fold.
-Students use the same recipe as teachers (ConvNeXt-S 320, per-plane K, aux grades, 10 epochs).
-Round 2 mixes with the round-1 student OOF only (on the 34 gold studies of finished folds, student OOF alone 0.907
-vs mean(teacher, student) 0.890, so the teacher would dilute the image term).
-Per-target mixing weights chosen by leave-one-out on gold58 did not beat the fixed 0.5 (0.897 vs 0.898 macro AUC),
-consistent with forum reports of gold-tuned label sets that overfit (gold 0.945 -> LB 0.910).
+### 6.6 Negative results and ablations
+- **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
+  (0.9178 vs 0.9179), gold58 0.9155 vs 0.9195 (-0.004 [-0.014, +0.006]); lower in 4/5 folds — confirmation drift.
+- **Cross-calibrated fracture labels** (fracture <- report contusion): better as a report label on gold
+  (0.788 -> 0.899, leak-free) but the image student's fracture AUC fell (0.929 -> 0.897): the image model already
+  ranked fractures better than the reports, and contusion-driven targets blurred fracture vs contusion.
+  Lesson: report-label AUC is not a safe yardstick for label changes; the reference-panel direction must decide.
+- **Mirror augmentation** (whole-study mirror, labels kept): 0.9175 -> 0.9133 (0.9145 with mirror TTA) — a
+  consistent anatomical frame beats asking the network to infer medial/lateral.
+- **Per-target or silence-aware mixing weights** fitted/defined on gold: no gain (0.8974 vs 0.8978; 0.9238 vs
+  0.9221); forum reports of gold-tuned labels overfitting (gold 0.945 -> LB 0.910).
+- DICOM PatientSex adds nothing beyond the image model (AUC change <= 0.0015).
 
-**Fold-level results (gold = 12 reference studies per validation fold; weak = AUC vs cal_v3 > 0.5):**
-| fold | teacher weak / gold | student weak / gold |
-|---|---|---|
-| 0 | 0.907 / 0.927 | 0.918 / 0.958 |
-| 2 | 0.913 / 0.895 | 0.914 / 0.912 |
-| 3 | 0.905 / 0.864 | 0.916 / 0.911 |
-Largest gold gains on findings that reports leave silent or under-call: lateral OA 0.733 -> 0.839, synovitis
-0.802 -> 0.863, Baker's cyst 0.904 -> 0.973, contusion 0.868 -> 0.931 (46 gold studies, partial OOF).
+### 6.7 Reporting heterogeneity
+Report language (stopword heuristic): English 1,738, Spanish 681, Turkish 548, Croatian/Serbian 401, Greek 321,
+German 263, Bulgarian 220, Dutch 151, French 79. Unaddressed findings: Spanish 26-65% per finding vs 0-15% elsewhere;
+synovitis 62-92% everywhere; OA 47-59% of Turkish reports.
 
-### Reporting heterogeneity across sites/languages (supports image-informed refinement)
-Language of the report (stopword heuristic): English 1,738, Spanish 681, Turkish 548, Croatian/Serbian 401,
-Greek 321, German 263, Bulgarian 220, Dutch 151, French 79. Fraction of findings *not addressed* by the report
-(frontier LLM grade = -1): Spanish reports 26-65% per finding vs 0-15% for most other languages (e.g. ACL 41% vs
-0-10%); synovitis unaddressed in 62-92% of reports in every language; OA unaddressed in 47-59% of Turkish reports.
-Silence therefore carries site-dependent meaning, which a report-only label cannot resolve but image evidence can.
-DICOM PatientSex (present for 90%) adds nothing beyond the image model (logistic AUC change <= 0.0015 per finding).
+### 6.8 Reproducibility and efficiency
+- Byte-identical training/inference volumes; fp16 == bf16 == fp32 (ConvNeXt and DINOv2); pure fp16 (no autocast)
+  parity: AUC 0.9304 vs 0.9305.
+- End to end on Kaggle (1,300 simulated test studies through the exact submission path): held-out predictions match
+  local OOF (mean |dp| 0.0008, corr 1.0000, identical AUC); 0 preparation failures.
+- Runtime on 2xT4 per 1,300 studies: ~290 s per ConvNeXt-S model (pure fp16; 326 s with autocast), DICOM preparation
+  ~1,150 s on 4 CPUs (CPU-bound). Ours (5 models) ~30 min for 0.944 vs the baseline ~6.4 h for 0.943.
 
-**LB (public 30%, ~390 studies):** attributed baseline 0.943; ours-only 5-fold teachers 0.935; blend at pre-fixed
-rank weight 0.5 = 0.946 (+0.003 over the baseline). Runtime: baseline + 5 of our models completes within the 9 h limit.
+## 7 Discussion and limitations (to write)
+- Gold58 is small and trauma-enriched; we use it for calibration and direction, never for tuning weights.
+- The report-label metric can mislead (round 2, fracture); the panel is the yardstick.
+- Test-time cost budget shapes the ensemble; efficiency matters (competition efficiency track).
 
-### Cross-target calibration (Fracture)
-The panel's Fracture label is ranked better by the report's contusion statement than by its fracture statement
-(gold58 LOO AUC 0.885 vs 0.788); a two-feature logistic calibration (own grade + contusion grade, L2, C=0.3) reaches
-0.893 LOO and 0.899 with fold-specific fitting (coefficients stable across folds). Interpretation: impaction /
-trabecular fractures (included in the host definition) are often reported as bone bruises. Six other pre-specified
-anatomical pairs gave no gain and were not used. The gold sample is trauma-enriched relative to the training pool
-(calibrated ACL prevalence 0.41 vs 0.16), which matters for interpreting gold-based estimates.
-
-### Ablation: mirror augmentation vs laterality normalisation (fold 0, students)
-Mirroring whole studies (p=0.5; a normalised right knee shown as a left knee, labels unchanged) lowers OOF weak AUC
-0.9175 -> 0.9133 (0.9145 with mirror TTA). A consistent anatomical frame is better than asking the network to infer
-medial/lateral from anatomy. (The no-normalisation ablation abl_nolat is running.)
-
-**Students vs teachers, full 5-fold OOF (headline result for contribution 4):**
-| model | OOF weak AUC (cal_v3) | gold58 AUC [95% CI] |
-|---|---|---|
-| teacher (ConvNeXt-S 320, calibrated report labels) | 0.9046 | 0.881 [0.840, 0.915] |
-| student (labels 0.5 calibrated report + 0.5 teacher OOF) | 0.9179 | 0.920 [0.892, 0.943] |
-Paired bootstrap (4,000 resamples of the 58 gold studies): +0.038 [+0.020, +0.061], P(diff <= 0) < 0.001.
-Every finding improves; largest gains lateral OA (+0.030), MCL (+0.022), lateral meniscus (+0.017), contusion (+0.017).
-
-### Negative results: a second self-training round and cross-calibrated fracture labels
-Round 2 (labels 0.5 calibrated report [Fracture cross-calibrated with contusion] + 0.5 round-1 student OOF, same
-architecture) matched round 1 on report-label AUC but was lower on the reference standard in 4/4 folds (46 gold
-studies: 0.904 vs 0.915). The cross-calibrated fracture label, although better as a report label on gold (0.788 ->
-0.899), made the image model's fracture ranking worse (0.929 -> 0.897): the image model was already better than the
-report at fracture, and contusion-driven targets blurred the fracture/contusion distinction. Unchanged targets also
-dropped (MCL, medial meniscus, effusion), consistent with confirmation drift when a model distils itself.
-Lesson: report-label AUC is not a safe yardstick for label changes; gold-panel direction must decide.
-
-**LB update (public 30%):** ours-only 5-fold students 0.944 (teachers 0.935; attributed baseline 0.943) — the
-student gain measured on gold58 (+0.038 OOF) transfers to the hidden panel-labelled test (+0.009 public LB).
-
-**Blend (pre-fixed rank weight 0.5) of attributed baseline + 5-fold students = 0.948** (baseline 0.943, students 0.944).
-
-**Reproducibility (Kaggle 2xT4, end to end):** for 1,300 training studies run through the exact submission path (raw
-DICOM -> prep -> fp16 inference), held-out fold-model predictions match local OOF (mean |dp| 0.0008, corr 1.0000,
-identical AUC); 0 preparation failures. Blend weight 0.5 vs 0.65 gives the same public score (0.948).
+## Pending
+- Laterality-normalisation ablation (abl_nolat), aux-head and uniform-K ablations (queued on idle GPUs).
+- 5-fold pos_weight / 24-window / 384 / DINOv2 families; ensemble-teacher round; full-data seeds; final LB numbers.
+- Private LB after the deadline.
