@@ -233,3 +233,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 06:06 IST **STUDENTS ours-only = 0.944** (sub 56836780) vs teachers 0.935 (+0.009) and attributed baseline 0.943
   -> our own pipeline alone now beats the public baseline. Gold58 OOF gain (+0.038) transferred to the panel test.
   Probe (slot 3) will use w=0.65. Blend w=0.5 (slot 2) in commit run.
+- 06:20 IST queued full-data students s_mix1_full_s1/s2 (seeds 43/44, all 4,407 studies, prio 006x, out runs/<run>/full/
+  last.pt). Armed auto_r2e.sh: once s_mix1_384 (5 folds) and s_dinob_mix1 (f1-4) are done, labels stud_mix1e =
+  0.5 cal_v3 + 0.5 mean(s_mix1, s_mix1_384, s_dinob_mix1 OOF) (ENSEMBLE teacher, not self-distillation) ->
+  ConvNeXt-S 320 students s_mix1e f0-4 at prio 005x (before the full-data seeds).
