@@ -226,3 +226,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   auto_blend2 (baseline + s_mix1, w=0.5); slot 3 auto_blend3 = blend-weight PROBE (w=0.65 if ours-only >= 0.943
   baseline else 0.35; same dataset version) -- paired comparison on the same public studies is far less noisy than
   independent scores. (auto_sub_mix12 cancelled: round 2 adds nothing on gold.)
+- 06:02 IST slot 1 submitted: **sub 56836780 = s_mix1 5-fold students ours-only** (00:06 UTC, PENDING). The new
+  Kaggle CLI prints "N submissions remaining today" instead of "Successfully submitted" -> automations stalled;
+  FIX submit_only.sh / submit_nb.sh now echo an explicit "Successfully submitted" marker (marker added manually to
+  submit7.log). Slot 2 (blend baseline + s_mix1, w=0.5) pushed as rsna-v2-blend v2 at 06:01.
