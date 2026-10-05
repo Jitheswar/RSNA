@@ -230,3 +230,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Kaggle CLI prints "N submissions remaining today" instead of "Successfully submitted" -> automations stalled;
   FIX submit_only.sh / submit_nb.sh now echo an explicit "Successfully submitted" marker (marker added manually to
   submit7.log). Slot 2 (blend baseline + s_mix1, w=0.5) pushed as rsna-v2-blend v2 at 06:01.
+- 06:06 IST **STUDENTS ours-only = 0.944** (sub 56836780) vs teachers 0.935 (+0.009) and attributed baseline 0.943
+  -> our own pipeline alone now beats the public baseline. Gold58 OOF gain (+0.038) transferred to the panel test.
+  Probe (slot 3) will use w=0.65. Blend w=0.5 (slot 2) in commit run.

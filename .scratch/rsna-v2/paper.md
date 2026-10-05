@@ -185,3 +185,6 @@ studies: 0.904 vs 0.915). The cross-calibrated fracture label, although better a
 report at fracture, and contusion-driven targets blurred the fracture/contusion distinction. Unchanged targets also
 dropped (MCL, medial meniscus, effusion), consistent with confirmation drift when a model distils itself.
 Lesson: report-label AUC is not a safe yardstick for label changes; gold-panel direction must decide.
+
+**LB update (public 30%):** ours-only 5-fold students 0.944 (teachers 0.935; attributed baseline 0.943) — the
+student gain measured on gold58 (+0.038 OOF) transfers to the hidden panel-labelled test (+0.009 public LB).
