@@ -281,3 +281,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   (forum's 2.08x was CoAtNet; ConvNeXt depthwise 7x7 convs dominate on T4). ~292 s/model. Blend budget: baseline
   ~22,800 s + N*292 s + startup <= 32,400 - 2,700 margin -> N ~ 20 (family costs: ConvNeXt-S 320 x5 = 1,460 s,
   K24 x5 ~1,880 s, 384 x5 ~2,100 s). Release-tag guard worked (v3 ran on the right package).
+- 13:58 IST armed auto_evening.sh: when 384+pw+k24 families complete (~21:00-21:30) -> slot 4 ours-only 25 models; then family_select (budget 6,400 s, 292 s/model) -> slot 5 blend baseline + selected families, w=0.6 (selection parsing dry-run OK). Skips if families are not ready by 03:00.
