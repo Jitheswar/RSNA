@@ -53,12 +53,27 @@ def instructions():
         "summary (number of studies written)."])
 
 
+_CTX = None
+
+
+def _render(s):
+    meta, series_desc, flips, mont = _CTX
+    d = mont / s
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        study_montages(s, meta, series_desc, flips, d)
+    except Exception as exc:
+        print(f"montage fail {s}: {exc}", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gold", action="store_true")
     ap.add_argument("--studies", default="", help="optional file with one StudyInstanceUID per line")
     ap.add_argument("--batch", type=int, default=10)
     ap.add_argument("--tag", required=True)
+    ap.add_argument("--order", default="")
+    ap.add_argument("--procs", type=int, default=16)
     args = ap.parse_args()
     tr = pd.read_csv(V2 / "train.csv").set_index("StudyInstanceUID")
     if args.studies:
@@ -66,7 +81,11 @@ def main():
     elif args.gold:
         studies = list(tr.index[tr.ACL.notna()])
     else:
-        studies = list(tr.index)
+        studies = list(tr.index[tr.ACL.isna()])  # gold studies are labelled in the pilot
+    if args.order == "unaddressed":  # terse reports first: partial coverage helps most where reports are silent
+        gr = pd.read_csv(V2 / "labels/sol61_grades.csv").set_index("StudyInstanceUID")
+        n_un = (gr.reindex(studies)[TARGETS] == -1).sum(1).fillna(12)
+        studies = list(n_un.sort_values(ascending=False, kind="stable").index)
     root = V2 / "mm" / args.tag
     (root / "batches").mkdir(parents=True, exist_ok=True)
     (root / "out").mkdir(parents=True, exist_ok=True)
@@ -76,12 +95,17 @@ def main():
     series_desc = dict(zip(surv.SeriesInstanceUID, surv.SeriesDescription.astype(str)))
     flips = set(pd.read_csv(V2 / "lat_flip_v1.csv").StudyInstanceUID)
     (root / "INSTRUCTIONS.md").write_text(instructions())
+    todo = [s for s in studies if not ((mont / s / "axial.png").exists() and (mont / s / "sagittal.png").exists())]
+    if todo:
+        from concurrent.futures import ProcessPoolExecutor
+        global _CTX
+        _CTX = (meta, series_desc, flips, mont)
+        with ProcessPoolExecutor(args.procs) as pool:
+            list(pool.map(_render, todo, chunksize=8))
+        print(f"rendered {len(todo)} studies", flush=True)
     items = []
     for s in studies:
         d = mont / s
-        if not (d / "axial.png").exists() or not (d / "sagittal.png").exists():
-            d.mkdir(parents=True, exist_ok=True)
-            study_montages(s, meta, series_desc, flips, d)
         imgs = [str((ROOT / d / f"{p}.png")) for p in ("sagittal", "coronal", "axial") if (d / f"{p}.png").exists()]
         items.append({"uid": s, "report": str(tr.loc[s, "Report"]).strip(), "images": imgs})
     for b in range(0, len(items), args.batch):

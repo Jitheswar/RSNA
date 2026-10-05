@@ -304,3 +304,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   subagents view images (Read) and write {uid: {target: p}}; mm_collect.py -> JSONL. Pilot: 58 gold studies, 6 Opus
   subagents x ~10 studies. (.claude/agents/mm-labeler.md = Opus, effort medium, Read/Write only; registers next
   session — this session uses general-purpose + model opus.)
+- 21:30 IST **Opus 5.5 multimodal pilot (58 gold, 6 subagents)**: gold58 AUC 0.926 (GPT-6.1-Sol mm 0.930; corr 0.94);
+  student + Opus 0.941, pw + Opus + GPT 0.945. ~10k tokens / study, ~25 s / study per agent. SCALE-UP: 4,349 non-gold
+  studies -> 290 batches x 15 (artifacts/private/v2/mm/opus-all, ordered by #unaddressed findings), ~14 Opus subagents
+  in flight (general-purpose + model opus), next-batch counter in scratchpad/opus_next.txt. Collect with
+  mm_collect.py --tag opus-all.
