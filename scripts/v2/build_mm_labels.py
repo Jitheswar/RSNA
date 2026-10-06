@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--students", nargs="+", required=True, help="run dirs whose fold OOF predictions are averaged")
     ap.add_argument("--fallback", default="labels/stud_mix1.csv")
     ap.add_argument("--w-mm", type=float, default=0.5)
+    ap.add_argument("--exclude", default="", help="CSV with StudyInstanceUID: drop their multimodal labels (e.g. montage "
+                    "rendered in a wrong laterality frame)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     mm = {}
@@ -38,6 +40,10 @@ def main():
                 r = json.loads(l)
                 mm[r["StudyInstanceUID"]] = {t: r["parsed"][t]["p"] / 100.0 for t in T}
     mm = pd.DataFrame(mm).T[T]
+    if args.exclude:
+        drop = set(pd.read_csv(args.exclude).StudyInstanceUID)
+        print(f"excluding {len(drop & set(mm.index))} multimodal labels listed in {args.exclude}")
+        mm = mm.drop(index=[u for u in mm.index if u in drop])
     oofs = []
     for r in args.students:
         fs = sorted(glob.glob(str(V2 / r / "fold*/oof.csv")))

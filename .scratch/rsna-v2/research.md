@@ -96,3 +96,16 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   student 0.919-0.924, rank-avg student + multimodal 0.943; raw report p 0.894 > calibrated fusion 0.855 (AUC).
   -> ACTION: label all 4,407 with image+report (now via Opus subagents), students on 0.5 multimodal + 0.5 student OOF.
 - LB top unchanged (0.963 x2, 0.961 x2, 0.960 x3); no new high-score notebooks.
+
+## 2026-10-06 17:23 IST — forum re-read (topic 735304 "Best single-model score", 117 comments) + LB
+- LB top 0.964 (Ilya Kolb), 0.963 x2, 0.961 x3, ~0.959-0.960 for places 7-19; public notebooks top out ~0.944-0.946.
+- Single models reported: ResNet50@224 5-fold 0.954 (CoolinLai); Qwen-3.5-2B VLM fine-tune (LoRA on LM + vision
+  encoder) @384 single fold 0.950; CoAtNet@224 single fold 0.950 (Archit Konde: gold58 OOF 0.930); Scott Willis small
+  ResNet single fold 0.949 in ~5 min scoring (efficiency #1; Gemma-4 local labels ~0.89 gold); Raymond Yuen 0.949
+  (teachers on several weak-label sources -> pseudo-labels -> final model; "different teachers help different targets").
+- Archit Konde's label recipe: keep extracted labels SOFT, mix OOF predictions in (not replace / mask); heavier toward
+  the model than 50/50 helped a bit; calibration on the 58 lined up. Our gold58 check: report/ensemble mix 0.4-0.5 is
+  optimal (0.3 -> 0.9436, 0.2 -> 0.9415 vs 0.4 0.9447), so no change.
+- Consensus: labels are the bottleneck; 224-288 px enough; 140-160 mm FOV; bigger backbones do not help.
+  -> our levers: multimodal labels (+0.013 artifact-free on gold58), genuinely different models (ResNet50/CoAtNet @224
+  queued), full-data training.
