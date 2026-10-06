@@ -17,7 +17,7 @@ for i in $(seq 1 720); do st=$($KG kernels status jitheswar/$SLUG 2>&1 | tail -1
 echo "kernel: $st (version $ver)"
 case "$st" in
   *COMPLETE*)
-    sub=$($KG competitions submit rsna-knee-abnormality-detection -k jitheswar/$SLUG -v $ver -f submission.csv -m "$MSG" 2>&1); echo "$sub" | tail -3
+    sub=$($KG competitions submit rsna-knee-abnormality-detection -k jitheswar/$SLUG -v $ver -f submission.csv -m "$MSG" 2>&1 || true); echo "$sub" | tail -3
     # the new CLI prints "N submissions remaining today" (no "Successfully submitted") -> explicit marker for automations
     if echo "$sub" | grep -q -i -E "successfully submitted|remaining today"; then echo "Successfully submitted"; else echo "NOT submitted (submit error)"; fi;;
   *) echo "NOT submitted";;
