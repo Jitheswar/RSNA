@@ -36,22 +36,31 @@ def main():
         except Exception:
             pass
     meta = pd.concat(fr).drop_duplicates("SeriesInstanceUID", keep="last")
-    todo = meta[meta.StudyInstanceUID.isin(flips) & ~meta.SeriesInstanceUID.isin(done)]
-    n = 0
-    with marker.open("a") as fh:
-        for r in todo.itertuples():
-            p = vol_dir / f"{r.SeriesInstanceUID}.npy"
-            if not p.exists():
-                continue
-            v = np.load(p)
-            v = v[::-1] if r.plane == "Sagittal" else v[:, :, ::-1]
-            tmp = p.with_suffix(".tmp.npy")
-            np.save(tmp, np.ascontiguousarray(v))
-            os.replace(tmp, p)
-            fh.write(r.SeriesInstanceUID + "\n")
-            fh.flush()
+    plane = dict(zip(meta.SeriesInstanceUID, meta.plane))
+    want = set(meta[meta.StudyInstanceUID.isin(flips)].SeriesInstanceUID)
+    # flipping is an involution: series flipped under an older list but absent from this one are flipped back, so the
+    # directory always matches --flip-csv exactly; the marker is updated after every file (crash-safe)
+    todo = sorted(want - done) + sorted(done - want)
+    n = n_back = 0
+    for se in todo:
+        p = vol_dir / f"{se}.npy"
+        if not p.exists() or se not in plane:
+            continue
+        v = np.load(p)
+        v = v[::-1] if plane[se] == "Sagittal" else v[:, :, ::-1]
+        tmp = p.with_suffix(".tmp.npy")
+        np.save(tmp, np.ascontiguousarray(v))
+        os.replace(tmp, p)
+        if se in done:
+            done.discard(se)
+            n_back += 1
+        else:
+            done.add(se)
             n += 1
-    print(f"{vol_dir}: flipped {n} series of {len(flips)} studies (already done {len(done)})")
+        tmpm = marker.with_suffix(".tmp")
+        tmpm.write_text("".join(x + "\n" for x in sorted(done)))
+        os.replace(tmpm, marker)
+    print(f"{vol_dir}: flipped {n} series, restored {n_back}; {len(flips)} studies listed, {len(done)} series flipped now")
 
 
 if __name__ == "__main__":

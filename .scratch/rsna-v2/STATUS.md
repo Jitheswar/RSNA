@@ -348,3 +348,14 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   **0.5 Opus mm + 0.5 ens5 0.949** (GPT 0.948); adding the report to mm+ens lowers it (0.940). -> multimodal labels are
   +0.013 over the report mix: Opus labelling resumed (4 concurrent; batches 38-41; counter 42). An earlier 17:00 check
   that said "no gain" used the in-sample cal_v3 - wrong, corrected here.
+- 17:21 IST **GPU access**: only 8258 (A30 24 GB, G-NODE2, ends ~15:40 IST Oct 7; stops claiming at <10 h left).
+  G-NODE3 (4 GPUs) is CPU-saturated by job 8261 (other user, gpu:2, 64/64 CPUs, 359 days left) -> 2 GPUs idle but
+  unschedulable; our 8289/8290 pending at priority 1001 behind others (1131-1248). A30 runs ConvNeXt-S folds in ~8.7 h,
+  ResNet50@224 ~5 h (0.5 s/study, GPU 40%; train.py now skips grad-ckpt for <=256 px on small GPUs).
+  Queue order: r50 f0 (running) -> s_mm1_full_s1 (to queue when labels are rebuilt, ~22:00) -> s_mix1e_full_s1 ->
+  coat1 f0 -> r50 f1-4 -> coat1 f1-4.
+- 17:21 IST Laterality: an Opus labeller noticed a mirrored knee (fibula on image right) in a study the checker had
+  flipped (tag R, p_flip 0.996). The checker (self-supervised, 99% held-out) overrides tag/geometry at p>0.99: 17 tag +
+  1 geometry + 11 weak-geometry train flips; 11/1300 flips in the rehearsal. Base rates suggest tag overrides may be
+  mostly false positives -> blinded Opus audit of 29 flipped + 12 control coronal montages running. fix_laterality.py
+  now syncs node-local volumes to the flip list exactly (flips back removed entries; tested restore = identical).

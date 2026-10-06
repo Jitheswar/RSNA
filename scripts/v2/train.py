@@ -163,9 +163,10 @@ def main():
         if args.bs > 1:
             args.accum *= args.bs
             args.bs = 1
-        args.grad_ckpt = True
-        args.micro = min(args.micro or 16, 16)
-        print(f"small GPU ({gpu_mem:.0f} GB): bs=1 accum={args.accum} grad_ckpt micro={args.micro}", flush=True)
+        if args.img > 256:  # 224-px backbones fit at bs=1 without checkpointing (ResNet50-D 224: 3.9 GB with it)
+            args.grad_ckpt = True
+            args.micro = min(args.micro or 16, 16)
+        print(f"small GPU ({gpu_mem:.0f} GB): bs=1 accum={args.accum} grad_ckpt={args.grad_ckpt} micro={args.micro}", flush=True)
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
