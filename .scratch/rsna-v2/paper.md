@@ -85,7 +85,15 @@ Teacher OOF predictions (each study predicted by the fold model that did not tra
 calibrated report labels: y = 0.5 * y_report + 0.5 * p_teacher_OOF. The weight is fixed a priori; it is never fitted
 on gold. Gold studies keep their reference labels when in a training fold. Students are re-initialised from ImageNet.
 
-### 4.5 Ensembling and blending
+### 4.5 Multimodal (image + report) LLM labels
+For each training study we render three montages (sagittal, coronal, axial; the best fat-suppressed fluid-sensitive
+series; six slices from 15-85% depth; every knee displayed as a right knee, orientation stated in the prompt) and give
+them, with the report, to a frontier multimodal LLM that returns P(panel positive) for the 12 findings (host
+clarification, topic 733965: sending competition data to an LLM API is allowed). Studies are labelled in order of
+report terseness (most unaddressed findings first). Training label where available: y = 0.5 * p_mm + 0.5 * p_OOF
+(image-model ensemble); elsewhere the report mix of 4.4.
+
+### 4.6 Ensembling and blending
 Fold models of a family are averaged; families are combined by rank averaging. Under the 9 h Kaggle limit (2xT4),
 families are selected greedily by OOF objective per second of measured inference cost. Blends with the attributed
 public baseline use per-target rank averaging at a pre-fixed weight.
@@ -102,6 +110,16 @@ differences), public LB (hidden panel labels, about 390 studies; about +-0.004 n
 Raw probability AUC: GPT-6.1-Sol 0.894, public v2 0.887, pilkwang 0.870, Qwen3.8-27B 0.852, Gemma-4-31B 0.842,
 GPT-5.6-Sol (public) 0.835. LOO log-loss: calibrated multi-source fusion 0.387-0.390, frontier alone 0.406, public
 calibrated 0.422, public raw 0.573. Fused label AUC (fold-specific, leak-free) 0.855.
+
+**Evaluating gold-calibrated labels on a tiny gold set.** Two traps: (i) a calibration map fit on all 58 gold studies
+is in-sample for those studies (0.9145); (ii) leak-free fold-specific maps, pooled across folds, mix five
+calibration scales and depress AUC (0.855; even a per-target Platt map, which cannot change within-target ranking,
+drops raw 0.894 to 0.857). We therefore score labels by AUC over **within-fold positive/negative pairs only**, which
+is immune to per-fold scales. On that metric (gold58, macro over 12 findings): calibrated report fusion 0.898 = raw
+GPT-6.1-Sol probabilities 0.898; image-ensemble OOF 0.931; multimodal Opus 0.928, GPT-6.1-Sol 0.933;
+0.5 report + 0.5 OOF 0.936; **0.5 multimodal + 0.5 OOF 0.949** (GPT 0.948); adding the report to the multimodal mix
+lowers it (0.940). Gains over the report mix are broad: MCL +0.035, PF OA +0.033, effusion +0.031,
+synovitis +0.025, fracture +0.016, lateral meniscus +0.013 (medial OA -0.008).
 
 ### 6.2 Image recipe (fold 0, single model)
 | model | labels | OOF weak AUC (cal_v3) | public LB (1 fold) |
@@ -141,6 +159,7 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | ours: 5-fold teachers / 5-fold students | 0.935 / 0.944 |
 | blend, rank weight 0.5: baseline + teachers | 0.946 |
 | blend, rank weight 0.5 / 0.65: baseline + students | 0.948 / 0.948 |
+| ours: 25 students (5 ConvNeXt-S families x 5 folds) | 0.945 |
 
 ### 6.6 Negative results and ablations
 - **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
@@ -167,6 +186,11 @@ synovitis 62-92% everywhere; OA 47-59% of Turkish reports.
   parity: AUC 0.9304 vs 0.9305.
 - End to end on Kaggle (1,300 simulated test studies through the exact submission path): held-out predictions match
   local OOF (mean |dp| 0.0008, corr 1.0000, identical AUC); 0 preparation failures.
+- Memory-bounded inference: preparing studies with an eager process-pool map lets CPU preparation run ahead of the
+  GPUs; each prepared study is ~25 MB (uint8, 384 px), so with 15-25 models the backlog reached ~25-27 GB of the
+  29 GB notebook RAM and two submissions exceeded the 9 h limit through thrashing (a 12-model rehearsal at ~22 GB
+  had survived). A bounded prefetch window (2x workers), per-study error isolation and an absolute session deadline
+  (unscored studies fall back to the baseline rank) fixed it: the same 25-model submission then completed (0.945).
 - Runtime on 2xT4 per 1,300 studies: ~290 s per ConvNeXt-S model (pure fp16; 326 s with autocast), DICOM preparation
   ~1,150 s on 4 CPUs (CPU-bound). Ours (5 models) ~30 min for 0.944 vs the baseline ~6.4 h for 0.943.
 
@@ -176,6 +200,10 @@ report labels beat public labels by ~0.075 weak AUC on the same recipe, and imag
 gold58 AUC and +0.009 on the hidden test. Architecture changes within a fixed label set moved results by <= 0.005
 (resolution, backbone size, DINOv2, EfficientNetV2), while recipe changes that target specific findings helped where
 predicted (pos_weight -> rare findings such as MCL and fracture; denser axial sampling -> patellofemoral OA).
+
+**Family saturation.** Five same-backbone families (resolution, windows, pos_weight, self-training round) reach
+OOF weak AUC 0.918-0.921 each and 0.922-0.923 in any combination; 25 models score 0.945 on the hidden test vs 0.944
+for 5. Further gains have to come from labels (multimodal) or genuinely different models, not more of the same.
 
 **What the reference panel rewards.** The panel calls findings that reports under-call (small effusions, grade-2
 sprains, synovitis without mention) and the gold sample is trauma-enriched. Calibrating to the panel and letting image
