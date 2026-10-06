@@ -316,3 +316,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Slurm 3-day limit: 8250 ends ~00:00 Oct 7, 8254 ~04:00, 8258 ~15:40. worker.sh now refuses to claim a task with
   < 4 h (A100) / 10 h (A30) left; scripts/v2/queue_watchdog.sh (detached, every 10 min) requeues tasks of dead jobs
   and keeps 3 v2-gpu workers submitted while tasks are pending.
+- 07:02 IST (Oct 6) Opus labelling: 14/290 batches done (session limit hit again ~02:40, reset 07:00); owner: max 2-4 concurrent subagents -> running 4 (batches 14-17), counter scratchpad/opus_next.txt=18. auto_r2e queued s_mix1e f0-4 at 03:58 (5-family ensemble teacher, recipe 24/16/14 + pos_weight); f0 running. Submissions 56859633 (ours-only 25) / 56859907 (blend) still PENDING.
