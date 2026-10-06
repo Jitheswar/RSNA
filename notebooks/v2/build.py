@@ -24,6 +24,8 @@ else:
     nb["cells"].insert(0, {"cell_type": "markdown", "metadata": {}, "source": [
         f"Baseline = public notebook `yamadan96/rsna-knee-d4-public0946` (attributed, unchanged). "
         f"Appended: our v2 models, rank-blended at a pre-fixed weight {weight}; any v2 failure keeps the baseline output.\n"]})
+nb["cells"].insert(0, {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
+                       "source": ["import time as _rsna_time\n", "RSNA_T0 = _rsna_time.time()  # session start, for the v2 leg deadline\n"]})
 nb["cells"].append({"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
                     "source": leg.splitlines(keepends=True)})
 if sim:

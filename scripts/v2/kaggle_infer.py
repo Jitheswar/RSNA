@@ -15,6 +15,7 @@ import queue
 import sys
 import threading
 import time
+from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -175,7 +176,10 @@ def main():
     ap.add_argument("--fp16", action="store_true")
     ap.add_argument("--pure-fp16", action="store_true", help="with --fp16: run fp16 weights on fp16 inputs without autocast")
     ap.add_argument("--tta", type=int, default=1, help="1 = none; 2 = add a half-step slice-offset pass")
+    ap.add_argument("--deadline-s", type=float, default=0, help=">0: stop scoring new studies this many seconds after start")
+    ap.add_argument("--deadline-at", type=float, default=0, help=">0: absolute unix time after which no new study is scored")
     args = ap.parse_args()
+    T_START = time.time()
     import torch
     from model import KneeNet
 
@@ -218,6 +222,13 @@ def main():
 
     preds = {}
     q: queue.Queue = queue.Queue(maxsize=16)
+    t_model = np.zeros(len(paths))
+    n_model = np.zeros(len(paths))
+    n_err = [0]
+    t0 = time.time()
+    deadline_at = args.deadline_at if args.deadline_at > 0 else (T_START + args.deadline_s if args.deadline_s > 0 else float("inf"))
+    if deadline_at < float("inf"):
+        print(f"deadline in {deadline_at - time.time():.0f}s", flush=True)
 
     def consumer(dev):
         while True:
@@ -225,7 +236,22 @@ def main():
             if item is None:
                 return
             study, vols = item
+            if time.time() > deadline_at:  # out of time: leave NaN (blend keeps the baseline rank)
+                continue
             per_model = []
+            try:
+                _run_study(dev, study, vols, per_model)
+            except Exception as exc:  # never let a worker thread die (a dead consumer deadlocks the producer)
+                n_err[0] += 1
+                if n_err[0] <= 5:
+                    import traceback; traceback.print_exc()
+                print(f"study error {study}: {type(exc).__name__}: {exc}", flush=True)
+                per_model = per_model + [np.full(12, np.nan, np.float32)] * (len(paths) - len(per_model))
+                if dev.type == "cuda":
+                    torch.cuda.empty_cache()
+            preds[study] = np.stack(per_model)
+
+    def _run_study(dev, study, vols, per_model):
             with torch.no_grad():
                 inputs = {}
                 shifts = [0.0, 0.5][: max(1, args.tta)]
@@ -234,7 +260,8 @@ def main():
                     for sh in shifts:
                         x, types, pos, present, sm = study_tensors(vols, smeta, S, kk, shift=sh, k_plane=dict(kp) if kp else None)
                         inputs[(key, sh)] = tuple(torch.from_numpy(v)[None].to(dev) for v in (x, types, pos, present, sm))
-                for net, a in zip(models[dev], cfgs):
+                for mi, (net, a) in enumerate(zip(models[dev], cfgs)):
+                    tm0 = time.time()
                     tta_probs = []
                     views = [(sh, False) for sh in shifts] + ([(sh, True) for sh in shifts] if a.get("mirror", 0) > 0 else [])
                     for sh, mir in views:
@@ -267,22 +294,86 @@ def main():
                             logits, _ = net(xx, types, pos, present, micro=48, smask=sm)
                         tta_probs.append(torch.sigmoid(logits.float())[0].cpu().numpy())
                     per_model.append(np.mean(tta_probs, 0) if tta_probs else np.full(12, np.nan, np.float32))
-            preds[study] = np.stack(per_model)
+                    t_model[mi] += time.time() - tm0
+                    n_model[mi] += 1
 
     threads = [threading.Thread(target=consumer, args=(d,), daemon=True) for d in devs]
     for t in threads:
         t.start()
-    t0 = time.time()
     jobs = [(str(comp / f"{args.split}_series" / s), s, {se: plane_of.get(se) for se in by_study.get(s, [])}) for s in ids]
-    with ProcessPoolExecutor(args.workers) as pool:
-        for n, (study, vols, dt) in enumerate(pool.map(prepare_study, jobs, chunksize=1)):
-            q.put((study, vols))
+    # Bounded prefetch. An eager pool.map prepares every study as fast as the CPUs allow and parks the results in RAM
+    # (~25 MB/study): with many models the GPUs fall behind and the backlog (~27 GB for 25 models x 1300 studies)
+    # exhausts the 29 GB notebook RAM -> thrashing -> 9 h timeout. Keep at most `window` studies in flight.
+    from concurrent.futures.process import BrokenProcessPool
+    window = max(2 * args.workers, 8)
+    pool = ProcessPoolExecutor(args.workers)
+    job_iter = iter(jobs)
+    inflight = deque()
+
+    def top_up():
+        while len(inflight) < window:
+            j = next(job_iter, None)
+            if j is None:
+                return
+            inflight.append((j, pool.submit(prepare_study, j)))
+
+    def results():
+        nonlocal pool
+        top_up()
+        while inflight:
+            j, fut = inflight.popleft()
+            try:
+                res = fut.result()
+            except Exception as exc:  # a crashed/OOM-killed worker breaks the pool: skip this study, rebuild, go on
+                print(f"prep worker error {j[1]}: {type(exc).__name__}: {exc}", flush=True)
+                if isinstance(exc, BrokenProcessPool):
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    pool = ProcessPoolExecutor(args.workers)
+                    redo = [jj for jj, _ in inflight]
+                    inflight.clear()
+                    for jj in redo:
+                        inflight.append((jj, pool.submit(prepare_study, jj)))
+                continue
+            top_up()
+            yield res
+
+    def mem_gb():
+        try:
+            import psutil
+            return f"{psutil.Process().memory_info().rss / 1e9:.1f}/{psutil.virtual_memory().used / 1e9:.1f}GB"
+        except Exception:
+            return "?"
+
+    try:
+        for n, (study, vols, dt) in enumerate(results()):
+            while True:  # bounded put: re-check consumer liveness and the deadline instead of blocking forever
+                try:
+                    q.put((study, vols), timeout=30)
+                    break
+                except queue.Full:
+                    if not any(t.is_alive() for t in threads) or time.time() > deadline_at:
+                        break
+            if not any(t.is_alive() for t in threads):
+                print("all consumers dead; stopping", flush=True)
+                break
+            if time.time() > deadline_at:
+                print(f"deadline reached after {n + 1} studies; remaining studies left NaN", flush=True)
+                break
             if (n + 1) % 50 == 0:
-                print(f"prepared {n + 1}/{len(ids)} {time.time() - t0:.0f}s", flush=True)
+                done_m = np.maximum(n_model, 1)
+                print(f"prepared {n + 1}/{len(ids)} {time.time() - t0:.0f}s | rss/used {mem_gb()} | model s/study "
+                      f"{np.round(t_model / done_m, 3).tolist()} | errors {n_err[0]}", flush=True)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     for _ in threads:
-        q.put(None)
+        try:
+            q.put(None, timeout=60)
+        except queue.Full:
+            pass
     for t in threads:
-        t.join()
+        t.join(timeout=max(60.0, min(3600.0, deadline_at - time.time() + 120)))
+    print(f"per-model s/study {np.round(t_model / np.maximum(n_model, 1), 3).tolist()} errors {n_err[0]} "
+          f"studies scored {len(preds)}/{len(ids)}", flush=True)
     rows = []
     for s in ids:
         p = preds.get(s)
@@ -292,7 +383,8 @@ def main():
     w = np.array([float(a.get("weight", 1.0)) for a in cfgs], np.float64)[None, :, None]
     ok = ~np.isnan(arr)
     mean = (np.where(ok, arr, 0.0) * w).sum(1) / np.maximum((ok * w).sum(1), 1e-9)
-    mean = np.where(ok.any(1), mean, np.nan)
+    scored = ok.any(1)
+    mean = np.where(scored, mean, np.nan)
     ens_path = os.path.join(HERE, "ens_weights.json")
     if os.path.exists(ens_path):  # per-target family weights in rank space
         import json as _json
@@ -318,11 +410,11 @@ def main():
                 mixed[:, j] = np.stack(cols, 1) @ (wt / wt.sum())
             mean = mixed
             print("applied per-target family weights for", fams, flush=True)
-    mean = np.where(np.isnan(mean), 0.5, mean)
+    mean = np.where(scored, np.where(np.isnan(mean), 0.5, mean), np.nan)  # unscored (deadline/error) rows stay NaN
     df = pd.DataFrame(mean, columns=TARGETS)
     df.insert(0, "StudyInstanceUID", ids)
     df.to_csv(args.out, index=False)
-    print(f"done {len(ids)} studies in {time.time() - t0:.0f}s -> {args.out}", flush=True)
+    print(f"done {len(ids)} studies ({int(scored.any(1).sum())} scored) in {time.time() - t0:.0f}s -> {args.out}", flush=True)
 
 
 if __name__ == "__main__":
