@@ -341,7 +341,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   all family combos saturate at weak ~0.922-0.923 / gold ~0.920-0.923. Queued diversity: s_r50_224 (ResNet50-D @224)
   f0-4 (0070x), s_coat1_224 (CoAtNet-1 rmlp @224) f0 (00705) + f1-4 (008x), s_mix1e_full_s1 (0090); labels stud_mix1e.
   Submissions (slots 3-4): ours-only s_mix1e 5-fold, then ours-only 2 full-data seeds (auto_sub_e.sh).
-- 17:40 IST **label-quality audit (gold58)**. Pitfall: cal_v3.csv maps are fit on all 58 gold -> in-sample for gold
+- 17:10 IST **label-quality audit (gold58)**. Pitfall: cal_v3.csv maps are fit on all 58 gold -> in-sample for gold
   rows (0.9145); fold-specific maps (cal_v3_f*) pooled across folds mix 5 calibration scales -> artificially low
   (0.855). Artifact-free metric = AUC over WITHIN-fold pos/neg pairs only: cal_v3 (oos) 0.898 = raw sol61 0.898;
   ens5 OOF 0.931; Opus mm 0.928; GPT mm 0.933; 0.5 cal_v3 + 0.5 ens5 0.936 (= 0.5 sol61 + 0.5 ens5 0.936);
