@@ -327,3 +327,24 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   report lowers it (0.926-0.934); current-style 0.5 report + 0.5 student 0.9182. -> new labels stud_mm =
   0.5 Opus mm + 0.5 student-ensemble OOF where mm exists, fallback stud_mix1 (scripts/v2/build_mm_labels.py).
   Opus progress: 18/290 batches (running 4: 18-21).
+- 12:06-12:41 IST (Oct 6) **9 h timeouts diagnosed + fixed** (commit 517cb0f): eager pool.map prepared all 1300 studies
+  ahead of the GPUs (25 MB/study measured from vol384) -> 15-25-model runs parked ~25-27 GB in the 29 GB notebook RAM
+  (12-model probe ~22 GB survived; 5-model runs no backlog) -> thrashing. Now bounded prefetch (2x workers), per-study
+  try/except in consumer threads, absolute session deadline (start + 9 h - 30 min; unscored studies stay NaN -> blend
+  keeps baseline rank), per-model s/study + RSS logged. Tested: 3-study e2e parity 3e-4, 16-study deadline run (4/16
+  scored, NaN rows -> baseline rank exactly). Resubmitted both runs.
+- 16:59 IST **ours-only 25 models = 0.945** (sub 56873662; completed in time -> fix confirmed) vs 5-model students 0.944:
+  5x more same-family models add +0.001 -> family saturation; need diversity / better labels. Blend 15 models (w=0.6)
+  PENDING. Claude session limit 12:50-17:00 paused everything; idle GPU workers exited after 90 min (IDLE_MAX) and
+  other users took G-NODE3 -> only 8258 running; 8289/8290 pending (Priority). Lesson: keep a low-priority backlog.
+- 17:05 IST s_mix1e (5-family ensemble-teacher labels) 5-fold: weak 0.9211 (best single family), gold58 0.9178 (mid);
+  all family combos saturate at weak ~0.922-0.923 / gold ~0.920-0.923. Queued diversity: s_r50_224 (ResNet50-D @224)
+  f0-4 (0070x), s_coat1_224 (CoAtNet-1 rmlp @224) f0 (00705) + f1-4 (008x), s_mix1e_full_s1 (0090); labels stud_mix1e.
+  Submissions (slots 3-4): ours-only s_mix1e 5-fold, then ours-only 2 full-data seeds (auto_sub_e.sh).
+- 17:40 IST **label-quality audit (gold58)**. Pitfall: cal_v3.csv maps are fit on all 58 gold -> in-sample for gold
+  rows (0.9145); fold-specific maps (cal_v3_f*) pooled across folds mix 5 calibration scales -> artificially low
+  (0.855). Artifact-free metric = AUC over WITHIN-fold pos/neg pairs only: cal_v3 (oos) 0.898 = raw sol61 0.898;
+  ens5 OOF 0.931; Opus mm 0.928; GPT mm 0.933; 0.5 cal_v3 + 0.5 ens5 0.936 (= 0.5 sol61 + 0.5 ens5 0.936);
+  **0.5 Opus mm + 0.5 ens5 0.949** (GPT 0.948); adding the report to mm+ens lowers it (0.940). -> multimodal labels are
+  +0.013 over the report mix: Opus labelling resumed (4 concurrent; batches 38-41; counter 42). An earlier 17:00 check
+  that said "no gain" used the in-sample cal_v3 - wrong, corrected here.
