@@ -317,3 +317,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   < 4 h (A100) / 10 h (A30) left; scripts/v2/queue_watchdog.sh (detached, every 10 min) requeues tasks of dead jobs
   and keeps 3 v2-gpu workers submitted while tasks are pending.
 - 07:02 IST (Oct 6) Opus labelling: 14/290 batches done (session limit hit again ~02:40, reset 07:00); owner: max 2-4 concurrent subagents -> running 4 (batches 14-17), counter scratchpad/opus_next.txt=18. auto_r2e queued s_mix1e f0-4 at 03:58 (5-family ensemble teacher, recipe 24/16/14 + pos_weight); f0 running. Submissions 56859633 (ours-only 25) / 56859907 (blend) still PENDING.
+- 07:10 IST overnight families: s_dinob_mix1 5-fold weak 0.9110 / gold58 0.9066 (weaker; not selected);
+  s_mix1_k24 5-fold 0.9192 / 0.9164; s_mix1_z140 f0 0.9181 / gold12 0.939 (vs 0.9175 / 0.958: no gain).
+  family_select (unlimited budget) stops at pw + 384 + s_mix2 (weak 0.9214, gold 0.9250) = the pending blend's set.
+  Opus labels so far (210 non-gold, terse-report-first ordering): mean p much lower than student OOF on these atypical
+  studies; Spearman with student 0.30-0.63 per finding (independent second reading).
