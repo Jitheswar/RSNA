@@ -322,3 +322,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   family_select (unlimited budget) stops at pw + 384 + s_mix2 (weak 0.9214, gold 0.9250) = the pending blend's set.
   Opus labels so far (210 non-gold, terse-report-first ordering): mean p much lower than student OOF on these atypical
   studies; Spearman with student 0.30-0.63 per finding (independent second reading).
+- 07:25 IST **label mixes on gold58 (probability space, leak-free)**: student ensemble (pw+384+mix2) OOF 0.9252,
+  Opus mm 0.9256, report cal 0.8553; 0.5*mm + 0.5*student = **0.9430** (0.4/0.6: 0.9433, flat 0.4-0.5); adding
+  report lowers it (0.926-0.934); current-style 0.5 report + 0.5 student 0.9182. -> new labels stud_mm =
+  0.5 Opus mm + 0.5 student-ensemble OOF where mm exists, fallback stud_mix1 (scripts/v2/build_mm_labels.py).
+  Opus progress: 18/290 batches (running 4: 18-21).
