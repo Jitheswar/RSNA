@@ -359,3 +359,12 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   1 geometry + 11 weak-geometry train flips; 11/1300 flips in the rehearsal. Base rates suggest tag overrides may be
   mostly false positives -> blinded Opus audit of 29 flipped + 12 control coronal montages running. fix_laterality.py
   now syncs node-local volumes to the flip list exactly (flips back removed entries; tested restore = identical).
+- Oct 6 17:25 -> Oct 11 13:30 IST: **paused by the Claude weekly usage limit** (Opus labelling subagents used most of it).
+  Results that landed meanwhile: ours-only s_mix1e 5-fold **0.946** (best ours-only; sub 56879705); blend 15 models
+  w=0.6 0.945, w=0.75 0.948; ours-only 2 full-data seeds = ERROR (likely: hidden rerun mounted the NEWER dataset version
+  released right after -> release-tag guard raised; local e2e of the full model is fine). FIX (d67d878): separate model
+  datasets per notebook type (rsna-v2-models for blends, rsna-v2-models-only for ours-only); never release onto a dataset
+  while a submission using it is pending. GPU queue finished: s_r50_224 5-fold weak 0.8983 / gold 0.8980; s_coat1_224
+  0.9108 / 0.9087 -> both weaker and do not help ensembles (negative); s_mix1e_full_s1 done. All GPU nodes now allocated
+  to other users; worker resubmitted (pending). Opus labels: 47/290 batches (~760 non-gold studies).
+- Oct 11 14:30 IST submitted chains: blend baseline + s_mix1e w=0.65 (submit18); ours-only s_mix1e 5 + full_s1 (submit19).
