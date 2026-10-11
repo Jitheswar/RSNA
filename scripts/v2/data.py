@@ -80,8 +80,9 @@ class StudyDataset(Dataset):
     def __init__(self, studies, meta: pd.DataFrame, vol_dir: str, labels: np.ndarray | None,
                  n_series=6, k=16, train=False, seed=0, aux: np.ndarray | None = None, series_drop=0.15,
                  unnorm_lat: dict | None = None, k_plane: dict | None = None, random_pos: bool = False,
-                 mirror_p: float = 0.0):
+                 mirror_p: float = 0.0, prep_fn=None):
         self.studies = list(studies)
+        self.prep_fn = prep_fn  # study -> {series_uid: uint8 vol}: prepare raw DICOMs on the fly (Kaggle training)
         self.by_study = {s: g for s, g in meta.groupby("StudyInstanceUID")}
         self.vol_dir = vol_dir
         self.labels = labels
@@ -113,8 +114,14 @@ class StudyDataset(Dataset):
         if self.train and len(picks) > 2:
             keep = [p for j, p in enumerate(picks) if not (j > 0 and rng.random() < self.series_drop)]
             picks = keep
+        vols = self.prep_fn(st) if self.prep_fn is not None else None
         for j, row in enumerate(picks):
-            vol = np.load(f"{self.vol_dir}/{row.SeriesInstanceUID}.npy", mmap_mode="r")
+            if vols is not None:
+                vol = vols.get(row.SeriesInstanceUID)
+                if vol is None:
+                    continue
+            else:
+                vol = np.load(f"{self.vol_dir}/{row.SeriesInstanceUID}.npy", mmap_mode="r")
             D = vol.shape[0]
             Kp = int(self.k_plane.get(row.plane, self.k)) if self.k_plane else K
             if self.random_pos and rng is not None:

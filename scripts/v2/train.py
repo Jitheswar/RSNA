@@ -95,12 +95,15 @@ def predict(model, loader, dev, crop=None, micro=0, zoom=1.0):
             B, S, K, C, H, W = x.shape
             x = F.interpolate(x.view(-1, C, H, W).float(), size=(crop, crop), mode="bilinear",
                               align_corners=False).view(B, S, K, C, crop, crop)
-        with torch.autocast("cuda", dtype=torch.bfloat16):
+        with torch.autocast("cuda", dtype=AMP_DT):
             logits, _ = model(x, b["types"].to(dev), b["pos"].to(dev), b["present"].to(dev), micro=micro,
                               smask=b["smask"].to(dev))
         preds.append(torch.sigmoid(logits.float()).cpu().numpy())
         idxs.append(b["idx"].numpy())
     return np.concatenate(preds), np.concatenate(idxs)
+
+
+AMP_DT = None  # set in main (bf16 default; fp16 on T4)
 
 
 def main():
@@ -156,7 +159,11 @@ def main():
     ap.add_argument("--k-sag", type=int, default=0, help="per-plane slice counts (0 = use --k for all planes)")
     ap.add_argument("--k-cor", type=int, default=0)
     ap.add_argument("--k-ax", type=int, default=0)
+    ap.add_argument("--amp", default="bf16", choices=["bf16", "fp16"], help="fp16 (+GradScaler) for GPUs without bf16 (T4)")
+    ap.add_argument("--comp", default="", help="raw competition root: prepare studies from DICOMs on the fly (no --vol-dir)")
     args = ap.parse_args()
+    global AMP_DT
+    AMP_DT = torch.float16 if args.amp == "fp16" else torch.bfloat16
 
     gpu_mem = torch.cuda.get_device_properties(0).total_memory / 2**30
     if gpu_mem < 40:  # e.g. A30 24 GB: keep the effective batch, trade speed for memory
@@ -233,11 +240,15 @@ def main():
             flipped = set(pd.read_csv("artifacts/private/v2/lat_flip_v1.csv").StudyInstanceUID)
             # effective normalisation flip = (side == L) XOR (checker re-flip)
             unnorm = {s: ((v == "L") != (s in flipped)) for s, v in sides.items()}
+        prep_fn = None
+        if args.comp:
+            from rawprep import RawPrep
+            prep_fn = RawPrep(args.comp)
         ds_tr = StudyDataset([studies[i] for i in tr_idx], meta, args.vol_dir, Yt[tr_idx], n_series=args.n_series,
                              k=args.k, train=True, seed=args.seed + fold, aux=AUX[tr_idx] if AUX is not None else None,
-                             unnorm_lat=unnorm, k_plane=k_plane_tr, random_pos=args.random_pos, mirror_p=args.mirror)
+                             unnorm_lat=unnorm, k_plane=k_plane_tr, random_pos=args.random_pos, mirror_p=args.mirror, prep_fn=prep_fn)
         ds_va = StudyDataset([studies[i] for i in va_idx], meta, args.vol_dir, Yt[va_idx], n_series=args.n_series,
-                             k=args.k, train=False, unnorm_lat=unnorm, k_plane=k_plane)
+                             k=args.k, train=False, unnorm_lat=unnorm, k_plane=k_plane, prep_fn=prep_fn)
         dl_tr = DataLoader(ds_tr, batch_size=args.bs, shuffle=True, num_workers=args.workers, collate_fn=collate,
                            pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4,
                            worker_init_fn=worker_init)
@@ -252,6 +263,7 @@ def main():
             ck0 = torch.load(args.init_ckpt.replace("{fold}", str(fold)), map_location="cpu", weights_only=False)
             model.load_state_dict(ck0["state"], strict=True)
             print("initialised from", args.init_ckpt.replace("{fold}", str(fold)), flush=True)
+        scaler = torch.cuda.amp.GradScaler(enabled=AMP_DT == torch.float16)
         aucm = None
         if args.aucm_w > 0:  # min over (model, a, b), max over alpha >= 0
             p_pos = torch.tensor(np.clip((Yt[tr_idx] > 0.5).mean(0), 0.02, 0.98), dtype=torch.float32, device=dev)
@@ -312,7 +324,7 @@ def main():
                     x = center_zoom(x, args.zoom, args.img)
                 y = b["y"].to(dev)
                 wg = w_gold[b["idx"]].to(dev)
-                with torch.autocast("cuda", dtype=torch.bfloat16):
+                with torch.autocast("cuda", dtype=AMP_DT):
                     logits, aux_logits = model(x, b["types"].to(dev), b["pos"].to(dev), present, micro=args.micro,
                                                smask=b["smask"].to(dev))
                 loss = F.binary_cross_entropy_with_logits(logits.float(), y, reduction="none", pos_weight=pw).mean(1)
@@ -331,13 +343,15 @@ def main():
                     m = (a >= 0).float()
                     la = F.binary_cross_entropy_with_logits(aux_logits.float(), a.clamp(min=0), reduction="none")
                     loss = loss + args.aux_w * (la * m).sum() / m.sum().clamp(min=1)
-                (loss / args.accum).backward()
+                scaler.scale(loss / args.accum).backward()
                 run_loss_t = loss.detach() if nb == 0 else run_loss_t + loss.detach()
                 nb += 1
                 if (it + 1) % args.accum == 0:
                     set_lr(step)
+                    scaler.unscale_(opt)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
-                    opt.step()
+                    scaler.step(opt)
+                    scaler.update()
                     opt.zero_grad(set_to_none=True)
                     if aucm is not None:
                         aucm[4].step()

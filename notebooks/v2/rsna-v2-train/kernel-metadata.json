@@ -1,0 +1,3 @@
+{"id": "jitheswar/rsna-v2-finetune-mm", "title": "rsna-v2-finetune-mm", "code_file": "train_kernel.py", "language": "python",
+ "kernel_type": "script", "is_private": true, "enable_gpu": true, "enable_internet": true, "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": ["jitheswar/rsna-v2-train"], "competition_sources": ["rsna-knee-abnormality-detection"], "kernel_sources": []}
