@@ -367,4 +367,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   while a submission using it is pending. GPU queue finished: s_r50_224 5-fold weak 0.8983 / gold 0.8980; s_coat1_224
   0.9108 / 0.9087 -> both weaker and do not help ensembles (negative); s_mix1e_full_s1 done. All GPU nodes now allocated
   to other users; worker resubmitted (pending). Opus labels: 47/290 batches (~760 non-gold studies).
-- Oct 11 14:30 IST submitted chains: blend baseline + s_mix1e w=0.65 (submit18); ours-only s_mix1e 5 + full_s1 (submit19).
+- Oct 11 14:15 IST submitted chains: blend baseline + s_mix1e w=0.65 (submit18); ours-only s_mix1e 5 + full_s1 (submit19).
