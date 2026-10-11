@@ -10,7 +10,9 @@ here = Path(__file__).parent
 slug, weight = sys.argv[1], float(sys.argv[2])
 only = "--only" in sys.argv
 sim = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--sim=")), 0)
-_tagf = here.parent.parent / "artifacts/private/v2/kaggle/rsna-v2-models/release_tag.txt"
+import os
+DS = os.environ.get("DS", "rsna-v2-models")  # separate model datasets per notebook: a hidden rerun mounts the latest version
+_tagf = here.parent.parent / f"artifacts/private/v2/kaggle/{DS}/release_tag.txt"
 tag = _tagf.read_text().strip() if _tagf.exists() else "untagged"
 leg = (here / "leg.py").read_text().replace("__WEIGHT__", str(weight)).replace("__ONLY__", str(only)).replace("__TAG__", tag)
 print("model package tag", tag)
@@ -64,6 +66,6 @@ meta.update({"id": f"jitheswar/{slug}", "title": slug, "code_file": "notebook.ip
 meta.pop("id_no", None)
 if only:
     meta["dataset_sources"], meta["kernel_sources"], meta["model_sources"] = [], [], []
-meta["dataset_sources"] = meta["dataset_sources"] + ["jitheswar/rsna-v2-models"]
+meta["dataset_sources"] = meta["dataset_sources"] + [f"jitheswar/{DS}"]
 (out / "kernel-metadata.json").write_text(json.dumps(meta, indent=1))
 print(out, len(nb["cells"]), "cells")

@@ -6,6 +6,7 @@ set -euo pipefail
 cd /home/ch.jitheswar/RSNA
 MSG=$1; SLUG=$2; W=$3; MODE=${4:---blend}
 KG=~/rsna-gpu2/bin/kaggle
+if [ "$MODE" = "--only" ]; then export DS=${DS:-rsna-v2-models-only}; else export DS=${DS:-rsna-v2-models}; fi
 # team-shared daily quota: skip (before spending Kaggle GPU on a commit run) if no slot is left today
 REM=$($KG competitions submission-limits rsna-knee-abnormality-detection 2>/dev/null | grep -o "Remaining today: [0-9]*" | grep -o "[0-9]*$")
 if [ "${REM:-1}" -lt 1 ]; then echo "NOT submitted (no submission slots left today; team quota)"; exit 0; fi

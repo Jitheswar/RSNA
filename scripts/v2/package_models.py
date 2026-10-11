@@ -52,6 +52,8 @@ import os as _os
 (out / "release_tag.txt").write_text(_os.environ.get("RELEASE_TAG", "untagged"))  # notebook verifies the mounted version
 if args.ens_json:
     shutil.copy(args.ens_json, out / "ens_weights.json")
-meta = {"title": "rsna-v2-models", "id": "jitheswar/rsna-v2-models", "licenses": [{"name": "apache-2.0"}]}
+import os as _os2
+_ds = _os2.environ.get("DS", "rsna-v2-models")
+meta = {"title": _ds, "id": f"jitheswar/{_ds}", "licenses": [{"name": "apache-2.0"}]}
 (out / "dataset-metadata.json").write_text(json.dumps(meta, indent=1))
 print(len(manifest), "models ->", out)
