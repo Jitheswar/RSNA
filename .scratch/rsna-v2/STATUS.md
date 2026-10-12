@@ -391,3 +391,5 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   report labels, independent of mm) 0.9227 vs 0.9192 (+0.0035), gold12 0.9647 vs 0.9608 -> first clean signal that
   from-scratch training on mm labels helps. f1-f4 running on 4 GPUs (~18:00 IST). Slot 5 used: blend 8 models (submit24).
   Plan Oct 13: ours-only s_mm1 5-fold + s_mm1_full_s1; blend baseline + s_mm1 (+ s_mix1e) w=0.65.
+- Oct 12 17:30 IST s_mm1 folds 0,2,3,4 vs s_mix1e (pooled): weak 0.9222 vs 0.9209 (+0.0013), gold46 0.9147 = 0.9147;
+  pair rank-avg weak 0.9231. -> mm labels at 17.7% coverage: small/neutral at family level. f1 (A30) pending.
