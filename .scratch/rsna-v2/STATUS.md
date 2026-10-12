@@ -373,3 +373,5 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 12 06:40 IST Kaggle fine-tune v2 done (seed 45, init s_mix1e_full_s1, stud_mm1 labels, 3 ep, ~2.2 h/epoch on T4,
   loss 0.933 -> 0.920) -> runs/s_mm1ft_full/full/last.pt. Submitted ours-only 7 models (s_mix1e 5 + full_s1 + mm1ft;
   submit20, kernel rsna-v2-only v12). Pushed fine-tune v3 (seed 46) on Kaggle. Hourly auto-resume cron (session-only).
+- Oct 12 07:29 IST ours-only 7 models (+ mm1ft) = **0.946** (sub 57090843) = 6-model 0.946 -> one mm fine-tune adds
+  nothing visible at ensemble level. Blend 7 models w=0.65 (sub 57091668) PENDING. 3 team slots left today.
