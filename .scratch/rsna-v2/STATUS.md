@@ -375,3 +375,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   submit20, kernel rsna-v2-only v12). Pushed fine-tune v3 (seed 46) on Kaggle. Hourly auto-resume cron (session-only).
 - Oct 12 07:29 IST ours-only 7 models (+ mm1ft) = **0.946** (sub 57090843) = 6-model 0.946 -> one mm fine-tune adds
   nothing visible at ensemble level. Blend 7 models w=0.65 (sub 57091668) PENDING. 3 team slots left today.
+- Oct 12 11:35 IST **cluster GPUs back**: workers 8375 + 8376 running on G-NODE3 (2x A100-80GB). 8375 took the queued
+  00600 s_mm1_full_s1 (full data, stud_mm1 labels, 10 ep, ~8 h -> ~19:30 IST). Queued s_mm1 5-fold (00610-00614, same
+  recipe as s_mix1e but stud_mm1 labels, seed 42): gives the clean gold58 within-fold test of mm labels; 8376 runs f0.
+  Workers 8377/8395-8397 still pending (G-NODE2). Keep the queue non-empty (workers exit after 90 min idle).
