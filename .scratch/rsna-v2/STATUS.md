@@ -379,3 +379,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   00600 s_mm1_full_s1 (full data, stud_mm1 labels, 10 ep, ~8 h -> ~19:30 IST). Queued s_mm1 5-fold (00610-00614, same
   recipe as s_mix1e but stud_mm1 labels, seed 42): gives the clean gold58 within-fold test of mm labels; 8376 runs f0.
   Workers 8377/8395-8397 still pending (G-NODE2). Keep the queue non-empty (workers exit after 90 min idle).
+- Oct 12 13:35 IST Kaggle fine-tune v3 (seed 46) done (loss 0.934 -> 0.921) -> runs/s_mm1ft_full_s46. LB A/B of mm
+  labels (chained, ours-only dataset, sequential): A = s_mix1e_full_s1 alone (submit22), B = its two mm fine-tunes
+  s45+s46 (submit23, after A scores). Blend 7 models (57091668) still PENDING. Queued s_mm1_384 5-fold (00620-00624)
+  as GPU backlog; worker 8377 (G-NODE2) started -> 3 GPUs on s_mm1 work.
