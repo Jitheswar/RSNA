@@ -399,3 +399,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 12 19:17 IST GPU handover done: jeevan's 8465 running on G-NODE3 (A100-80GB freed by cancelling our 8395; its task
   requeued). Our workers now 8376 + 8397 (NODE3) + 8377 (NODE2, s_mm1 f1). 8397 got released and started before the
   re-hold took effect, so no held worker remains.
+- Oct 12 21:05 IST **s_mm1 5-fold complete**: weak 0.9222 vs s_mix1e 0.9211 (+0.0011); gold58 0.9178 = 0.9178;
+  rank-avg pair weak 0.9234 (+0.0023, diversity). Verdict: mm labels at 17.7% coverage = neutral as a family, useful as
+  an ensemble member. Plan Oct 13 (after 05:30 reset): ours-only s_mix1e 5 + s_mm1 5 + both full-data models (12);
+  blend baseline + same 12 at w=0.65 once the pending 8-model blend (57103106) has scored.

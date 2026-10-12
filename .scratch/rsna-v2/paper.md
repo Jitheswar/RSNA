@@ -171,6 +171,11 @@ Ensembles saturate: 6 -> 25 models moves the public score by <= 0.001, and a sin
 multimodal labels (coverage 17.7% of training studies) is invisible at ensemble level. The remaining label gain
 (gold58 within-fold 0.936 -> 0.949) requires multimodal coverage of the full training set.
 
+
+**Multimodal-label students (s_mm1, 5-fold, from scratch; labels 0.5 Opus mm + 0.5 ens5 OOF on 778 studies, ensemble-teacher
+labels elsewhere).** Weak 0.9222 vs 0.9211 (s_mix1e), gold58 0.9178 vs 0.9178; rank-average of the two families 0.9234.
+With 17.7% coverage, better labels on a minority of studies do not move a family; the pair gains from diversity.
+
 ### 6.6 Negative results and ablations
 - **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
   (0.9178 vs 0.9179), gold58 0.9155 vs 0.9195 (-0.004 [-0.014, +0.006]); lower in 4/5 folds — confirmation drift.
