@@ -387,3 +387,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   without mm1ft). LB A/B: control full_s1 alone 0.943 (57100708); treatment mm fine-tunes s45+s46 0.944 (57101576) ->
   +0.001, within noise (and partly 2-seed ensembling): mm fine-tune non-negative, not proven. Slot 5: blend 8 models
   (+ mm1ft s46) w=0.65 (submit24).
+- Oct 12 15:40 IST s_mm1_full_s1 done (full data, mm labels, 10 ep, 3.3 h). **s_mm1 f0 vs s_mix1e f0**: weak (cal_v3
+  report labels, independent of mm) 0.9227 vs 0.9192 (+0.0035), gold12 0.9647 vs 0.9608 -> first clean signal that
+  from-scratch training on mm labels helps. f1-f4 running on 4 GPUs (~18:00 IST). Slot 5 used: blend 8 models (submit24).
+  Plan Oct 13: ours-only s_mm1 5-fold + s_mm1_full_s1; blend baseline + s_mm1 (+ s_mix1e) w=0.65.
