@@ -368,3 +368,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   0.9108 / 0.9087 -> both weaker and do not help ensembles (negative); s_mix1e_full_s1 done. All GPU nodes now allocated
   to other users; worker resubmitted (pending). Opus labels: 47/290 batches (~760 non-gold studies).
 - Oct 11 14:15 IST submitted chains: blend baseline + s_mix1e w=0.65 (submit18); ours-only s_mix1e 5 + full_s1 (submit19).
+- Oct 11 results: ours-only s_mix1e 5 + full_s1 **0.946** (= best ours-only); blend baseline + s_mix1e w=0.65 **0.948** (= best).
+  Cluster GPU queue unusable (other users' long jobs) -> training moved to Kaggle T4 (kernel jitheswar/rsna-v2-finetune-mm).
+- Oct 12 06:40 IST Kaggle fine-tune v2 done (seed 45, init s_mix1e_full_s1, stud_mm1 labels, 3 ep, ~2.2 h/epoch on T4,
+  loss 0.933 -> 0.920) -> runs/s_mm1ft_full/full/last.pt. Submitted ours-only 7 models (s_mix1e 5 + full_s1 + mm1ft;
+  submit20, kernel rsna-v2-only v12). Pushed fine-tune v3 (seed 46) on Kaggle. Hourly auto-resume cron (session-only).

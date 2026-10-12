@@ -16,7 +16,7 @@ cmd = [sys.executable, code + '/train.py', '--comp', comp, '--vol-dir', '/nonexi
        '--meta', os.path.dirname(meta_glob[0]) + '/meta-train-*.csv', '--series-csv', code + '/train_series.csv',
        '--labels', code + '/stud_mm1.csv', '--folds-csv', code + '/folds.csv', '--train-csv', code + '/train.csv',
        '--aux-grades', code + '/aux_grades_v2.csv', '--init-ckpt', code + '/init_s_mix1e_full_s1.pt',
-       '--out', '/kaggle/working/run', '--full', '--seed', '45', '--amp', 'fp16',
+       '--out', '/kaggle/working/run', '--full', '--seed', '46', '--amp', 'fp16',
        '--backbone', 'convnext_small.fb_in22k_ft_in1k_384', '--img', '320', '--k', '12', '--k-sag', '24', '--k-cor', '16',
        '--k-ax', '14', '--pos-weight', '--n-series', '6', '--epochs', '3', '--lr-enc', '3e-5', '--lr-head', '1.5e-4',
        '--bs', '2', '--accum', '4', '--workers', '4', '--micro', '16']

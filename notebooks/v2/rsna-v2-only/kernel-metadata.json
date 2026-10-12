@@ -12,7 +12,7 @@
   "gpu"
  ],
  "dataset_sources": [
-  "jitheswar/rsna-v2-models"
+  "jitheswar/rsna-v2-models-only"
  ],
  "kernel_sources": [],
  "competition_sources": [
