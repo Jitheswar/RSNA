@@ -393,3 +393,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Plan Oct 13: ours-only s_mm1 5-fold + s_mm1_full_s1; blend baseline + s_mm1 (+ s_mix1e) w=0.65.
 - Oct 12 17:30 IST s_mm1 folds 0,2,3,4 vs s_mix1e (pooled): weak 0.9222 vs 0.9209 (+0.0013), gold46 0.9147 = 0.9147;
   pair rank-avg weak 0.9231. -> mm labels at 17.7% coverage: small/neutral at family level. f1 (A30) pending.
+- Oct 12 ~17:45 IST owner asked to give one GPU to a friend (jeevan): cancelled workers 8375 + 8396 (re-grabbed it),
+  requeued their 384 tasks, HELD pending worker 8397 (`scontrol release 8397` to restore). jeevan's 8445 now running on
+  G-NODE3. We keep 3 GPUs (8376, 8395 on NODE3; 8377 on NODE2).
