@@ -412,3 +412,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   (queue/hold/0054). Next: stud_mm2 = build_mm_labels --mm qwen-s0 qwen-s1 opus-gold opus-all (Opus overrides)
   --students ens5 --fallback stud_mix1e -> s_mm2 5-fold + full. Ensemble for the mix stays ens5 (pre-fixed; 7-family
   variants within +-0.001 on gold).
+- Oct 12 22:40 IST Qwen3.8 mm labelling complete: 3,629/3,629 parsed (~2.2 s/study/A100, ~65 min on 2 GPUs).
+  **labels/stud_mm2.csv** = 0.5 mm + 0.5 ens5 OOF on 100% of studies (Opus on 778, Qwen elsewhere; Opus rows identical
+  to stud_mm1). Queued at top: s_mm2 5-fold (00550-00554, seed 42) + s_mm2_full_s1 (00560); 384 tasks requeued behind.
+  ETA (2 A100): f0/f1 ~01:20, f2/f3 ~04:10, f4 + full ~07:30 IST Oct 13 -> evaluate vs s_mix1e / s_mm1 on gold58, then
+  submit (Oct 13 slots 3-5).
