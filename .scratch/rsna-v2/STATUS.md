@@ -396,3 +396,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 12 ~17:45 IST owner asked to give one GPU to a friend (jeevan): cancelled workers 8375 + 8396 (re-grabbed it),
   requeued their 384 tasks, HELD pending worker 8397 (`scontrol release 8397` to restore). jeevan's 8445 now running on
   G-NODE3. We keep 3 GPUs (8376, 8395 on NODE3; 8377 on NODE2).
+- Oct 12 19:17 IST GPU handover done: jeevan's 8465 running on G-NODE3 (A100-80GB freed by cancelling our 8395; its task
+  requeued). Our workers now 8376 + 8397 (NODE3) + 8377 (NODE2, s_mm1 f1). 8397 got released and started before the
+  re-hold took effect, so no held worker remains.
