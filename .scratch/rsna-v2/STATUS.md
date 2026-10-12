@@ -418,3 +418,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   ETA (2 A100): f0/f1 ~01:20, f2/f3 ~04:10, f4 + full ~07:30 IST Oct 13 -> evaluate vs s_mix1e / s_mm1 on gold58, then
   submit (Oct 13 slots 3-5).
 - Oct 13 00:29 IST blend 8 models (+ mm1ft s46) w=0.65 = **0.949** (sub 57103106) = 7-model 0.949 (best, tie).
+- Oct 13 01:30 IST **s_mm2 folds 0-1** (gold24): s_mm2 0.9509 vs s_mm1 0.9446 vs s_mix1e 0.9404 (+0.011 over s_mix1e);
+  weak (report cal_v3) flat 0.9205 vs 0.9206 — expected, the labels moved away from the reports toward images.
+  f2/f3 running (~04:10), then f4 + full (~07:30).
