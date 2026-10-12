@@ -163,6 +163,8 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | ours: ensemble-teacher students s_mix1e (5-fold) / + 1 full-data model | 0.946 / 0.946 |
 | ours: + 1 full-data fine-tune on multimodal labels (3 epochs, Kaggle T4) | 0.946 |
 | blend, rank weight 0.65: baseline + s_mix1e 5-fold | 0.948 |
+| blend, rank weight 0.65: baseline + s_mix1e 5-fold + full-data + mm fine-tune | 0.949 |
+| A/B single full-data model vs its 2 mm-label fine-tunes (seeds 45/46) | 0.943 vs 0.944 |
 | ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
 
 Ensembles saturate: 6 -> 25 models moves the public score by <= 0.001, and a single full-data fine-tune on the

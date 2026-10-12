@@ -383,3 +383,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   labels (chained, ours-only dataset, sequential): A = s_mix1e_full_s1 alone (submit22), B = its two mm fine-tunes
   s45+s46 (submit23, after A scores). Blend 7 models (57091668) still PENDING. Queued s_mm1_384 5-fold (00620-00624)
   as GPU backlog; worker 8377 (G-NODE2) started -> 3 GPUs on s_mm1 work.
+- Oct 12 15:00 IST **BLEND baseline + 7 (s_mix1e 5 + full_s1 + mm1ft) w=0.65 = 0.949 = NEW BEST** (sub 57091668; vs 0.948
+  without mm1ft). LB A/B: control full_s1 alone 0.943 (57100708); treatment mm fine-tunes s45+s46 0.944 (57101576) ->
+  +0.001, within noise (and partly 2-seed ensembling): mm fine-tune non-negative, not proven. Slot 5: blend 8 models
+  (+ mm1ft s46) w=0.65 (submit24).
