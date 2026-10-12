@@ -403,3 +403,12 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   rank-avg pair weak 0.9234 (+0.0023, diversity). Verdict: mm labels at 17.7% coverage = neutral as a family, useful as
   an ensemble member. Plan Oct 13 (after 05:30 reset): ours-only s_mix1e 5 + s_mm1 5 + both full-data models (12);
   blend baseline + same 12 at w=0.65 once the pending 8-model blend (57103106) has scored.
+- Oct 12 21:45 IST **local open-weight VLM multimodal labels** (scripts/v2/mm_local.py, vLLM 0.30, enforce_eager — torch
+  compile crashes on the mm profile run; gemma needs max-model-len 8192). Gold58 within-fold (mm_eval.py): alone /
+  0.5 src + 0.5 ens5 (prob): Opus 0.928 / 0.949; **Qwen3.8-27B 0.889 / 0.942**; Gemma-4-31B 0.894 / 0.937; gemma+qwen
+  avg 0.903 / 0.944; current non-mm recipe (0.5 report + 0.5 ens5) 0.936. -> Qwen mm labels are +0.006 over the
+  current labels on the 82% of studies without Opus labels, at zero Claude usage. Running: Qwen labelling of all
+  non-Opus studies, 2 shards on the 2 A100s (0053_*; 384 tasks preempted + requeued). Held: Qwen --think gold test
+  (queue/hold/0054). Next: stud_mm2 = build_mm_labels --mm qwen-s0 qwen-s1 opus-gold opus-all (Opus overrides)
+  --students ens5 --fallback stud_mix1e -> s_mm2 5-fold + full. Ensemble for the mix stays ens5 (pre-fixed; 7-family
+  variants within +-0.001 on gold).

@@ -54,6 +54,8 @@ def main() -> None:
     ap.add_argument("--tp", type=int, default=1)
     ap.add_argument("--max-model-len", type=int, default=16384)
     ap.add_argument("--think", action="store_true")
+    ap.add_argument("--shard", default="0/1", help="i/n: label every n-th study starting at i")
+    ap.add_argument("--skip", nargs="*", default=[], help="jsonl files whose parsed studies are skipped (e.g. Opus)")
     ap.add_argument("--chunk", type=int, default=256, help="studies per llm.chat call (results appended per chunk)")
     args = ap.parse_args()
 
@@ -68,6 +70,11 @@ def main() -> None:
     df = df[[(V2 / "mm/montages" / u / "sagittal.png").exists() for u in df.StudyInstanceUID]]
     if args.limit:
         df = df.head(args.limit)
+    i, n = (int(v) for v in args.shard.split("/"))
+    df = df.iloc[i::n]
+    for sk in args.skip:
+        have = {json.loads(l)["StudyInstanceUID"] for l in Path(sk).read_text().splitlines() if json.loads(l).get("parsed")}
+        df = df[~df.StudyInstanceUID.isin(have)]
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     done = set()
@@ -79,7 +86,7 @@ def main() -> None:
     if not len(todo):
         return
     llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=args.max_model_len,
-              gpu_memory_utilization=0.92, trust_remote_code=True, limit_mm_per_prompt={"image": 3, "video": 0})
+              gpu_memory_utilization=0.92, trust_remote_code=True, enforce_eager=True, limit_mm_per_prompt={"image": 3, "video": 0})
     sp = SamplingParams(temperature=0.6 if args.think else 0.0, top_p=0.95,
                         max_tokens=8192 if args.think else 2048, seed=0)
     kw = {"chat_template_kwargs": {"enable_thinking": bool(args.think)}}

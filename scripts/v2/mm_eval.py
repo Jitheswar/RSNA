@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import glob
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,7 @@ import pandas as pd
 T = ["ACL", "MCL", "Medial Meniscus", "Lateral Meniscus", "Medial OA", "Lateral OA", "PF OA",
      "Effusion", "Synovitis", "Baker's", "Contusion", "Fracture"]
 V2 = Path("artifacts/private/v2")
-ENS5 = ["s_mix1", "s_mix1_384", "s_mix1_pw", "s_mix1_k24", "s_dinob_mix1"]
+ENS5 = os.environ.get("ENS", "s_mix1 s_mix1_384 s_mix1_pw s_mix1_k24 s_dinob_mix1").split()
 
 
 def load_jsonl(p):
