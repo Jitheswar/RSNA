@@ -160,6 +160,14 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | blend, rank weight 0.5: baseline + teachers | 0.946 |
 | blend, rank weight 0.5 / 0.65: baseline + students | 0.948 / 0.948 |
 | ours: 25 students (5 ConvNeXt-S families x 5 folds) | 0.945 |
+| ours: ensemble-teacher students s_mix1e (5-fold) / + 1 full-data model | 0.946 / 0.946 |
+| ours: + 1 full-data fine-tune on multimodal labels (3 epochs, Kaggle T4) | 0.946 |
+| blend, rank weight 0.65: baseline + s_mix1e 5-fold | 0.948 |
+| ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
+
+Ensembles saturate: 6 -> 25 models moves the public score by <= 0.001, and a single full-data fine-tune on the
+multimodal labels (coverage 17.7% of training studies) is invisible at ensemble level. The remaining label gain
+(gold58 within-fold 0.936 -> 0.949) requires multimodal coverage of the full training set.
 
 ### 6.6 Negative results and ablations
 - **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
