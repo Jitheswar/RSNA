@@ -417,3 +417,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   to stud_mm1). Queued at top: s_mm2 5-fold (00550-00554, seed 42) + s_mm2_full_s1 (00560); 384 tasks requeued behind.
   ETA (2 A100): f0/f1 ~01:20, f2/f3 ~04:10, f4 + full ~07:30 IST Oct 13 -> evaluate vs s_mix1e / s_mm1 on gold58, then
   submit (Oct 13 slots 3-5).
+- Oct 13 00:29 IST blend 8 models (+ mm1ft s46) w=0.65 = **0.949** (sub 57103106) = 7-model 0.949 (best, tie).
