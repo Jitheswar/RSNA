@@ -176,6 +176,12 @@ multimodal labels (coverage 17.7% of training studies) is invisible at ensemble 
 labels elsewhere).** Weak 0.9222 vs 0.9211 (s_mix1e), gold58 0.9178 vs 0.9178; rank-average of the two families 0.9234.
 With 17.7% coverage, better labels on a minority of studies do not move a family; the pair gains from diversity.
 
+**Full-coverage multimodal labels (s_mm2).** Local open-weight VLM labels (Qwen3.8-27B, vLLM, same montages + prompt;
+gold58 alone 0.889, mixed with ens5 OOF 0.942 vs 0.936 for the report mix; Gemma-4-31B 0.937) fill the 82% of studies
+without Opus labels (3,629 studies in ~65 min on 2 A100s). Students on these labels: gold58 within-fold 0.9318 vs
+0.9271 (s_mix1e) and 0.9265 (s_mm1, 17.7% coverage); report-label AUC unchanged (0.9210 vs 0.9211), i.e. the labels
+move toward the image-reading panel and away from the reports.
+
 ### 6.6 Negative results and ablations
 - **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
   (0.9178 vs 0.9179), gold58 0.9155 vs 0.9195 (-0.004 [-0.014, +0.006]); lower in 4/5 folds — confirmation drift.

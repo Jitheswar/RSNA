@@ -425,3 +425,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   **s_mm2 0.9350** vs s_mm1 0.9323 vs s_mix1e 0.9305 (+0.0045); pairs 0.933-0.934. Consistent ordering mm2 > mm1 > mix1e.
   Cancelled the 05:41 auto-submission of old models; today's 5 slots go to s_mm2 after f4 + full (~07:30 IST):
   ours-only s_mm2 5 + full; blend baseline + s_mm2 (+ s_mm1/s_mix1e) w=0.65.
+- Oct 13 07:10 IST **s_mm2 5-fold complete** (gold58 within-fold): s_mm2 **0.9318** vs s_mix1e 0.9271 vs s_mm1 0.9265
+  (+0.0047); pooled 0.9212 vs 0.9178; weak 0.9210 = 0.9211. Mixing with older families lowers gold (0.9285-0.9295).
+  Submitted: ours-only s_mm2 5-fold (submit25) + blend baseline + s_mm2 w=0.65 (submit26). s_mm2_full_s1 ~11:00 IST.
