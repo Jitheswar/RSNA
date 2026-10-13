@@ -438,3 +438,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   level; the public 0.957 comes mostly from the OAI-trained Raptor half. Submitted (last slot today): BLEND R7 + s_mm2
   5-fold, rank w=0.5 (build.py --base=r7, slug rsna-v2-rehearsal, current rsna-v2-models version; submit29).
 - Oct 13 14:40 IST R7 + s_mm2 blend submitted (commit run: R7 stage complete, v2 leg done, w=0.5). 0 slots left today.
+- Oct 13 15:05 IST s_mm2_384 f0-1 within-fold gold24: 0.9434 vs s_mm2 0.9601 (pair 0.9548) -> 384 not better so far (noisy, 24 studies). Queued s_mm2_s2 5-fold (seed 52, 00590-00594); A30 moved from stale s_mm1_384 to s_mm2_384 f4.
