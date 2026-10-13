@@ -437,3 +437,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 13 14:32 IST **R7-only probe = 0.949** (57133494): heliosli R7 ConvNeXt stage alone (OAI-free) = our best blend
   level; the public 0.957 comes mostly from the OAI-trained Raptor half. Submitted (last slot today): BLEND R7 + s_mm2
   5-fold, rank w=0.5 (build.py --base=r7, slug rsna-v2-rehearsal, current rsna-v2-models version; submit29).
+- Oct 13 14:40 IST R7 + s_mm2 blend submitted (commit run: R7 stage complete, v2 leg done, w=0.5). 0 slots left today.
