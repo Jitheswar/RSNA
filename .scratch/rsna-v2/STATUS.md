@@ -443,3 +443,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 13 17:39 IST **BLEND R7 (attributed, OAI-free) + s_mm2 5-fold, w=0.5 = 0.954 = NEW BEST** (57137824; +0.005 over
   0.949; R7 alone 0.949, s_mm2 alone 0.946). Two different, equally strong pipelines blend well. Oct 14 plan: R7 base
   + richer ours leg (s_mm2 5 + full; + s_mm2_s2 / 384 when ready), weight probes 0.4 / 0.6.
+- Oct 13 18:15 IST s_mm2_384 f0-3 within-fold gold47: alone 0.9257 (< s_mm2 0.9350) but pair s_mm2+384 0.9367 (+0.0017) -> include in Oct 14 leg once f4 (A30, ~01:30) is done.
