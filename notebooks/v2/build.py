@@ -9,6 +9,7 @@ from pathlib import Path
 here = Path(__file__).parent
 slug, weight = sys.argv[1], float(sys.argv[2])
 only = "--only" in sys.argv
+base = next((a.split("=")[1] for a in sys.argv if a.startswith("--base=")), "public0946")  # public0946 | r7
 sim = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--sim=")), 0)
 import os
 DS = os.environ.get("DS", "rsna-v2-models")  # separate model datasets per notebook: a hidden rerun mounts the latest version
@@ -21,6 +22,17 @@ if only:
     nb = {"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
     nb["cells"].append({"cell_type": "markdown", "metadata": {}, "source": [
         "# RSNA knee v2 (ours alone)\nCanonical laterality-normalised multi-series 2.5D models trained on gold-calibrated report labels.\n"]})
+elif base == "r7":
+    # OAI-free attributed baseline: heliosli's R7 ConvNeXt stage alone (Raptor/OAI stage removed), capped at 6.5 h so
+    # our leg has time; R7 writes /kaggle/working/submission.csv, which the leg rank-blends into
+    nb = json.loads((here / "rsna-r7-only" / "notebook.ipynb").read_text())
+    for c in nb["cells"]:
+        if c["cell_type"] == "code":
+            src = "".join(c["source"]).replace("DEADLINE_HOURS = 8.3", "DEADLINE_HOURS = 6.5")
+            c["source"] = src.splitlines(keepends=True)
+    nb["cells"].insert(0, {"cell_type": "markdown", "metadata": {}, "source": [
+        f"Baseline = heliosli's public R7 ConvNeXt stage (attributed; Raptor/OAI stage removed). "
+        f"Appended: our v2 models, rank-blended at a pre-fixed weight {weight}; any v2 failure keeps the R7 output.\n"]})
 else:
     nb = json.loads((base_dir / "public0946.ipynb").read_text())
     nb["cells"].insert(0, {"cell_type": "markdown", "metadata": {}, "source": [
@@ -60,7 +72,7 @@ nb.setdefault("metadata", {})["kernelspec"] = {"display_name": "Python 3", "lang
 out = here / slug
 out.mkdir(exist_ok=True)
 (out / "notebook.ipynb").write_text(json.dumps(nb, indent=1))
-meta = json.loads((base_dir / "public0946-metadata.json").read_text())
+meta = json.loads(((here / "rsna-r7-only" / "kernel-metadata.json") if base == "r7" else (base_dir / "public0946-metadata.json")).read_text())
 meta.update({"id": f"jitheswar/{slug}", "title": slug, "code_file": "notebook.ipynb", "is_private": True,
              "machine_shape": "NvidiaTeslaT4", "enable_gpu": True, "enable_internet": False})
 meta.pop("id_no", None)
