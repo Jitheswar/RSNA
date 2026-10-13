@@ -110,7 +110,7 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   -> our levers: multimodal labels (+0.013 artifact-free on gold58), genuinely different models (ResNet50/CoAtNet @224
   queued), full-data training.
 
-## 2026-10-13 12:00 IST — sweep (research cron had lapsed since Oct 6; renewed 2x/day at 09:23 / 21:23)
+## 2026-10-13 11:54 IST — sweep (research cron had lapsed since Oct 6; renewed 2x/day at 09:23 / 21:23)
 - LB top: CentralyDS 0.966; 0.965 x3 (joinT fusion, Ilya Kolb, Sergey Bryansky); 0.964 x2; 0.963 x8; >=0.962 ~20 teams.
 - PUBLIC notebooks now claim ~0.954-0.957 (we were at 0.949): heliosli "≈0.957 latest dataset" (= R7 + Raptor),
   goodpjw2008 2.5D ConvNeXt reader (0.954 forks), many forks/stacks (Apex Grandmaster, velciraptor, target-gated...).
