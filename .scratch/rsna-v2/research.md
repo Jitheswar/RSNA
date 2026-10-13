@@ -128,7 +128,7 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   yamadan96/public0946 notebook text has no OAI / NDA mention (sources: dreaddevelopment raptor-knee-* original public
   weights, mattiaangeli CoAtNets, antoinegg1 RadImageNet heads, pilkwang labels; DINOv2) -> keep treating as OAI-free;
   `kaggle datasets metadata` returned no descriptions to confirm further.
-- 17:50 IST goodpjw2008 2.5D ConvNeXt MIL reader (competition data + public report labels; OAI-free): alone 0.929 LB
+- 17:40 IST goodpjw2008 2.5D ConvNeXt MIL reader (competition data + public report labels; OAI-free): alone 0.929 LB
   (3 folds), used at 3-35% per finding on top of OAI stacks -> weaker than our s_mm2 (0.946); low value as a third arm.
   heliosli S6 (compact-v1) is the predecessor of R7 (same family). Conclusion: R7 is the only strong OAI-free public
   arm; further gains must come from our leg (more s_mm2 models / better labels).
