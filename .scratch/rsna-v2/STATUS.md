@@ -440,3 +440,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 13 14:40 IST R7 + s_mm2 blend submitted (commit run: R7 stage complete, v2 leg done, w=0.5). 0 slots left today.
 - Oct 13 15:05 IST s_mm2_384 f0-1 within-fold gold24: 0.9434 vs s_mm2 0.9601 (pair 0.9548) -> 384 not better so far (noisy, 24 studies). Queued s_mm2_s2 5-fold (seed 52, 00590-00594); A30 moved from stale s_mm1_384 to s_mm2_384 f4.
 - Oct 13 15:14 IST blend baseline + s_mm2 5-fold w=0.65 = **0.949** (57126661) = best (ties). R7 + s_mm2 blend (57137824) pending.
+- Oct 13 17:39 IST **BLEND R7 (attributed, OAI-free) + s_mm2 5-fold, w=0.5 = 0.954 = NEW BEST** (57137824; +0.005 over
+  0.949; R7 alone 0.949, s_mm2 alone 0.946). Two different, equally strong pipelines blend well. Oct 14 plan: R7 base
+  + richer ours leg (s_mm2 5 + full; + s_mm2_s2 / 384 when ready), weight probes 0.4 / 0.6.
