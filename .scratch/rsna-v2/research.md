@@ -109,3 +109,18 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
 - Consensus: labels are the bottleneck; 224-288 px enough; 140-160 mm FOV; bigger backbones do not help.
   -> our levers: multimodal labels (+0.013 artifact-free on gold58), genuinely different models (ResNet50/CoAtNet @224
   queued), full-data training.
+
+## 2026-10-13 12:00 IST — sweep (research cron had lapsed since Oct 6; renewed 2x/day at 09:23 / 21:23)
+- LB top: CentralyDS 0.966; 0.965 x3 (joinT fusion, Ilya Kolb, Sergey Bryansky); 0.964 x2; 0.963 x8; >=0.962 ~20 teams.
+- PUBLIC notebooks now claim ~0.954-0.957 (we were at 0.949): heliosli "≈0.957 latest dataset" (= R7 + Raptor),
+  goodpjw2008 2.5D ConvNeXt reader (0.954 forks), many forks/stacks (Apex Grandmaster, velciraptor, target-gated...).
+  Almost ALL build on `nartaa/rsna-knee-publication-swa-weights-20261007` = "Raptor" CoAtNet weights
+  `raptor_ft_alldata_t16_blendjev_oai_d96_r384_swa.pt`, whose notebook acknowledges OAI (NIMH Data Archive, controlled
+  access). Host criteria (Aug 27, topic 733965): institution-specific approval / NDA DUC datasets do NOT satisfy
+  accessibility -> OAI out -> using these weights risks disqualification. We do NOT use them.
+- heliosli R7 component (`heliosli/rsna-knee-compact-r7cnxfsss`): ConvNeXt-small 4 folds, crop 352, fastMRI+ lesion-box
+  auxiliary task (fastMRI+ = registration-only -> likely allowed), OrthoFoundation-L public SSL weights, SKM-TEA anchor
+  checkpoint (likely allowed), refitted Effusion/Baker stackers. -> OAI-free candidate baseline. ACTION: R7-only probe
+  (Raptor stage removed; notebooks/v2/rsna-r7-only, pushed into slug rsna-v2-timing v4 because new-kernel creation
+  returns HTTP 500), submit to measure R7 alone; if strong, blend R7 + s_mm2.
+- Kaggle API: SaveKernel for NEW slugs returns 500 today (even an empty notebook); existing slugs push fine.
