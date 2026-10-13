@@ -10,12 +10,15 @@ and a hidden test set labelled by the same panel (12 findings, macro AUC). We id
 the panel — a *semantic* gap (the panel is more liberal than written definitions), *silence* (findings left unaddressed
 by reports, 26-92% depending on finding and language) and an *anatomical* gap (inconsistent DICOM orientation and
 laterality) — and close them with (1) canonical anatomical normalisation with a self-supervised laterality checker,
-(2) report-to-reference calibration of LLM severity grades from multiple LLMs, and (3) image-informed soft
-bootstrapping (students trained on a fixed 50/50 mix of calibrated report labels and out-of-fold image predictions).
-Students improve reference-standard AUC from 0.881 to 0.920 (paired bootstrap +0.038 [+0.020, +0.061]) and the hidden
-test AUC from 0.935 to 0.944, beating a strong attributed public ensemble (0.943) that needs 13x the compute; a
-pre-fixed rank blend reaches 0.948. We report negative results (a second self-training round, mirror augmentation,
-cross-calibrated fracture labels) and an end-to-end reproducibility check of the submission path.
+(2) report-to-reference calibration of LLM severity grades, (3) image-informed soft bootstrapping (students on a fixed
+50/50 mix of report labels and out-of-fold image predictions) and (4) *multimodal* labels: a vision-language model
+reads three MRI montages together with the report. Students improve reference-standard AUC from 0.881 (teachers) to
+0.920, and full-coverage multimodal labels — a frontier model on 18% of studies, a local open-weight 27B VLM on the
+rest, no API cost — raise it further (within-fold 0.927 -> 0.932) while leaving report-label agreement unchanged,
+i.e. the labels move from the reports toward the image-reading panel. On the hidden test our models alone reach 0.947
+and pre-fixed rank blends with attributed public pipelines 0.949. We document that most public stacks above 0.95 rely
+on weights trained with controlled-access data (OAI), and report negative results (second self-training round, mirror
+augmentation, AUC-margin loss, self-consistency and reasoning modes for the VLM labeller).
 
 ## 1 Introduction
 Large imaging datasets come with reports, not reference labels. Here 4,407 training studies carry reports in about
@@ -165,6 +168,8 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | blend, rank weight 0.65: baseline + s_mix1e 5-fold | 0.948 |
 | blend, rank weight 0.65: baseline + s_mix1e 5-fold + full-data + mm fine-tune | 0.949 |
 | A/B single full-data model vs its 2 mm-label fine-tunes (seeds 45/46) | 0.943 vs 0.944 |
+| ours: s_mm2 5-fold / + full-data s_mm2 (full-coverage multimodal labels) | 0.946 / 0.947 |
+| attributed R7 stage alone (OAI-free half of the public 0.957 stack) | 0.949 |
 | ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
 
 Ensembles saturate: 6 -> 25 models moves the public score by <= 0.001, and a single full-data fine-tune on the
@@ -181,6 +186,13 @@ gold58 alone 0.889, mixed with ens5 OOF 0.942 vs 0.936 for the report mix; Gemma
 without Opus labels (3,629 studies in ~65 min on 2 A100s). Students on these labels: gold58 within-fold 0.9318 vs
 0.9271 (s_mix1e) and 0.9265 (s_mm1, 17.7% coverage); report-label AUC unchanged (0.9210 vs 0.9211), i.e. the labels
 move toward the image-reading panel and away from the reports.
+
+
+**Public-stack provenance (Oct 13).** Public notebooks reached 0.954-0.957 by blending an OAI-fine-tuned CoAtNet
+("Raptor", acknowledging NIMH-NDA controlled access) with other pipelines. The host's accessibility criteria exclude
+datasets gated by institution-specific approval, so we use neither those weights nor OAI. The OAI-free half of the
+strongest stack (heliosli R7: ConvNeXt-S, fastMRI+ auxiliary task, public OrthoFoundation SSL weights) scores 0.949
+alone; we evaluate it as an attributed baseline for blending.
 
 ### 6.6 Negative results and ablations
 - **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
