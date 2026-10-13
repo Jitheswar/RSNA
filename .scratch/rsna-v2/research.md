@@ -124,3 +124,7 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   (Raptor stage removed; notebooks/v2/rsna-r7-only, pushed into slug rsna-v2-timing v4 because new-kernel creation
   returns HTTP 500), submit to measure R7 alone; if strong, blend R7 + s_mm2.
 - Kaggle API: SaveKernel for NEW slugs returns 500 today (even an empty notebook); existing slugs push fine.
+- 15:00 IST R7-only probe LB 0.949 (= our best blend; R7 is a strong OAI-free single pipeline). Our baseline
+  yamadan96/public0946 notebook text has no OAI / NDA mention (sources: dreaddevelopment raptor-knee-* original public
+  weights, mattiaangeli CoAtNets, antoinegg1 RadImageNet heads, pilkwang labels; DINOv2) -> keep treating as OAI-free;
+  `kaggle datasets metadata` returned no descriptions to confirm further.
