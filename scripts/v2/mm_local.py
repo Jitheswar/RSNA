@@ -54,6 +54,7 @@ def main() -> None:
     ap.add_argument("--tp", type=int, default=1)
     ap.add_argument("--max-model-len", type=int, default=16384)
     ap.add_argument("--think", action="store_true")
+    ap.add_argument("--n", type=int, default=1, help="samples per study (temperature 0.7), p averaged (self-consistency)")
     ap.add_argument("--shard", default="0/1", help="i/n: label every n-th study starting at i")
     ap.add_argument("--skip", nargs="*", default=[], help="jsonl files whose parsed studies are skipped (e.g. Opus)")
     ap.add_argument("--chunk", type=int, default=256, help="studies per llm.chat call (results appended per chunk)")
@@ -87,7 +88,7 @@ def main() -> None:
         return
     llm = LLM(model=args.model, tensor_parallel_size=args.tp, max_model_len=args.max_model_len,
               gpu_memory_utilization=0.92, trust_remote_code=True, enforce_eager=True, limit_mm_per_prompt={"image": 3, "video": 0})
-    sp = SamplingParams(temperature=0.6 if args.think else 0.0, top_p=0.95,
+    sp = SamplingParams(temperature=0.7 if args.n > 1 else (0.6 if args.think else 0.0), top_p=0.95, n=args.n,
                         max_tokens=8192 if args.think else 2048, seed=0)
     kw = {"chat_template_kwargs": {"enable_thinking": bool(args.think)}}
     fmt = ('\n\nAnswer ONLY with one JSON object: {"<target>": {"p": <0-100>, "why": "<reason>"}, ...} with exactly '
@@ -105,7 +106,8 @@ def main() -> None:
         with out.open("a") as fh:
             for r, o in zip(part, outs):
                 text = o.outputs[0].text
-                obj = parse(text)
+                objs = [x for x in (parse(c.text) for c in o.outputs) if x is not None]
+                obj = {t: {"p": sum(x[t]["p"] for x in objs) / len(objs)} for t in TARGETS} if objs else None
                 n_ok += obj is not None
                 fh.write(json.dumps({"StudyInstanceUID": r.StudyInstanceUID, "parsed": obj, "raw": text[-3000:],
                                      "model": args.model}) + "\n")
