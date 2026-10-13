@@ -430,3 +430,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Submitted: ours-only s_mm2 5-fold (submit25) + blend baseline + s_mm2 w=0.65 (submit26). s_mm2_full_s1 ~11:00 IST.
 - Oct 13 08:29 IST ours-only s_mm2 5-fold = **0.946** (sub 57126563) = s_mix1e 5-fold 0.946: gold +0.0047 not visible on public LB (+-0.004). Blend (57126661) pending.
 - Oct 13 08:40 IST round-2 label test: 0.5 mm + 0.5 s_mm2 OOF = Qwen 0.9421 / Opus 0.9481 (vs ens5 0.9422 / 0.9488) -> no gain; label quality now bounded by the mm source. Queued Qwen --think gold test at the head (0050).
+- Oct 13 09:40 IST s_mm2_full_s1 done (07:40). Submitted ours-only s_mm2 5 + full (submit27). Preempted stray s_mm1_384 f3 for the Qwen n5/think gold tests (n5 running).
