@@ -434,3 +434,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 13 09:58 IST Qwen variants on gold58 (alone / prob-mix): greedy 0.889/0.942; n=5 self-consistency 0.890/0.941; --think 0.895/0.941 -> no gain; keep greedy labels.
 - Oct 13 10:29 IST **ours-only s_mm2 5 + full = 0.947** (sub 57129815) = best ours-only (prev 0.946). Blend s_mm2 (57126661) pending.
 - Oct 13 12:00 IST R7-only probe (heliosli R7, Raptor/OAI removed; slug rsna-v2-timing v4) submitted (57133494; commit run 7 min). 1 slot left today.
+- Oct 13 14:32 IST **R7-only probe = 0.949** (57133494): heliosli R7 ConvNeXt stage alone (OAI-free) = our best blend
+  level; the public 0.957 comes mostly from the OAI-trained Raptor half. Submitted (last slot today): BLEND R7 + s_mm2
+  5-fold, rank w=0.5 (build.py --base=r7, slug rsna-v2-rehearsal, current rsna-v2-models version; submit29).
