@@ -469,3 +469,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   flat plateau 0.4-0.6; keep w=0.5. Submitting last slot: R7 + 13 models (s_mm2 5-fold + full s1/s2 + 384 5-fold +
   s_mm2_s2 f0), w=0.5 (submit34, re-release of rsna-v2-models; nothing pending).
 - Oct 14 16:28 IST R7 + 13 models w=0.5 submitted (submit34). 0 slots left today; do not re-release rsna-v2-models until it scores.
+- Oct 14 17:30 IST queued s_mm2_dinob 5-fold (00600-00604, DINOv2-B 280, stud_mm2) behind s_mm2_s2 f2-f4 for leg diversity.
