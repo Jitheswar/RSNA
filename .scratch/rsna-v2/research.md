@@ -140,7 +140,7 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   No new OAI-free strong component found. Web: no new host ruling on OAI found.
 - Plan unchanged: R7 (OAI-free) + our s_mm2 family (+384, full seeds) at 05:41 IST.
 
-## 2026-10-14 12:20 IST — sweep (late: the 09:23 cron fire was missed while the session was busy)
+## 2026-10-14 12:00 IST — sweep (late: the 09:23 cron fire was missed while the session was busy)
 - LB top: CentralyDS / Sergey Bryansky / RB & Matheus & Tucker & Tony / joinT fusion 0.966; Matthew Liew, Ilya Kolb,
   MURAD 0.965; 0.964 x4. Our best (OAI-free) 0.955 (R7 + 11 s_mm2, w=0.5 and 0.6 tie).
 - New public notebooks: audits ("Ensemble Map", "What the top notebooks are made of": top = monoculture of nartaa
