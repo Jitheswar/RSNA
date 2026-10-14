@@ -460,3 +460,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 14 12:07 IST watchdog fix: squeue failures during controller hiccups were read as "job gone" -> live tasks
   requeued (s_mm2_384 f4 ran twice; s_mm2_s2 f1 finished at 11:39 and was re-run from scratch, overwriting the finished
   checkpoint; rerun ETA ~15:40). Watchdog now takes one job list per pass and skips the pass on squeue failure (restarted).
+- Oct 14 12:15 IST R7 provenance: its OrthoFoundation-L init is an MIT-licensed public foundation model pretrained partly
+  on OAI (see research.md). Treat as allowed pre-trained model (rules allow public pre-trained models); finals plan:
+  #1 R7 + ours (best LB), #2 hedge with no OAI lineage at all (ours-only) -> flagged to user for the final call.

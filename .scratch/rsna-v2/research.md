@@ -148,3 +148,11 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   0.955; Effusion/Baker calibrators neutral). All attach nartaa's OAI-trained weights -> not usable. No new OAI-free
   component. Public OAI ceiling ~0.956-0.957 vs our OAI-free 0.955.
 - Web: no host ruling on OAI found; entry/team-merger deadline Oct 15 (we are registered), final Oct 22.
+- 12:15 IST **Provenance check: OrthoFoundation (R7's SSL backbone) was pretrained partly on OAI** (README: ~200k OAI
+  MRI slices + 100k OAI X-rays + 300k fastMRI + private PUTH cohort; ViT-L from DINOv3-L, DINO-style SSL). Weights are
+  public on GitHub (`OrthoFoudation-L.pth`, MIT license, arXiv 2601.18250). Rules: "Freely & publicly available external
+  data is allowed, including pre-trained models"; host (topic 741819) only rules on using OAI *data*. Assessment: R7 =
+  a published, MIT-licensed, freely downloadable general foundation model (we never touch OAI data) -> falls under the
+  explicit pre-trained-model allowance; materially lower risk than nartaa's Raptor (task-specific supervised fine-tune on
+  OAI by a participant), which stays excluded. Hedge: keep one final free of any OAI lineage (ours-only, ImageNet/DINOv2
+  init) unless the user prefers otherwise.
