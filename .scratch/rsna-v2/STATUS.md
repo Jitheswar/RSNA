@@ -470,3 +470,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   s_mm2_s2 f0), w=0.5 (submit34, re-release of rsna-v2-models; nothing pending).
 - Oct 14 16:28 IST R7 + 13 models w=0.5 submitted (submit34). 0 slots left today; do not re-release rsna-v2-models until it scores.
 - Oct 14 17:30 IST queued s_mm2_dinob 5-fold (00600-00604, DINOv2-B 280, stud_mm2) behind s_mm2_s2 f2-f4 for leg diversity.
+- Oct 14 19:58 IST R7 + 13 models w=0.5 = **0.955** (57179044) = ties 11-model 0.955; public LB saturated at 0.955 for this blend family (private decides). Oct 15 plan: add s_mm2_s2 5-fold + s_mm2_dinob when done; hedge final = ours-only (no OAI lineage).
