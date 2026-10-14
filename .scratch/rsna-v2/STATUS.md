@@ -449,3 +449,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   requeued; s_mm2_s2 f1-f4 requeued). Session was blocked ~23:40-07:00 so the 05:41 one-shot never fired. Workers
   8377/8510/8511 start 07:02 (extra watchdog jobs 8513-8515 cancelled). s_mm2_full_s2 + s_mm2_s2 f0 finished.
   Submitted: R7 + 11 s_mm2 models (5-fold + full s1/s2 + 384 f0-3) w=0.5 (submit30); chained w=0.6 probe (submit31).
+- Oct 14 07:28 IST both submitted (submit30 w=0.5, submit31 w=0.6). 3 slots left. Workers 8511 (NODE3) + 8377 (NODE2) running, 8510 pending.
