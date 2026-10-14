@@ -465,3 +465,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   #1 R7 + ours (best LB), #2 hedge with no OAI lineage at all (ours-only) -> flagged to user for the final call.
 - Oct 14 12:11 IST probes submitted: w=0.4 (57170830) and w=0.7 (57170856). 1 slot left (12-model leg after these score).
 - Oct 14 15:30 IST s_mm2_384 5-fold complete (gold58 within-fold): alone 0.9252 vs s_mm2 0.9318, pair 0.9335 (+0.0017) -> include all 5 folds in the 13-model leg. s_mm2_s2 f1 rerun done; f2 (A30), f3/f4 (A100) running.
+- Oct 14 15:47 IST weight curve (R7 + 11 s_mm2): w=0.4 0.955 (57170830), 0.5 0.955, 0.6 0.955, 0.7 0.954 (57170856) ->
+  flat plateau 0.4-0.6; keep w=0.5. Submitting last slot: R7 + 13 models (s_mm2 5-fold + full s1/s2 + 384 5-fold +
+  s_mm2_s2 f0), w=0.5 (submit34, re-release of rsna-v2-models; nothing pending).
