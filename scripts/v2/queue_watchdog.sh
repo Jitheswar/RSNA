@@ -7,9 +7,11 @@ Q=artifacts/private/v2/queue
 TARGET=${TARGET:-3}
 LOG=artifacts/private/v2/logs/watchdog.log
 while [ "$(date +%Y%m%d)" -le 20261023 ]; do
+  # one job list per pass; if squeue fails (controller outage) skip the pass -- an empty reply is NOT "job gone"
+  if ! jobs=$(squeue -u "$USER" -h -o %i 2>/dev/null); then echo "$(date) squeue failed, skip" >> $LOG; sleep 600; continue; fi
   for f in $(ls -1 $Q/running/ 2>/dev/null | grep '\.task\.'); do
     job=${f##*.task.}; job=${job%%-*}
-    if [ -z "$(squeue -h -j "$job" 2>/dev/null)" ]; then
+    if ! grep -qx "$job" <<< "$jobs"; then
       base=${f%%.task.*}.task
       if [ ! -e "$Q/pending/$base" ]; then mv "$Q/running/$f" "$Q/pending/$base" && echo "$(date) requeued $base (job $job gone)" >> $LOG
       else mv "$Q/running/$f" "$Q/failed/$f"; fi
