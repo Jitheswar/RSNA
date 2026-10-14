@@ -132,3 +132,10 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   (3 folds), used at 3-35% per finding on top of OAI stacks -> weaker than our s_mm2 (0.946); low value as a third arm.
   heliosli S6 (compact-v1) is the predecessor of R7 (same family). Conclusion: R7 is the only strong OAI-free public
   arm; further gains must come from our leg (more s_mm2 models / better labels).
+
+## 2026-10-13 23:36 IST — sweep (cron)
+- LB top: CentralyDS 0.966, Sergey Bryansky 0.966, then 0.965 x3 (joinT fusion, Matthew Liew, Ilya Kolb), 0.964 x3.
+- New public notebooks: all variations on R7 + OAI Raptor (Raptor-384 + Raptor-224 + R7 = 0.956; flip-TTA forks;
+  "R7 blend 0.957"; Apex Grandmaster V13 R7 superstack). Every one attaches nartaa's OAI-trained weights -> not usable.
+  No new OAI-free strong component found. Web: no new host ruling on OAI found.
+- Plan unchanged: R7 (OAI-free) + our s_mm2 family (+384, full seeds) at 05:41 IST.
