@@ -170,7 +170,8 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | A/B single full-data model vs its 2 mm-label fine-tunes (seeds 45/46) | 0.943 vs 0.944 |
 | ours: s_mm2 5-fold / + full-data s_mm2 (full-coverage multimodal labels) | 0.946 / 0.947 |
 | attributed R7 stage alone (OAI-free half of the public 0.957 stack) | 0.949 |
-| blend, rank weight 0.5: R7 + s_mm2 5-fold | **0.954** |
+| blend, rank weight 0.5: R7 + s_mm2 5-fold | 0.954 |
+| blend, rank weight 0.5 / 0.6: R7 + 11 s_mm2 models (5-fold + 2 full-data + 4 folds @384) | **0.955** / **0.955** |
 | ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
 
 Ensembles saturate: 6 -> 25 models moves the public score by <= 0.001, and a single full-data fine-tune on the
