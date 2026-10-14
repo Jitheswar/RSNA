@@ -450,7 +450,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   8377/8510/8511 start 07:02 (extra watchdog jobs 8513-8515 cancelled). s_mm2_full_s2 + s_mm2_s2 f0 finished.
   Submitted: R7 + 11 s_mm2 models (5-fold + full s1/s2 + 384 f0-3) w=0.5 (submit30); chained w=0.6 probe (submit31).
 - Oct 14 07:28 IST both submitted (submit30 w=0.5, submit31 w=0.6). 3 slots left. Workers 8511 (NODE3) + 8377 (NODE2) running, 8510 pending.
-- Oct 14 12:10 IST **R7 + 11 s_mm2 models = 0.955 at both w=0.5 (57162957) and w=0.6 (57163247) = NEW BEST** (+0.001
+- Oct 14 12:05 IST **R7 + 11 s_mm2 models = 0.955 at both w=0.5 (57162957) and w=0.6 (57163247) = NEW BEST** (+0.001
   over R7 + s_mm2 5-fold 0.954; within noise). Duplicate run found: the watchdog had requeued s_mm2_384 f4 while 8377
   (A30) was still training it, so 8510 (A100) ran it too, writing to the same dir -> killed the A30 copy (A100 ETA ~14:00);
   A30 now on s_mm2_s2 f2. Public0946 + R7 3-way rejected (public0946 alone >5.5 h -> 9 h risk). Submitted weight-curve
