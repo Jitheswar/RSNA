@@ -457,3 +457,6 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   probes w=0.4 (submit32, slug rsna-v2-rehearsal) and w=0.7 (submit33, slug rsna-v2-blend), same rsna-v2-models version.
   Last slot today: + s_mm2_384 f4 (12 models) AFTER submits 32/33 score (re-release of rsna-v2-models must wait).
   Research sweep missed at 09:23 (session busy) -> done 12:00; hourly cron now catches up sweeps older than 13 h.
+- Oct 14 12:07 IST watchdog fix: squeue failures during controller hiccups were read as "job gone" -> live tasks
+  requeued (s_mm2_384 f4 ran twice; s_mm2_s2 f1 finished at 11:39 and was re-run from scratch, overwriting the finished
+  checkpoint; rerun ETA ~15:40). Watchdog now takes one job list per pass and skips the pass on squeue failure (restarted).
