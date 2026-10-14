@@ -156,3 +156,14 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   explicit pre-trained-model allowance; materially lower risk than nartaa's Raptor (task-specific supervised fine-tune on
   OAI by a participant), which stays excluded. Hedge: keep one final free of any OAI lineage (ours-only, ImageNet/DINOv2
   init) unless the user prefers otherwise.
+
+## 2026-10-14 21:53 IST — sweep (cron)
+- LB top: CentralyDS, Sergey Bryansky, joinT fusion, RB & Matheus & Tucker & Tony 0.966; azamatt, Ilya Kolb, MURAD
+  0.965; 0.964 x4. Our best 0.955 (R7 + 11/13 s_mm2 models; weight-flat 0.4-0.6).
+- New public notebooks: "four public models rank blend" (R7 + heliosli compact-v1 (S6) + nartaa Raptor), R7 + Raptor +
+  knee-centred ConvNeXt, A5 tri-anchor (mattiaangeli fold weights + compact-v1 + Raptor), Quad B2 (adds
+  isotriage/rsna-jev-oai-arm -- OAI by name), mattiaangeli coatnet-global96 inference. All the strong ones attach nartaa's
+  OAI Raptor -> not usable. Only OAI-free extra arm seen: heliosli compact-v1 (S6, predecessor of R7; same family, low
+  expected diversity) -- candidate third arm only if a probe slot is spare.
+- Web: no new host ruling on external data / OAI found.
+- Plan unchanged: 05:36 IST Oct 15 detached submissions (ours-only hedge + R7 blend with s_mm2/384/s2; dinob gated out).
