@@ -196,6 +196,15 @@ move toward the image-reading panel and away from the reports.
 datasets gated by institution-specific approval, so we use neither those weights nor OAI. The OAI-free half of the
 strongest stack (heliosli R7: ConvNeXt-S, fastMRI+ auxiliary task, public OrthoFoundation SSL weights) scores 0.949
 alone; we evaluate it as an attributed baseline for blending.
+R7's encoder initialisation, OrthoFoundation-L (ViT-L from DINOv3-L, DINO-style SSL; MIT licence, public weights;
+arXiv 2601.18250), was itself pretrained on ~1.25 M knee images that include ~200 k OAI MRI slices and ~100 k OAI
+radiographs. We never access OAI data; the competition rules explicitly allow freely available pre-trained models, so
+we treat R7 as admissible but report it separately and keep an ours-only submission with no OAI lineage as a hedge.
+
+**Blend weight is flat (Oct 14).** R7 + 11 s_mm2 models at our-leg rank weight 0.4 / 0.5 / 0.6 / 0.7 scored
+0.955 / 0.955 / 0.955 / 0.954, and 13 models at 0.5 also 0.955: two equally strong, differently built pipelines
+(R7 alone 0.949, ours alone 0.947) give +0.006 over either, and the gain is insensitive to the mixing weight. The
+public split (~390 studies, +-0.004) cannot rank leg variants further; selection relies on gold58 within-fold AUC.
 
 ### 6.6 Negative results and ablations
 - **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
