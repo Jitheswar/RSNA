@@ -463,3 +463,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 14 12:07 IST R7 provenance: its OrthoFoundation-L init is an MIT-licensed public foundation model pretrained partly
   on OAI (see research.md). Treat as allowed pre-trained model (rules allow public pre-trained models); finals plan:
   #1 R7 + ours (best LB), #2 hedge with no OAI lineage at all (ours-only) -> flagged to user for the final call.
+- Oct 14 12:11 IST probes submitted: w=0.4 (57170830) and w=0.7 (57170856). 1 slot left (12-model leg after these score).
