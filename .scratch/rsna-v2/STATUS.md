@@ -444,3 +444,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   0.949; R7 alone 0.949, s_mm2 alone 0.946). Two different, equally strong pipelines blend well. Oct 14 plan: R7 base
   + richer ours leg (s_mm2 5 + full; + s_mm2_s2 / 384 when ready), weight probes 0.4 / 0.6.
 - Oct 13 18:15 IST s_mm2_384 f0-3 within-fold gold47: alone 0.9257 (< s_mm2 0.9350) but pair s_mm2+384 0.9367 (+0.0017) -> include in Oct 14 leg once f4 (A30, ~01:30) is done.
+- Oct 14 07:05 IST overnight incidents: Slurm controller outage (sbatch "Transport endpoint is not connected" 05:38-06:48),
+  workers 8376/8397 hit the 3-day limit, 8377 (A30) cancelled by NODE FAILURE at 03:51 (s_mm2_384 f4 lost mid-run ->
+  requeued; s_mm2_s2 f1-f4 requeued). Session was blocked ~23:40-07:00 so the 05:41 one-shot never fired. Workers
+  8377/8510/8511 start 07:02 (extra watchdog jobs 8513-8515 cancelled). s_mm2_full_s2 + s_mm2_s2 f0 finished.
+  Submitted: R7 + 11 s_mm2 models (5-fold + full s1/s2 + 384 f0-3) w=0.5 (submit30); chained w=0.6 probe (submit31).
