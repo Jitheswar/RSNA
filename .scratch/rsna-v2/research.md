@@ -186,3 +186,11 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   No new OAI-free component.
 - Today's label work (see 09:27 entry): external label sets no better than ours; MedGemma-27B worse (0.930 mix); free
   Gemma-4 + Qwen average (0.9443) -> stud_mm3 -> s_mm3 5-fold training (f0 ETA ~17:00).
+
+## 2026-10-15 21:53 IST — sweep (cron)
+- LB top: RB & Matheus & Tucker & Tony 0.967, CentralyDS 0.967; Sergey Bryansky, azamatt, joinT fusion, Nischay and Sho
+  0.966. Ours 0.955 (OAI-free; R7 + 11/13/19/22 models all 0.955; ours-only 19/22 = 0.948).
+- New "0.957-0.958" notebooks (LUPI multi-plane MIL blend, gp958d, heliosli-9576b, R6 v1 fixed, Apex Grandmaster V14
+  DualRaptor) all attach nartaa's OAI Raptor -> not usable. They use `heliosli/rsna-knee-r6-frozen-fe055406`, whose
+  manifest is bundle 8c7b666e27dc0e8f / tag cnx_r7 = IDENTICAL to the R7 bundle we already use -> nothing new.
+- Web: no new host ruling on external data / OAI. Team-merger deadline passed (Oct 15); final Oct 22.
