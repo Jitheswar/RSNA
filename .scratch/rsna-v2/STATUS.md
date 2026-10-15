@@ -491,3 +491,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 15 12:53 IST stud_mm3 built (Gemma averaged into 3,567/3,629 Qwen studies; Opus overrides; 100% mm mix). s_mm3 5-fold queued at head; preempted 384_s2 f4 on 8510 (had just started) -> s_mm3 f0 running on A100. 384_s2 f3 on A30. ETA s_mm3: ~4 h/fold on one A100 -> all 5 by ~Oct 16 09:00 (sooner if more GPUs free).
 - Oct 15 15:29 IST user asked about submissions: launched 2 of 3 remaining slots: ours-only 22 models (+384_s2 f0-2; submit37) and R7 + 22 w=0.5 (submit38). 1 slot kept for tonight.
 - Oct 15 15:48 IST submitted: ours-only 22 (57226091), R7 + 22 w=0.5 (57226300). 1 slot left; both model datasets locked until these score.
+- Oct 15 15:49 IST s_mm3 f0 done: gold12 within-fold 0.9606 vs s_mm2 0.9686 (pair 0.9629) -- 12 studies, too noisy; weak AUC not comparable (different label targets). Decide after f0-f2. Last slot today not spent on s_mm3.
