@@ -492,3 +492,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 15 15:29 IST user asked about submissions: launched 2 of 3 remaining slots: ours-only 22 models (+384_s2 f0-2; submit37) and R7 + 22 w=0.5 (submit38). 1 slot kept for tonight.
 - Oct 15 15:48 IST submitted: ours-only 22 (57226091), R7 + 22 w=0.5 (57226300). 1 slot left; both model datasets locked until these score.
 - Oct 15 15:49 IST s_mm3 f0 done: gold12 within-fold 0.9606 vs s_mm2 0.9686 (pair 0.9629) -- 12 studies, too noisy; weak AUC not comparable (different label targets). Decide after f0-f2. Last slot today not spent on s_mm3.
+- Oct 15 18:28 IST ours-only 22 = 0.948 (57226091) = ours-only 19 (saturated). Third worker 8542 started (NODE3 A100) -> s_mm3 f2 running in parallel with f1.
