@@ -479,3 +479,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 15 01:28 IST s_mm2_full_s3 done (10 ep). oct15_submit.sh restarted (pid 775423) to include finished full-data models (s3 now; 384_full_s1 if done by 05:36). Dry run: 18 models (s_mm2 5 + 384 5 + s2 5 + full s1/s2/s3), dinob gated out.
 - Oct 15 02:28 IST 384_full_s1 + dinob f4 done -> 05:36 subs will carry 19 models. Queue was empty: queued s_mm2_384_s2 5-fold (00620-00624, seed 54). Worker 8511 idled out; watchdog refills to 3.
 - Oct 15 05:57 IST morning subs in: R7 + 19 models w=0.5 (57199718) and OURS-ONLY hedge 19 models (57199886). 3 slots left. Do not re-release rsna-v2-models or rsna-v2-models-only until these score.
+- Oct 15 06:00 IST heliosli S6 (compact-v1) as third arm: in rjings' public blend R7+S6 vs R7 alone shows no visible gain (0.956 both, with Raptor); same code/family as R7 -> skipped. Holding 3 slots until 57199718/57199886 score.
