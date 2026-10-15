@@ -168,7 +168,7 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
 - Web: no new host ruling on external data / OAI found.
 - Plan unchanged: 05:36 IST Oct 15 detached submissions (ours-only hedge + R7 blend with s_mm2/384/s2; dinob gated out).
 
-## 2026-10-15 09:50 IST — external label sets (user request)
+## 2026-10-15 09:27 IST — external label sets (user request)
 Scored 15 public label datasets on gold58 (within-fold AUC, alone / 0.5 src + 0.5 ens5 OOF). Several contain the gold
 labels themselves (AUC 1.000: gperdrizet pseudolabeled, shogomiyawaki, tasmeemreza, yehezkielhaganta, gold58/74 files)
 -> unusable for evaluation. Real candidates: riadmohamed42 JEV (HYBRID_binary 0.952 mix, FINAL2_conf 0.948, HYBRID scores
