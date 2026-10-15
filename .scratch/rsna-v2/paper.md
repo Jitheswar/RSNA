@@ -169,6 +169,7 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | blend, rank weight 0.65: baseline + s_mix1e 5-fold + full-data + mm fine-tune | 0.949 |
 | A/B single full-data model vs its 2 mm-label fine-tunes (seeds 45/46) | 0.943 vs 0.944 |
 | ours: s_mm2 5-fold / + full-data s_mm2 (full-coverage multimodal labels) | 0.946 / 0.947 |
+| ours: 19 models (s_mm2 + seed 2 + 384 5-fold each, 3 full-data + 384 full-data) | 0.948 |
 | attributed R7 stage alone (OAI-free half of the public 0.957 stack) | 0.949 |
 | blend, rank weight 0.5: R7 + s_mm2 5-fold | 0.954 |
 | blend, rank weight 0.4 / 0.5 / 0.6 / 0.7: R7 + 11 s_mm2 models (5-fold + 2 full-data + 4 folds @384) | **0.955** / **0.955** / **0.955** / 0.954 |

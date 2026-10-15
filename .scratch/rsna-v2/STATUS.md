@@ -480,3 +480,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 15 02:28 IST 384_full_s1 + dinob f4 done -> 05:36 subs will carry 19 models. Queue was empty: queued s_mm2_384_s2 5-fold (00620-00624, seed 54). Worker 8511 idled out; watchdog refills to 3.
 - Oct 15 05:57 IST morning subs in: R7 + 19 models w=0.5 (57199718) and OURS-ONLY hedge 19 models (57199886). 3 slots left. Do not re-release rsna-v2-models or rsna-v2-models-only until these score.
 - Oct 15 05:58 IST heliosli S6 (compact-v1) as third arm: in rjings' public blend R7+S6 vs R7 alone shows no visible gain (0.956 both, with Raptor); same code/family as R7 -> skipped. Holding 3 slots until 57199718/57199886 score.
+- Oct 15 08:28 IST **OURS-ONLY 19 models = 0.948** (57199886) = best ours-only (prev 0.947); hedge final candidate (no OAI lineage). Blend 57199718 pending.
