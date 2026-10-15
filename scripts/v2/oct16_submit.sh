@@ -6,7 +6,7 @@ until [ "$(date +%Y%m%d%H%M)" -ge 202610160536 ]; do sleep 60; done
 ck() {  # finished checkpoints only (task in queue/done)
   local out="$V/runs/s_mm2/fold*/best.pt $V/runs/s_mm2_full_s1/full/last.pt $V/runs/s_mm2_full_s2/full/last.pt $V/runs/s_mm2_384/fold*/best.pt"
   for full in s_mm2_full_s3 s_mm2_384_full_s1; do ls $V/queue/done | grep -q "_${full}_f0.task" && out="$out $V/runs/$full/full/last.pt"; done
-  local runs="s_mm2_s2 s_mm2_384_s2"; [ "$(ls $V/queue/done | grep -c _s_mm3_f)" -ge 5 ] && ~/rsna-gpu2/bin/python scripts/v2/gate_family.py s_mm3 >> $L/oct16_submit.log 2>&1 && runs="$runs s_mm3"
+  local runs="s_mm2_s2 s_mm2_384_s2 s_mm2_s3"; [ "$(ls $V/queue/done | grep -c _s_mm3_f)" -ge 5 ] && ~/rsna-gpu2/bin/python scripts/v2/gate_family.py s_mm3 >> $L/oct16_submit.log 2>&1 && runs="$runs s_mm3"
   for run in $runs; do for f in 0 1 2 3 4; do
     ls $V/queue/done | grep -q "_${run}_f${f}.task" && [ -f $V/runs/$run/fold$f/best.pt ] && out="$out $V/runs/$run/fold$f/best.pt"
   done; done; echo "$out"; }
