@@ -493,3 +493,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 15 15:48 IST submitted: ours-only 22 (57226091), R7 + 22 w=0.5 (57226300). 1 slot left; both model datasets locked until these score.
 - Oct 15 15:49 IST s_mm3 f0 done: gold12 within-fold 0.9606 vs s_mm2 0.9686 (pair 0.9629) -- 12 studies, too noisy; weak AUC not comparable (different label targets). Decide after f0-f2. Last slot today not spent on s_mm3.
 - Oct 15 18:28 IST ours-only 22 = 0.948 (57226091) = ours-only 19 (saturated). Third worker 8542 started (NODE3 A100) -> s_mm3 f2 running in parallel with f1.
+- Oct 15 19:28 IST s_mm3 f0-1 gold24: s_mm3 0.9513 vs s_mm2 0.9601 (lower alone); mm2+mm3 0.9542 > mm2+s2 0.9516 (better partner than a 2nd seed). Folds 0-1 are s_mm2's strongest; judge on 5 folds (f2/f3 running, f4 queued; ~Oct 16 01:00).
