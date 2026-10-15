@@ -167,3 +167,13 @@ github.com/Optimization-AI/LibAUC ; arxiv.org/pdf/2306.03065
   expected diversity) -- candidate third arm only if a probe slot is spare.
 - Web: no new host ruling on external data / OAI found.
 - Plan unchanged: 05:36 IST Oct 15 detached submissions (ours-only hedge + R7 blend with s_mm2/384/s2; dinob gated out).
+
+## 2026-10-15 09:50 IST — external label sets (user request)
+Scored 15 public label datasets on gold58 (within-fold AUC, alone / 0.5 src + 0.5 ens5 OOF). Several contain the gold
+labels themselves (AUC 1.000: gperdrizet pseudolabeled, shogomiyawaki, tasmeemreza, yehezkielhaganta, gold58/74 files)
+-> unusable for evaluation. Real candidates: riadmohamed42 JEV (HYBRID_binary 0.952 mix, FINAL2_conf 0.948, HYBRID scores
+0.938, FINAL2 0.944), siamrahman29 W4 0.940, genesis96839 hybrid 0.934, consensus 0.936, stevenleehans v4 blend 0.929.
+JEV is text-only and was TUNED ON THE SAME GOLD (per-target source pick on gold58, member weights on 67 gold, binary
+thresholds F1-fit on gold) -> its gold numbers are optimistic. As an extra source on top of ours: Qwen + 0.5 JEV-FINAL2
+0.9444 vs Qwen 0.9422 (+0.002, within noise and gold-biased); Opus + JEV lowers (0.9488 -> 0.945); HYBRID lowers both.
+Conclusion: no public label set beats our multimodal labels; Opus mm remains the best source (0.9488).
