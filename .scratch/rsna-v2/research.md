@@ -178,7 +178,7 @@ thresholds F1-fit on gold) -> its gold numbers are optimistic. As an extra sourc
 0.9444 vs Qwen 0.9422 (+0.002, within noise and gold-biased); Opus + JEV lowers (0.9488 -> 0.945); HYBRID lowers both.
 Conclusion: no public label set beats our multimodal labels; Opus mm remains the best source (0.9488).
 
-## 2026-10-15 13:30 IST — sweep (catch-up; 09:23 cron did not fire)
+## 2026-10-15 13:28 IST — sweep (catch-up; 09:23 cron did not fire)
 - LB top: RB & Matheus & Tucker & Tony 0.967, CentralyDS 0.967; Sergey Bryansky, azamatt, joinT fusion, Nischay and Sho
   0.966; Ilya Kolb, Evan zhu, MURAD 0.965. Ours 0.955 (OAI-free).
 - New notebooks: H957 / H957 reblend / R6-frozen blend / per-finding dino5 prior = Raptor 384 + 224 + R7 variants, all on
