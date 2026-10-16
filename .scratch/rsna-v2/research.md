@@ -205,3 +205,11 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   ACTION: notebooks/v2/s6_stage.py (patched copy, component A removed, writes s6_sub.csv, budget from env) + build.py --s6
   (third arm run last on the remaining time; final = 2/3 rank(R7+ours) + 1/3 rank(S6), any S6 failure keeps R7+ours).
   Test commit run pushed to slug rsna-v2-timing v5.
+
+## 2026-10-16 22:34 IST — sweep (cron)
+- LB top: CentralyDS 0.968; RB & Matheus & Tucker & Tony, azamatt, Sergey Bryansky 0.967; MEJAL, joinT fusion 0.966.
+  Ours: **0.957** (R7 + S6fall + 27 models, OAI-free; Oct 16) -- S6+ours (no OAI lineage) 0.954.
+- New: goodpjw "CoAtNet + R6 + 2.5D MIL 0.958" and "CoAtNet + S6 + 2.5D MIL 0.954" (goodpjw 2.5D reader is OAI-free
+  but weak, 0.929 alone; CoAtNet = nartaa OAI Raptor -> not usable). heliosli R6 (cnx_r6fm, bundle fe055406fad6a12f) is the
+  one remaining OAI-free candidate arm (OrthoFoundation init like R7) -> a 4-arm run would add ~2 h of hidden runtime.
+- No new host ruling found.
