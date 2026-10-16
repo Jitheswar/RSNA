@@ -175,6 +175,7 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | blend, rank weight 0.4 / 0.5 / 0.6 / 0.7: R7 + 11 s_mm2 models (5-fold + 2 full-data + 4 folds @384) | **0.955** / **0.955** / **0.955** / 0.954 |
 | blend, rank weight 0.5: R7 + 13 s_mm2 models (+ 384 f4 + seed-2 f0) | **0.955** |
 | blend, rank weight 0.5: R7 + 19 models (ours-only 19 = 0.948) | **0.955** |
+| blend 0.5/0.5: nartaa S6fall (ImageNet init, OAI fallback removed) + 27 models -- no OAI lineage | 0.954 |
 | ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
 
 Ensembles saturate: 6 -> 25 models moves the public score by <= 0.001, and a single full-data fine-tune on the
