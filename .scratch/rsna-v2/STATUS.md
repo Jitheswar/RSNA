@@ -504,3 +504,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 16 10:14 IST SUBMITTED 2-arm blend with NO OAI lineage: S6fall + 27 models 0.5/0.5 (57255234; build --only --s6, slug rsna-v2-rehearsal2 v2). Pending: R7+27 (57249357), 3-arm (57255056), S6+ours (57255234). 1 slot left. Do not re-release rsna-v2-models / -only until these score.
 - Oct 16 11:28 IST R7 + 27 = 0.955 (57249357), same as 11-22 models. S6 blends pending.
 - Oct 16 15:28 IST **S6fall + 27 models (NO OAI lineage at all) = 0.954** (57255234) vs ours-only 0.948 -> new hedge-final candidate, only 0.001 below R7 blends. 3-arm R7+S6+ours (57255056) pending.
+- Oct 16 16:25 IST **3-ARM R7 + S6fall + 27 models (1/3 each) = 0.957 = NEW BEST** (57255056; +0.002 over 0.955). S6+ours (no OAI lineage) 0.954. Last slot today: weight probe W_S6=0.5 (R7 .25 / ours .25 / S6 .5) (submit41).
