@@ -11,7 +11,7 @@ if [ "$MODE" = "--only" ]; then export DS=${DS:-rsna-v2-models-only}; else expor
 REM=$($KG competitions submission-limits rsna-knee-abnormality-detection 2>/dev/null | grep -o "Remaining today: [0-9]*" | grep -o "[0-9]*$")
 if [ "${REM:-1}" -lt 1 ]; then echo "NOT submitted (no submission slots left today; team quota)"; exit 0; fi
 echo "submission slots remaining today: ${REM:-unknown}"
-if [ "$MODE" = "--only" ]; then ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W --only; else ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W ${BASE:+--base=$BASE} ${S6:+--s6}; fi
+if [ "$MODE" = "--only" ]; then ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W --only ${S6:+--s6}; else ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W ${BASE:+--base=$BASE} ${S6:+--s6}; fi
 out=$($KG kernels push -p notebooks/v2/$SLUG 2>&1 | tail -1); echo "$out"
 ver=$(echo "$out" | grep -o "version [0-9]*" | grep -o "[0-9]*")
 for i in $(seq 1 720); do st=$($KG kernels status jitheswar/$SLUG 2>&1 | tail -1); case "$st" in *COMPLETE*|*ERROR*|*CANCEL*) break;; esac; sleep 30; done
