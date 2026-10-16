@@ -498,3 +498,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 15 23:42 IST **s_mm3 (Qwen+Gemma labels) negative**: gold58 within-fold 0.9292 vs s_mm2 0.9318; mm2+mm3 0.9299 < mm2+s2 0.9350; gate fails -> excluded from Oct 16 subs automatically. Label-source gain (+0.002 label AUC) did not transfer. Stopped s_mm3_384 f0 (retired); queued s_mm2_s3 5-fold (seed 62; 00040-00044) -- seed ensembling is the reliable gain (mm2+s2 0.935).
 - Oct 16 06:22 IST morning subs in (27 models: s_mm2 5 + s2 5 + 384 5 + 384_s2 5 + s3 f0-1 + 4 full-data; s_mm3 EXCLUDED by gate despite '(+mm3)' in the message): ours-only 57248500, R7 + 27 w=0.5 57249357. 3 slots left.
 - Oct 16 06:28 IST s_mm2_s3 f0-3 + 384_s2 f4 done; queued s_mm2_384_s3 5-fold (seed 64; 00050-00054).
+- Oct 16 09:28 IST ours-only 27 = 0.948 (57248500) = 19/22 (saturated). s_mm2_s3 5-fold complete; 384_s3 f0-2 running.
