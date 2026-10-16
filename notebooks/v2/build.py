@@ -123,6 +123,7 @@ meta.update({"id": f"jitheswar/{slug}", "title": slug, "code_file": "notebook.ip
 meta.pop("id_no", None)
 if only:
     meta["dataset_sources"], meta["kernel_sources"], meta["model_sources"] = [], [], []
-meta["dataset_sources"] = meta["dataset_sources"] + [f"jitheswar/{DS}"] + (["nartaa/rsna-knee-s6fall-weights"] if "--s6" in sys.argv else [])
+meta["dataset_sources"] = meta["dataset_sources"] + [f"jitheswar/{DS}"] + (["nartaa/rsna-knee-s6fall-weights"] if "--s6" in sys.argv else []) \
+    + (["heliosli/rsna-orthofoundation-fold0-epoch7-20261004"] if "--s6" in sys.argv and only else [])  # S6 needs its anatomy V-Net + code
 (out / "kernel-metadata.json").write_text(json.dumps(meta, indent=1))
 print(out, len(nb["cells"]), "cells")
