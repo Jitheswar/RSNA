@@ -499,3 +499,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 16 06:22 IST morning subs in (27 models: s_mm2 5 + s2 5 + 384 5 + 384_s2 5 + s3 f0-1 + 4 full-data; s_mm3 EXCLUDED by gate despite '(+mm3)' in the message): ours-only 57248500, R7 + 27 w=0.5 57249357. 3 slots left.
 - Oct 16 06:28 IST s_mm2_s3 f0-3 + 384_s2 f4 done; queued s_mm2_384_s3 5-fold (seed 64; 00050-00054).
 - Oct 16 09:28 IST ours-only 27 = 0.948 (57248500) = 19/22 (saturated). s_mm2_s3 5-fold complete; 384_s3 f0-2 running.
+- Oct 16 09:58 IST NEW: third OAI-free arm S6fall (nartaa; 0.950 alone; no OAI per README) integrated via build.py --s6 (S6=1 env in submit scripts); commit-run test on rsna-v2-timing v5.

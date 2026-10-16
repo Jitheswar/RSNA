@@ -42,6 +42,51 @@ nb["cells"].insert(0, {"cell_type": "code", "execution_count": None, "metadata":
                        "source": ["import time as _rsna_time\n", "RSNA_T0 = _rsna_time.time()  # session start, for the v2 leg deadline\n"]})
 nb["cells"].append({"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
                     "source": leg.splitlines(keepends=True)})
+if "--s6" in sys.argv:
+    # third OAI-free arm: nartaa's S6 all-data ConvNeXt (Heliosli S6 architecture; Raptor/OAI component removed), run LAST on
+    # whatever time is left; final = (1 - W_S6) * rank(R7+ours blend) + W_S6 * rank(S6) where S6 scored, else unchanged
+    import base64
+    b64 = base64.b64encode((here / "s6_stage.py").read_bytes()).decode()
+    nb["cells"].append({"cell_type": "markdown", "metadata": {}, "source": [
+        "## Third arm: S6 all-data ConvNeXt (nartaa; Heliosli's S6 architecture), OAI component removed\n",
+        "Weights `nartaa/rsna-knee-s6fall-weights` (CC BY-NC 4.0; README: no OAI data; ImageNet-22k init) + Heliosli's public "
+        "anatomy/code dataset. nartaa's OAI-trained CoAtNet fallback is removed and not attached. Credit: nartaa, Heliosli.\n"]})
+    s6_cell = f"""import base64, os, subprocess, sys, time
+import numpy as np, pandas as pd
+open('/tmp/s6_stage.py', 'wb').write(base64.b64decode('{b64}'))
+W_S6 = {float(os.environ.get("W_S6", "0.3333"))}
+_left = _session_start() + 9 * 3600 - time.time() - 35 * 60
+print(f'S6 stage: {{_left / 60:.0f}} min left before the margin', flush=True)
+_ok = False
+if _left > 75 * 60:
+    try:
+        _env = dict(os.environ, S6_GUARD_S=str(int(_left)))
+        _rc = subprocess.run([sys.executable, '-u', '/tmp/s6_stage.py'], env=_env, timeout=_left + 300).returncode
+        _ok = _rc == 0 and os.path.isfile('/kaggle/working/s6_sub.csv')
+        print('S6 rc', _rc, 'ok', _ok, flush=True)
+    except Exception as e:
+        print('S6 FAILED', repr(e)[:500], flush=True)
+try:
+    if _ok:
+        cur = pd.read_csv('/kaggle/working/submission.csv', dtype={{'StudyInstanceUID': str}})
+        s6 = pd.read_csv('/kaggle/working/s6_sub.csv', dtype={{'StudyInstanceUID': str}})
+        s6 = cur[['StudyInstanceUID']].merge(s6, on='StudyInstanceUID', how='left')
+        out = cur.copy(); n_ok = 0
+        for t in TARGETS:
+            o = s6[t].values.astype(float); ok = ~np.isnan(o); n_ok = int(ok.sum())
+            if ok.sum() < 2: continue
+            c = cur[t].rank(pct=True).values; r = pd.Series(o).rank(pct=True).values
+            v = c.copy(); v[ok] = (1 - W_S6) * c[ok] + W_S6 * r[ok]
+            out[t] = v
+        out.to_csv('/kaggle/working/submission.csv', index=False)
+        print(f'S6 blended at W_S6={{W_S6}} on {{n_ok}} / {{len(cur)}} studies', flush=True)
+    else:
+        print('S6 not used: submission = R7 + v2 blend', flush=True)
+except Exception as e:
+    print('S6 blend FAILED, keeping R7 + v2', repr(e)[:500], flush=True)
+"""
+    nb["cells"].append({"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
+                        "source": s6_cell.splitlines(keepends=True)})
 if sim:
     sim_src = f"""# REHEARSAL ONLY: simulate a hidden test of {sim} studies from train data (timing), never submitted
 import os, time, pandas as pd
@@ -78,6 +123,6 @@ meta.update({"id": f"jitheswar/{slug}", "title": slug, "code_file": "notebook.ip
 meta.pop("id_no", None)
 if only:
     meta["dataset_sources"], meta["kernel_sources"], meta["model_sources"] = [], [], []
-meta["dataset_sources"] = meta["dataset_sources"] + [f"jitheswar/{DS}"]
+meta["dataset_sources"] = meta["dataset_sources"] + [f"jitheswar/{DS}"] + (["nartaa/rsna-knee-s6fall-weights"] if "--s6" in sys.argv else [])
 (out / "kernel-metadata.json").write_text(json.dumps(meta, indent=1))
 print(out, len(nb["cells"]), "cells")

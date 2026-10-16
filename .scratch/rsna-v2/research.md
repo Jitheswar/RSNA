@@ -194,3 +194,14 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   DualRaptor) all attach nartaa's OAI Raptor -> not usable. They use `heliosli/rsna-knee-r6-frozen-fe055406`, whose
   manifest is bundle 8c7b666e27dc0e8f / tag cnx_r7 = IDENTICAL to the R7 bundle we already use -> nothing new.
 - Web: no new host ruling on external data / OAI. Team-merger deadline passed (Oct 15); final Oct 22.
+
+## 2026-10-16 09:53 IST — sweep (cron) + NEW OAI-free arm
+- LB top: CentralyDS 0.968; RB & Matheus & Tucker & Tony, azamatt, Sergey Bryansky 0.967; MEJAL, joinT fusion 0.966.
+- heliosli "Blend mine in" final notebook: Raptor (OAI) + his R6 (`rsna-knee-r6-frozen-fe055406-w1`, bundle fe055406fad6a12f,
+  tag cnx_r6fm = genuinely different from R7) with flip TTA and per-finding weights.
+- **nartaa/rsna-knee-s6fall-weights**: Heliosli's S6 architecture retrained by nartaa on all data from the timm ImageNet-22k
+  init, JEV-blend labels; README: "No OAI data was used for this model"; 0.950 public alone (> R7 0.949); CC BY-NC 4.0.
+  Its solo notebook runs nartaa's OAI CoAtNet only as a fallback for failed studies (weight 0) -> we strip that component.
+  ACTION: notebooks/v2/s6_stage.py (patched copy, component A removed, writes s6_sub.csv, budget from env) + build.py --s6
+  (third arm run last on the remaining time; final = 2/3 rank(R7+ours) + 1/3 rank(S6), any S6 failure keeps R7+ours).
+  Test commit run pushed to slug rsna-v2-timing v5.

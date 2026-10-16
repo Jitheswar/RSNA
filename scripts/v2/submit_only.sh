@@ -15,7 +15,7 @@ echo "submission slots remaining today: ${REM:-unknown}"
 bash scripts/v2/release.sh "$CK" "$MSG"
 for i in $(seq 1 60); do s=$($KG datasets status jitheswar/$DS 2>&1 | tail -1); [ "$s" = "ready" ] && break; sleep 20; done
 echo "dataset: $s"
-if [ "$MODE" = "--only" ]; then ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W --only; else ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W ${BASE:+--base=$BASE}; fi
+if [ "$MODE" = "--only" ]; then ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W --only; else ~/rsna-gpu2/bin/python notebooks/v2/build.py $SLUG $W ${BASE:+--base=$BASE} ${S6:+--s6}; fi
 out=$($KG kernels push -p notebooks/v2/$SLUG 2>&1 | tail -1); echo "$out"
 ver=$(echo "$out" | grep -o "version [0-9]*" | grep -o "[0-9]*")
 for i in $(seq 1 720); do st=$($KG kernels status jitheswar/$SLUG 2>&1 | tail -1); case "$st" in *COMPLETE*|*ERROR*|*CANCEL*) break;; esac; sleep 30; done

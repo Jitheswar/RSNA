@@ -6,18 +6,21 @@
  "kernel_type": "notebook",
  "is_private": true,
  "enable_gpu": true,
- "enable_tpu": false,
  "enable_internet": false,
- "keywords": [
-  "gpu"
- ],
  "dataset_sources": [
-  "jitheswar/rsna-v2-models"
+  "heliosli/rsna-knee-compact-r7cnxfsss",
+  "heliosli/rsna-orthofoundation-fold0-epoch7-20261004",
+  "jitheswar/rsna-v2-models",
+  "nartaa/rsna-knee-s6fall-weights"
  ],
- "kernel_sources": [],
  "competition_sources": [
   "rsna-knee-abnormality-detection"
  ],
+ "kernel_sources": [],
  "model_sources": [],
+ "enable_tpu": false,
+ "keywords": [
+  "gpu"
+ ],
  "machine_shape": "NvidiaTeslaT4"
 }
