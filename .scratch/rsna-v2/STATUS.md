@@ -502,3 +502,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 16 09:57 IST NEW: third OAI-free arm S6fall (nartaa; 0.950 alone; no OAI per README) integrated via build.py --s6 (S6=1 env in submit scripts); commit-run test on rsna-v2-timing v5.
 - Oct 16 10:10 IST commit run OK (S6 rc 0, blended on 3/3). SUBMITTED 3-arm OAI-free blend R7 + S6fall + 27 models (1/3 each) from rsna-v2-timing v5. 2 slots left.
 - Oct 16 10:14 IST SUBMITTED 2-arm blend with NO OAI lineage: S6fall + 27 models 0.5/0.5 (57255234; build --only --s6, slug rsna-v2-rehearsal2 v2). Pending: R7+27 (57249357), 3-arm (57255056), S6+ours (57255234). 1 slot left. Do not re-release rsna-v2-models / -only until these score.
+- Oct 16 11:28 IST R7 + 27 = 0.955 (57249357), same as 11-22 models. S6 blends pending.
