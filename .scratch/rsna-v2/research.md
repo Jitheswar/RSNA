@@ -213,3 +213,14 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   but weak, 0.929 alone; CoAtNet = nartaa OAI Raptor -> not usable). heliosli R6 (cnx_r6fm, bundle fe055406fad6a12f) is the
   one remaining OAI-free candidate arm (OrthoFoundation init like R7) -> a 4-arm run would add ~2 h of hidden runtime.
 - No new host ruling found.
+
+## 2026-10-17 11:39 IST — sweep (catch-up; 09:23 cron missed: session down)
+- LB top: RB & Matheus & Tucker & Tony 0.969; azamatt, CentralyDS 0.968; Sergey Bryansky 0.967; Ilya Kolb, MEJAL,
+  joinT fusion 0.966. Ours 0.957 (R7 + S6fall + ours; OAI-free).
+- heliosli "this is best public dataset new version 0.9576" and goodpjw "Does S6 help next to R6? 0.957": both now use
+  **R6 with flip TTA** (bundle fe055406fad6a12f, worker compact_infer v4c, dataset heliosli/rsna-knee-r6-frozen-fe055406) in place
+  of R7 (Raptor-OAI half not usable). goodpjw gold-58: R6-flip beats the Raptor half on 8/12 findings; Raptor+R6flip recipe
+  0.958 vs 0.957 with S6 added next to R6 (S6 costs 0.001 THERE, i.e. next to Raptor; untested next to ours).
+  ACTION: notebooks/v2/rsna-r6-only (heliosli's R6-flip stage cells; Raptor + goodpjw parts removed) + build.py --base=r6
+  (R6 deadline 6.0 h) -> test R6-flip + S6 + ours today.
+- No new host ruling.
