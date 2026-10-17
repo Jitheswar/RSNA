@@ -10,7 +10,8 @@ here = Path(__file__).parent
 slug, weight = sys.argv[1], float(sys.argv[2])
 only = "--only" in sys.argv
 base = next((a.split("=")[1] for a in sys.argv if a.startswith("--base=")), "public0946")  # public0946 | r7
-sim = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--sim=")), 0)
+sim = next(((a.split("=")[1]) for a in sys.argv if a.startswith("--sim=")), "0")
+sim = -1 if sim == "gold" else int(sim)  # -1: the 58 gold (radiologist-labelled) training studies as the "test"
 import os
 DS = os.environ.get("DS", "rsna-v2-models")  # separate model datasets per notebook: a hidden rerun mounts the latest version
 _tagf = here.parent.parent / f"artifacts/private/v2/kaggle/{DS}/release_tag.txt"
@@ -60,7 +61,7 @@ print(f'S6 stage: {{_left / 60:.0f}} min left before the margin', flush=True)
 _ok = False
 if _left > 75 * 60:
     try:
-        _env = dict(os.environ, S6_GUARD_S=str(int(_left)))
+        _env = dict(os.environ, S6_GUARD_S=str(int(_left)), S6_COMP_ROOT=os.environ.get('RSNA_COMP_ROOT', ''))
         _rc = subprocess.run([sys.executable, '-u', '/tmp/s6_stage.py'], env=_env, timeout=_left + 300).returncode
         _ok = _rc == 0 and os.path.isfile('/kaggle/working/s6_sub.csv')
         print('S6 rc', _rc, 'ok', _ok, flush=True)
@@ -94,7 +95,7 @@ _SIM_T0 = time.time()
 _c = [p for p in ['/kaggle/input/competitions/rsna-knee-abnormality-detection', '/kaggle/input/rsna-knee-abnormality-detection'] if os.path.exists(p + '/train.csv')][0]
 _sim = '/tmp/simroot'; os.makedirs(_sim, exist_ok=True)
 _tr = pd.read_csv(_c + '/train.csv', dtype=str); _ser = pd.read_csv(_c + '/train_series.csv', dtype=str)
-_ids = _tr.StudyInstanceUID.sample({sim}, random_state=0)
+_ids = _tr[_tr.ACL.notna()].StudyInstanceUID if {sim} < 0 else _tr.StudyInstanceUID.sample({sim}, random_state=0)
 pd.DataFrame({{'StudyInstanceUID': _ids}}).to_csv(_sim + '/test.csv', index=False)
 _ser[_ser.StudyInstanceUID.isin(set(_ids))].to_csv(_sim + '/test_series.csv', index=False)
 _ss = pd.read_csv(_c + '/sample_submission.csv', nrows=1)
@@ -111,6 +112,9 @@ print('SIM root', _sim, len(_ids), 'studies', flush=True)
 """
     nb["cells"].insert(0, {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
                            "source": sim_src.splitlines(keepends=True)})
+    for c in nb["cells"]:  # baseline stages read the simulated root too (R7: --data)
+        if c["cell_type"] == "code" and "probe_dual.py" in "".join(c["source"]) and "'--data', str(DATA)" in "".join(c["source"]):
+            c["source"] = "".join(c["source"]).replace("'--data', str(DATA)", "'--data', os.environ.get('RSNA_COMP_ROOT', str(DATA))").splitlines(keepends=True)
     nb["cells"].append({"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
                         "source": ["print(f'TOTAL REHEARSAL WALL {time.time()-_SIM_T0:.0f}s', flush=True)\n"]})
 nb.setdefault("metadata", {})["kernelspec"] = {"display_name": "Python 3", "language": "python", "name": "python3"}

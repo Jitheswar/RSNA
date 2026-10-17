@@ -654,6 +654,8 @@ class Inputs:
 def prepare_inputs():
     I = Inputs()
     I.comp = find_mount(COMP, "test.csv")
+    if os.environ.get("S6_COMP_ROOT"):
+        I.comp = Path(os.environ["S6_COMP_ROOT"])  # [v2] simulated root (gold-58 evaluation)
     I.ds = find_mount(DS_SLUG, "checkpoint-manifest.json")
     I.helios = find_mount(HELIOS_SLUG, ANATOMY_FILE)
     log("competition root", I.comp, "| weights", I.ds, "| heliosli", I.helios)
