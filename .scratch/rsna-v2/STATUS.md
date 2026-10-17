@@ -510,3 +510,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 16 17:30 IST detached scripts/v2/oct17_submit.sh: after 05:36 IST Oct 17 and once nothing is pending -> S6+ours hedge (submit42) and 3-arm R7+S6+ours 1/3 each (submit43) with all finished models (+384_s3). Fixed submit scripts to pass --s6 in --only mode.
 - Oct 16 23:34 IST W_S6=0.5 probe (R7 .25 / ours .25 / S6 .5) = 0.956 (57266823) < equal 1/3 weights 0.957 -> keep 1/3 each (Oct 17 script already uses 1/3).
 - Oct 17 13:45 IST submitted (after session-loss relaunch at 11:38): S6+34 hedge (57298923), 3-arm R7+S6+34 (57302931). 3 slots left. Launching R6-flip 3-arm test (submit44, BASE=r6, slug rsna-v2-blend, current rsna-v2-models = 34 models).
+- Oct 17 15:22 IST R6-flip 3-arm (R6 + S6 + 34, 1/3 each) commit OK and SUBMITTED (57306133). Pending: S6+34 hedge 57298923, R7 3-arm 57302931, R6 3-arm 57306133. 2 slots left.

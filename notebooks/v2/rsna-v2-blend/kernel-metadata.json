@@ -8,9 +8,10 @@
  "enable_gpu": true,
  "enable_internet": false,
  "dataset_sources": [
-  "heliosli/rsna-knee-compact-r7cnxfsss",
+  "heliosli/rsna-knee-r6-frozen-fe055406-w1",
   "heliosli/rsna-orthofoundation-fold0-epoch7-20261004",
-  "jitheswar/rsna-v2-models"
+  "jitheswar/rsna-v2-models",
+  "nartaa/rsna-knee-s6fall-weights"
  ],
  "competition_sources": [
   "rsna-knee-abnormality-detection"
