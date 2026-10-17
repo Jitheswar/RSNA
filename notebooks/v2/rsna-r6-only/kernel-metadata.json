@@ -8,7 +8,7 @@
  "enable_gpu": true,
  "enable_internet": false,
  "dataset_sources": [
-  "heliosli/rsna-knee-r6-frozen-fe055406",
+  "heliosli/rsna-knee-r6-frozen-fe055406-w1",
   "heliosli/rsna-orthofoundation-fold0-epoch7-20261004"
  ],
  "competition_sources": [
