@@ -67,8 +67,25 @@ if _left > 75 * 60:
         print('S6 rc', _rc, 'ok', _ok, flush=True)
     except Exception as e:
         print('S6 FAILED', repr(e)[:500], flush=True)
+W3 = {os.environ.get("W3", "None")}  # optional per-finding (R7, S6, ours) rank weights, fixed before any run
 try:
-    if _ok:
+    if _ok and W3:
+        cur = pd.read_csv('/kaggle/working/submission.csv', dtype={{'StudyInstanceUID': str}})
+        ids = cur[['StudyInstanceUID']]
+        rd = lambda f: ids.merge(pd.read_csv(f, dtype={{'StudyInstanceUID': str}}), on='StudyInstanceUID', how='left')
+        a, b, c = rd('/kaggle/working/ours_sub.csv'), rd('/kaggle/working/s6_sub.csv'), rd('/kaggle/working/v2_preds.csv')
+        out = cur.copy()
+        for t in TARGETS:
+            w = W3.get(t, (1/3, 1/3, 1/3)); num = np.zeros(len(ids)); den = np.zeros(len(ids))
+            for wk, arm in zip(w, (a, b, c)):
+                r = arm[t].rank(pct=True).values; ok = ~np.isnan(r)
+                num[ok] += wk * r[ok]; den[ok] += wk
+            v = cur[t].rank(pct=True).values.copy(); m_ = den > 0
+            v[m_] = num[m_] / den[m_]
+            out[t] = v
+        out.to_csv('/kaggle/working/submission.csv', index=False)
+        print('S6 per-finding W3 blend written', flush=True)
+    elif _ok:
         cur = pd.read_csv('/kaggle/working/submission.csv', dtype={{'StudyInstanceUID': str}})
         s6 = pd.read_csv('/kaggle/working/s6_sub.csv', dtype={{'StudyInstanceUID': str}})
         s6 = cur[['StudyInstanceUID']].merge(s6, on='StudyInstanceUID', how='left')

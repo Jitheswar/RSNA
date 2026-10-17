@@ -514,3 +514,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 17 17:28 IST S6 + 34 models (no OAI lineage) = 0.954 (57298923) = S6 + 27 (stable hedge).
 - Oct 17 21:28 IST R7 + S6 + 34 models (1/3 each) = 0.957 (57302931) = ties best (27-model 0.957). R6-flip 3-arm pending.
 - Oct 18 00:04 IST R6-flip + S6 + 34 = 0.956 (57306133) < R7 version 0.957, and its hidden run took ~8.7 h (near the 9 h limit) -> keep R7. Final candidates: #1 R7 + S6fall + ours 1/3 each (0.957: 57255056 / 57302931), #2 S6fall + ours 0.5/0.5 (0.954, no OAI lineage: 57255234 / 57298923).
+- Oct 18 00:45 IST **gold-58 eval of R7 / S6** (Kaggle run of both stages on the 58 gold train studies; neither trained on
+  gold): macro R7 0.931, S6 0.931, ours OOF 0.905; equal 3-arm 0.935. Ours weak on MCL (0.845 vs 0.966), Lat Men, PF OA,
+  Baker's, Lat OA; strong on Effusion, Synovitis. Coarse rule (ours 1/6 on the 5 weak, 1/2 on the 2 strong, R7=S6 split the
+  rest): gold 0.9391 vs 0.9352 (in-sample; bootstrap P(>0)=0.98). build.py W3 env = per-finding weights. Submitting (submit45).
