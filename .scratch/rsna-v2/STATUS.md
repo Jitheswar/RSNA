@@ -512,3 +512,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 17 13:45 IST submitted (after session-loss relaunch at 11:38): S6+34 hedge (57298923), 3-arm R7+S6+34 (57302931). 3 slots left. Launching R6-flip 3-arm test (submit44, BASE=r6, slug rsna-v2-blend, current rsna-v2-models = 34 models).
 - Oct 17 15:22 IST R6-flip 3-arm (R6 + S6 + 34, 1/3 each) commit OK and SUBMITTED (57306133). Pending: S6+34 hedge 57298923, R7 3-arm 57302931, R6 3-arm 57306133. 2 slots left.
 - Oct 17 17:28 IST S6 + 34 models (no OAI lineage) = 0.954 (57298923) = S6 + 27 (stable hedge).
+- Oct 17 21:28 IST R7 + S6 + 34 models (1/3 each) = 0.957 (57302931) = ties best (27-model 0.957). R6-flip 3-arm pending.
