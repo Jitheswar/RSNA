@@ -513,3 +513,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 17 15:22 IST R6-flip 3-arm (R6 + S6 + 34, 1/3 each) commit OK and SUBMITTED (57306133). Pending: S6+34 hedge 57298923, R7 3-arm 57302931, R6 3-arm 57306133. 2 slots left.
 - Oct 17 17:28 IST S6 + 34 models (no OAI lineage) = 0.954 (57298923) = S6 + 27 (stable hedge).
 - Oct 17 21:28 IST R7 + S6 + 34 models (1/3 each) = 0.957 (57302931) = ties best (27-model 0.957). R6-flip 3-arm pending.
+- Oct 18 00:04 IST R6-flip + S6 + 34 = 0.956 (57306133) < R7 version 0.957, and its hidden run took ~8.7 h (near the 9 h limit) -> keep R7. Final candidates: #1 R7 + S6fall + ours 1/3 each (0.957: 57255056 / 57302931), #2 S6fall + ours 0.5/0.5 (0.954, no OAI lineage: 57255234 / 57298923).
