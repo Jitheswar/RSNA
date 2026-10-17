@@ -224,3 +224,10 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   ACTION: notebooks/v2/rsna-r6-only (heliosli's R6-flip stage cells; Raptor + goodpjw parts removed) + build.py --base=r6
   (R6 deadline 6.0 h) -> test R6-flip + S6 + ours today.
 - No new host ruling.
+
+## 2026-10-17 21:53 IST — sweep (cron)
+- LB top: RB & Matheus & Tucker & Tony 0.969; azamatt, Sergey Bryansky, CentralyDS 0.968; Team Kangaroo 0.967; Ilya Kolb
+  0.966. Ours 0.957 (R7 + S6fall + 27/34 models; OAI-free). Hedge S6 + ours 0.954 (no OAI lineage).
+- heliosli "new version 0.9586": same recipe (Raptor OAI + R6 flip TTA + goodpjw reader) -> Raptor not usable; confirms R6
+  flip as heliosli's preferred compact model (our R6-flip 3-arm 57306133 pending). No new OAI-free component.
+- No new host ruling.
