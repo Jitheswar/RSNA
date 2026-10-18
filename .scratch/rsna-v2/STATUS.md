@@ -535,3 +535,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   -w1 dataset, R6 deadline 7.0 h) + build.py --base=raptor-r6; our 34 models at rank weight 1/3. Submitting (submit47).
 - Oct 18 21:42 IST Raptor + R6flip + 34 (ours 1/3) commit run finally COMPLETE (~9 h incl. Kaggle queue) and SUBMITTED (submit47). 3 slots left today.
 - Oct 18 21:55 IST user: use remaining 3 slots. Launched submit48 (Raptor + R7 + 34 ours 1/3 + S6 0.25), submit49 (Raptor + R7 + 34 ours 1/3); submit50 (Raptor + R6flip + ours 0.5) queued (Kaggle max 2 GPU sessions).
+- Oct 18 22:07 IST submitted: Raptor + R7 + ours 1/3 (57361296), Raptor + R6flip + ours 0.5 (57361639). Pending also Raptor + R6flip + ours 1/3 (57360889). submit48 (4-arm with S6) still queued on Kaggle.
