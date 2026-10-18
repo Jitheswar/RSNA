@@ -237,3 +237,13 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   Ours 0.957 (R7 + S6fall + ours, equal weights; OAI-free).
 - No new notebook families (velciraptor "top6" = old Raptor-OAI stack). No new OAI-free component; no host ruling.
 - Own results: per-finding weights fitted on gold-58 (R7/S6 run on gold via --sim=gold) LB 0.955 < equal 0.957 -> rejected.
+
+## 2026-10-18 21:53 IST — sweep (cron)
+- LB top: RB & Matheus & Tucker & Tony 0.969; azamatt, Sergey Bryansky, CentralyDS 0.968; Team Kangaroo 0.967; joinT 0.966.
+- Forum (now readable via `kaggle competitions topics list/show`): host ruling Oct 14 (Chris Carr, RSNA, topic 743416):
+  registration + licence acknowledgement = allowed; institutional agreement / affiliation-only = not; disclose datasets.
+  NDA: OAI "Institutional Approval Required: No" (individual approval reported). -> OAI-trained public weights treated as
+  permitted (user decision: final #1 only). Open, unanswered questions (750257-750260) on nartaa OAI weights, R7/fastMRI,
+  SKM-TEA/KneeXNet anatomy, RadImageNet; no host replies yet. "Submit queue issue?" (750318): slow Kaggle queues (matches our
+  ~9 h commit-run wait; actual GPU time ~11 min).
+- No new notebook families.
