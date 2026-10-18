@@ -519,3 +519,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   Baker's, Lat OA; strong on Effusion, Synovitis. Coarse rule (ours 1/6 on the 5 weak, 1/2 on the 2 strong, R7=S6 split the
   rest): gold 0.9391 vs 0.9352 (in-sample; bootstrap P(>0)=0.98). build.py W3 env = per-finding weights. Submitting (submit45).
 - Oct 18 00:53 IST submitted per-finding 3-arm (57323321; W3 blend written). 1 slot left until 05:30 reset.
+- Oct 18 06:35 IST hedge per-finding rule (gold): S6 + ours with ours 0.25 on MCL/LatMen/PF OA/Baker's/LatOA, 0.5 else: 0.9358 vs 0.9307 equal (in-sample). build.py W_S6 may be a per-finding dict. Submitting (submit46, slug rsna-v2-rehearsal2, --only --s6).

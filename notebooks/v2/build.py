@@ -55,7 +55,7 @@ if "--s6" in sys.argv:
     s6_cell = f"""import base64, os, subprocess, sys, time
 import numpy as np, pandas as pd
 open('/tmp/s6_stage.py', 'wb').write(base64.b64decode('{b64}'))
-W_S6 = {float(os.environ.get("W_S6", "0.3333"))}
+W_S6 = {os.environ.get("W_S6", "0.3333")}  # number, or per-finding dict {{finding: S6 weight}} (others 0.5)
 _left = _session_start() + 9 * 3600 - time.time() - 35 * 60
 print(f'S6 stage: {{_left / 60:.0f}} min left before the margin', flush=True)
 _ok = False
@@ -94,7 +94,8 @@ try:
             o = s6[t].values.astype(float); ok = ~np.isnan(o); n_ok = int(ok.sum())
             if ok.sum() < 2: continue
             c = cur[t].rank(pct=True).values; r = pd.Series(o).rank(pct=True).values
-            v = c.copy(); v[ok] = (1 - W_S6) * c[ok] + W_S6 * r[ok]
+            w6 = W_S6.get(t, 0.5) if isinstance(W_S6, dict) else W_S6
+            v = c.copy(); v[ok] = (1 - w6) * c[ok] + w6 * r[ok]
             out[t] = v
         out.to_csv('/kaggle/working/submission.csv', index=False)
         print(f'S6 blended at W_S6={{W_S6}} on {{n_ok}} / {{len(cur)}} studies', flush=True)
