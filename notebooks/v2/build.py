@@ -23,14 +23,14 @@ if only:
     nb = {"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
     nb["cells"].append({"cell_type": "markdown", "metadata": {}, "source": [
         "# RSNA knee v2 (ours alone)\nCanonical laterality-normalised multi-series 2.5D models trained on gold-calibrated report labels.\n"]})
-elif base in ("r7", "r6", "raptor-r6"):
+elif base in ("r7", "r6", "raptor-r6", "raptor-r7"):
     # OAI-free attributed baseline: heliosli's R7 ConvNeXt stage alone (Raptor/OAI stage removed), capped at 6.5 h so
     # our leg has time; R7 writes /kaggle/working/submission.csv, which the leg rank-blends into
     nb = json.loads((here / f"rsna-{base}-only" / "notebook.ipynb").read_text())
     for c in nb["cells"]:
         if c["cell_type"] == "code":
             src = "".join(c["source"])
-            if base != "raptor-r6":
+            if not base.startswith("raptor"):
                 src = src.replace("DEADLINE_HOURS = 8.3", "DEADLINE_HOURS = 6.5" if base == "r7" else "DEADLINE_HOURS = 6.0")
             c["source"] = src.splitlines(keepends=True)
     nb["cells"].insert(0, {"cell_type": "markdown", "metadata": {}, "source": [
@@ -141,7 +141,7 @@ nb.setdefault("metadata", {})["kernelspec"] = {"display_name": "Python 3", "lang
 out = here / slug
 out.mkdir(exist_ok=True)
 (out / "notebook.ipynb").write_text(json.dumps(nb, indent=1))
-meta = json.loads(((here / f"rsna-{base}-only" / "kernel-metadata.json") if base in ("r7", "r6", "raptor-r6") else (base_dir / "public0946-metadata.json")).read_text())
+meta = json.loads(((here / f"rsna-{base}-only" / "kernel-metadata.json") if base in ("r7", "r6", "raptor-r6", "raptor-r7") else (base_dir / "public0946-metadata.json")).read_text())
 meta.update({"id": f"jitheswar/{slug}", "title": slug, "code_file": "notebook.ipynb", "is_private": True,
              "machine_shape": "NvidiaTeslaT4", "enable_gpu": True, "enable_internet": False})
 meta.pop("id_no", None)
