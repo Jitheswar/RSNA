@@ -231,3 +231,9 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
 - heliosli "new version 0.9586": same recipe (Raptor OAI + R6 flip TTA + goodpjw reader) -> Raptor not usable; confirms R6
   flip as heliosli's preferred compact model (our R6-flip 3-arm 57306133 pending). No new OAI-free component.
 - No new host ruling.
+
+## 2026-10-18 09:53 IST — sweep (cron)
+- LB top: RB & Matheus & Tucker & Tony 0.969; azamatt, Sergey Bryansky, CentralyDS 0.968; Team Kangaroo 0.967; joinT 0.966.
+  Ours 0.957 (R7 + S6fall + ours, equal weights; OAI-free).
+- No new notebook families (velciraptor "top6" = old Raptor-OAI stack). No new OAI-free component; no host ruling.
+- Own results: per-finding weights fitted on gold-58 (R7/S6 run on gold via --sim=gold) LB 0.955 < equal 0.957 -> rejected.
