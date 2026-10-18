@@ -179,6 +179,7 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | blend R7 .25 / ours .25 / S6 .5 | 0.956 |
 | blend 1/3 each: R6 flip-TTA + S6fall + 34 models | 0.956 |
 | blend 1/3 each: R7 + S6fall + 34 models | **0.957** |
+| blend per-finding weights from gold-58 (R7 + S6 + 34) | 0.955 |
 | blend 0.5/0.5: nartaa S6fall (ImageNet init, OAI fallback removed) + 27 models -- no OAI lineage | 0.954 |
 | ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
 
