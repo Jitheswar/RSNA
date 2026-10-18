@@ -526,3 +526,10 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   **FINALS PLAN (select on Kaggle before Oct 22 23:59 UTC):**
   #1 57255056 (R7 + S6fall + 27 models, 1/3 each, 0.957) or its 34-model twin 57302931 (0.957) -- prefer 57302931
      (more seeds, same score).  #2 hedge with no OAI lineage: 57298923 (S6fall + 34 models, 0.5/0.5, 0.954).
+- Oct 18 12:45 IST **POLICY CHANGE (user decision):** host Oct 14 (Chris Carr, RSNA, topic 743416): "Datasets that require only
+  registration and acknowledgement of licensing terms would clearly meet these criteria"; NDA lists OAI "Institutional
+  Approval Required: No" (individual approval reported) -> OAI-trained public weights (nartaa Raptor) now treated as permitted.
+  User chose: Raptor in final #1 only; final #2 stays the no-OAI-lineage hedge (S6 + ours, 0.954). Disclose in write-up.
+  User also: "from now on take best decisions, don't ask me".
+  Built notebooks/v2/rsna-raptor-r6-only (heliosli 0.9586 notebook: Raptor 384+224 + R6 flip, goodpjw part removed, R6 from
+  -w1 dataset, R6 deadline 7.0 h) + build.py --base=raptor-r6; our 34 models at rank weight 1/3. Submitting (submit47).
