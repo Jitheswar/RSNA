@@ -522,3 +522,7 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 18 06:35 IST hedge per-finding rule (gold): S6 + ours with ours 0.25 on MCL/LatMen/PF OA/Baker's/LatOA, 0.5 else: 0.9358 vs 0.9307 equal (in-sample). build.py W_S6 may be a per-finding dict. Submitting (submit46, slug rsna-v2-rehearsal2, --only --s6).
 - Oct 18 06:35 IST submitted hedge per-finding (57332619). Pending: 3-arm W3 57323321, hedge W 57332619. 4 slots left today.
 - Oct 18 08:54 IST per-finding 3-arm (gold-58 rule) = 0.955 (57323321) < equal 1/3 0.957 -> gold-fitted weights do not transfer (58 studies; overfit/noise). Keep EQUAL weights for final #1. Hedge per-finding 57332619 pending.
+- Oct 18 12:26 IST hedge per-finding = 0.954 (57332619) = equal-weight hedge 0.954 -> no gain; keep EQUAL weights.
+  **FINALS PLAN (select on Kaggle before Oct 22 23:59 UTC):**
+  #1 57255056 (R7 + S6fall + 27 models, 1/3 each, 0.957) or its 34-model twin 57302931 (0.957) -- prefer 57302931
+     (more seeds, same score).  #2 hedge with no OAI lineage: 57298923 (S6fall + 34 models, 0.5/0.5, 0.954).
