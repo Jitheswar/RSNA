@@ -533,3 +533,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   User also: "from now on take best decisions, don't ask me".
   Built notebooks/v2/rsna-raptor-r6-only (heliosli 0.9586 notebook: Raptor 384+224 + R6 flip, goodpjw part removed, R6 from
   -w1 dataset, R6 deadline 7.0 h) + build.py --base=raptor-r6; our 34 models at rank weight 1/3. Submitting (submit47).
+- Oct 18 21:42 IST Raptor + R6flip + 34 (ours 1/3) commit run finally COMPLETE (~9 h incl. Kaggle queue) and SUBMITTED (submit47). 3 slots left today.
