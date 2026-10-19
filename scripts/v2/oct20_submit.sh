@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Oct 20 morning: (1) ours-only s_r6 (R6-distilled labels) 6 models; (2) Raptor + R6flip + ours [s_r6 6 + 24 s_mm2] 1/3.
+# As soon as the 6 s_r6 models exist (uses Oct 19 slots if before 05:30 IST): (1) ours-only s_r6 (R6-distilled labels) 6 models; (2) Raptor + R6flip + ours [s_r6 6 + 24 s_mm2] 1/3.
 cd /home/ch.jitheswar/RSNA
 V=artifacts/private/v2; L=$V/logs; KG=~/rsna-gpu2/bin/kaggle
 until [ $(ls $V/queue/done | grep -c "_s_r6_") -ge 6 ]; do sleep 120; done
-until [ "$(date +%Y%m%d%H%M)" -ge 202610200536 ]; do sleep 60; done
 until ! $KG competitions submissions rsna-knee-abnormality-detection 2>/dev/null | sed -n 3,12p | grep -q PENDING; do sleep 300; done
 NEW="$V/runs/s_r6/fold*/best.pt $V/runs/s_r6_full_s1/full/last.pt"
 OLD="$V/runs/s_mm2/fold*/best.pt $V/runs/s_mm2_s2/fold*/best.pt $V/runs/s_mm2_384/fold*/best.pt $V/runs/s_mm2_s3/fold*/best.pt $V/runs/s_mm2_full_s1/full/last.pt $V/runs/s_mm2_full_s2/full/last.pt $V/runs/s_mm2_full_s3/full/last.pt $V/runs/s_mm2_384_full_s1/full/last.pt"
