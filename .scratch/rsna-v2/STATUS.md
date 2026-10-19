@@ -5,6 +5,11 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-19 23:05 IST R6 local run on all 4,407 train studies DONE (scratch_r6/work{0,1,2}/ours_sub.csv, ~1.7 h on 3 A100s).
+  Gold58 label AUC: stud_mm2 0.9414, R6 (out-of-sample on gold) 0.9368, **0.6 stud_mm2 + 0.4 rank-mapped R6 = 0.9495** (+0.008;
+  prob-mix 0.945, temp-mix 0.949) -> labels/stud_r6.csv. Training s_r6 5-fold + full_s1 (s_mm2 recipe; workers 8683-8685, ETA ~05:00),
+  then s_r6_full_s2 + s_r6_384 5-fold. scripts/v2/oct20_submit.sh armed (05:36 IST): ours-only s_r6 (submit52) + Raptor+R6flip+
+  [6 s_r6 + 24 s_mm2] 1/3 (submit53; model count kept ~30 because the v2 leg has a 9 h deadline guard).
 - 10-19 20:45 IST **GOAL: 1st place, take risks (user).** Forum: #2 azamat (0.968) "no external data ... short answer is labels",
   "AI, not by hand. And don't rely on reports alone" (= image+report VLM labels). R6 manifest: heliosli trained on Opus labels
   (probe_targets_opusv11b), gold never trained. Codex now refuses all GPT models on the ChatGPT account (no frontier mm relabel).
