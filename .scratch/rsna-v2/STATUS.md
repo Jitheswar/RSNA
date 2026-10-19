@@ -5,6 +5,7 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-19 14:31 IST: 57376046 Raptor+R6flip+ours 0.25 = 0.958 (= 1/3; 0.5 -> 0.956). Final #1 stays 57360889 (1/3, more diversity), #2 57298923. No pending submissions.
 - 10-19 11:35 IST: decided NOT to add goodpjw Part B: heliosli recipe runs ~8 h (Part B guarded at 8.2 h), so our leg would score few studies; Part B instead of ours = public 0.958 notebook. Waiting on 57376046.
 - 10-19 10:28 IST: 57367335 4-arm Raptor+R7+ours 1/3 + S6 0.25 = 0.957 (no gain over 3-arm). 57376046 (ours 0.25) pending.
 - 10-19 07:28 IST: 57361639 Raptor+R6flip+ours 0.5 = 0.956 (vs 1/3 0.958). submit51 submitted as 57376046 (ours 0.25). 4 slots left today.

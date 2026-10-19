@@ -185,6 +185,7 @@ Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20
 | blend 1/3 each: nartaa Raptor 384+224 (OAI-trained, disclosed) + R7 + 34 models | **0.957** |
 | blend 1/3 each: nartaa Raptor 384+224 (OAI-trained, disclosed) + R6 flip-TTA + 34 models | **0.958** |
 | blend rank weight 0.5 ours: Raptor + R6 flip-TTA + 34 models | 0.956 |
+| blend rank weight 0.25 ours: Raptor + R6 flip-TTA + 34 models | 0.958 |
 | 4 arms: Raptor + R7 + 34 models (1/3 each) + S6fall 0.25 | 0.957 |
 | ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
 
