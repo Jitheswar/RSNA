@@ -5,6 +5,7 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-19 06:30 IST: **57360889 Raptor+R6flip+ours 1/3 = 0.958 NEW BEST -> final #1.** Final #2 stays 57298923 (no OAI). Launched submit51 (Raptor+R6flip+ours 0.25, rsna-v2-blend). 57361639 (ours 0.5), 57367335 (4-arm) pending.
 - 10-19 05:28 IST: 57361296 Raptor+R7+ours 1/3 = 0.957 (ties 57302931 R7+S6+ours). 3 still pending.
 - 10-19 01:28 IST: submit48 submitted as 57367335 (Raptor+R7+ours 1/3 + S6 0.25); Oct 18 slots used (5/5). 4 pending.
 1. `prep.py` + `pack.py`: canonical reorientation (LPS), laterality normalisation (every knee = right knee;
