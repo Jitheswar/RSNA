@@ -5,6 +5,10 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 04:55 IST Oct 19 slots 2-5 all used on s_r6 tests (PENDING): submit52 ours-only 6 s_r6; submit53 Raptor+R6flip+[6 s_r6 + 24]
+  1/3 (rsna-v2-blend, DS rsna-v2-models); submit54 Raptor+R6flip+[6 s_r6 only] 1/3 (rsna-v2-rehearsal, DS rsna-v2-models-c);
+  submit55 Raptor+R6flip+[6+24] ours 0.5 (rsna-v2-timing, DS rsna-v2-models-d). release.sh now also creates a dataset on 403.
+  Do not re-release any of these 4 datasets until its submission has scored.
 - 10-20 03:30 IST s_r6 5-fold + full_s1 done. 5-fold (weak vs cal_v3 / gold58 pooled): s_r6 0.9229 / 0.9215 vs s_mm2 0.9210 / 0.9212
   (best weak single family; gold = tie); all 4 families 0.9251 / 0.9260. oct20_submit.sh fired 03:26: submit52 ours-only 6 s_r6,
   submit53 Raptor+R6flip+[6 s_r6 + 24 s_mm2] 1/3. Running: s_r6_full_s2, s_r6_384 f0-4.
