@@ -247,3 +247,14 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   SKM-TEA/KneeXNet anatomy, RadImageNet; no host replies yet. "Submit queue issue?" (750318): slow Kaggle queues (matches our
   ~9 h commit-run wait; actual GPU time ~11 min).
 - No new notebook families.
+
+## 2026-10-19 09:29 IST — sweep (morning)
+- LB (full CSV, 6198 teams): top 0.969 (RB & Matheus & Tucker & Tony), 0.968 x3, 0.967 x2, 0.966 x6. 179 teams > 0.958;
+  **1173 teams at 0.958** (= public heliosli 0.9586 notebook). Elyra rank 479 at 0.958 (57360889).
+- New/updated notebooks: kaiwalyaatulraut/rsna-knee-competition-solution + rsna-knee (Oct 17-18) = heliosli 0.9586 recipe
+  (Raptor 384+224, R6 fe055406 via rostigor dataset, goodpjw 2.5D reader 'Part B', per-finding W_RAPTOR_C). lavinwins
+  gold-medal: big mix of mattiaangeli/antoinegg1/pilkwang/dreaddevelopment weights (provenance unclear; topic 750356 asks
+  what data is behind mattiaangeli weights - unanswered). No public notebook clearly above 0.958.
+- Forum: 750529 (zoomed-in method, no detail). No host reply on 750257-750260 (OAI/Raptor/R7/SKM-TEA).
+- Takeaway: our blends sit at the public ceiling; gaps to top are private methods. Remaining lever within runtime: add the
+  goodpjw Part B reader (in heliosli 0.9586, dropped from our raptor-r6 base) as 4th arm if runtime allows.
