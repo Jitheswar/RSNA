@@ -5,6 +5,12 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-19 20:45 IST **GOAL: 1st place, take risks (user).** Forum: #2 azamat (0.968) "no external data ... short answer is labels",
+  "AI, not by hand. And don't rely on reports alone" (= image+report VLM labels). R6 manifest: heliosli trained on Opus labels
+  (probe_targets_opusv11b), gold never trained. Codex now refuses all GPT models on the ChatGPT account (no frontier mm relabel).
+  BET: distil R6 into our labels -> run R6 locally on all 4,407 TRAIN studies (scratch_r6/, DICOMs extracted to scratch_r6/dcm,
+  jobs 8678-8680, 3 shards) -> scripts/v2/r6_labels.py (gold58 check of mix weight) -> stud_r6 labels -> s_r6 5-fold + full
+  (s_mm2 recipe) -> Oct 20 subs: ours-only + Raptor+R6flip+ours.
 - 10-19 19:45 IST: decision: no further blend submissions. Per-finding weights already failed twice (57323321 0.955, 57332619 0.954), weight probes flat (0.25/0.333 = 0.958), S6 4th arm 0.957, Part B infeasible (runtime). Finals: #1 57360889, #2 57298923 - USER MUST SELECT ON KAGGLE.
 - 10-19 14:31 IST: 57376046 Raptor+R6flip+ours 0.25 = 0.958 (= 1/3; 0.5 -> 0.956). Final #1 stays 57360889 (1/3, more diversity), #2 57298923. No pending submissions.
 - 10-19 11:35 IST: decided NOT to add goodpjw Part B: heliosli recipe runs ~8 h (Part B guarded at 8.2 h), so our leg would score few studies; Part B instead of ours = public 0.958 notebook. Waiting on 57376046.
