@@ -258,3 +258,5 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
 - Forum: 750529 (zoomed-in method, no detail). No host reply on 750257-750260 (OAI/Raptor/R7/SKM-TEA).
 - Takeaway: our blends sit at the public ceiling; gaps to top are private methods. Remaining lever within runtime: add the
   goodpjw Part B reader (in heliosli 0.9586, dropped from our raptor-r6 base) as 4th arm if runtime allows.
+- 09:53 IST (cron sweep add-on): web search finds only launch coverage (rsna.org press, AuntMinnie); no new
+  OAI/external-data ruling. Topic 743416: no new host reply since the Oct 14 Chris Carr ruling. Plan unchanged.
