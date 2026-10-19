@@ -215,6 +215,15 @@ arXiv 2601.18250), was itself pretrained on ~1.25 M knee images that include ~20
 radiographs. We never access OAI data; the competition rules explicitly allow freely available pre-trained models, so
 we treat R7 as admissible but report it separately and keep an ours-only submission with no OAI lineage as a hedge.
 
+**Final submissions and OAI disclosure (Oct 18-19).** After the host's ruling (topic 743416) was read as covering
+datasets that require only registration and licence acknowledgement, we allowed the public OAI-trained Raptor
+weights (nartaa, 384 + 224 CoAtNet) in one of our two final submissions; we never downloaded or trained on OAI data
+ourselves. Final #1: Raptor + heliosli R6 flip-TTA + our 34 models, rank weight 1/3 each (public 0.958; our weight
+0.25 also 0.958, 0.5 gives 0.956). Final #2 (hedge, no OAI-trained weights and no OAI-pretrained init): nartaa S6fall
+(ImageNet init) + our models, 0.5/0.5 (public 0.954). The two finals bound the effect of OAI-derived weights on the
+private split. Adding S6 as a fourth arm (0.957) or swapping R6 for R7 (0.957) did not help; ~1,170 teams share the
+public notebook score 0.958, so public differences among these blends are within noise.
+
 **Blend weight is flat (Oct 14).** R7 + 11 s_mm2 models at our-leg rank weight 0.4 / 0.5 / 0.6 / 0.7 scored
 0.955 / 0.955 / 0.955 / 0.954, and 13 models at 0.5 also 0.955: two equally strong, differently built pipelines
 (R7 alone 0.949, ours alone 0.947) give +0.006 over either, and the gain is insensitive to the mixing weight. The
@@ -285,4 +294,4 @@ labels depend on proprietary models (we also report open-weight models). We used
 ## Pending
 - Laterality-normalisation ablation (abl_nolat), aux-head and uniform-K ablations (queued on idle GPUs).
 - 5-fold pos_weight / 24-window / 384 / DINOv2 families; ensemble-teacher round; full-data seeds; final LB numbers.
-- Private LB after the deadline.
+- Private LB after the deadline; compare final #1 (OAI-derived Raptor) vs #2 (no OAI lineage).
