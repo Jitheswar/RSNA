@@ -5,6 +5,9 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 03:30 IST s_r6 5-fold + full_s1 done. 5-fold (weak vs cal_v3 / gold58 pooled): s_r6 0.9229 / 0.9215 vs s_mm2 0.9210 / 0.9212
+  (best weak single family; gold = tie); all 4 families 0.9251 / 0.9260. oct20_submit.sh fired 03:26: submit52 ours-only 6 s_r6,
+  submit53 Raptor+R6flip+[6 s_r6 + 24 s_mm2] 1/3. Running: s_r6_full_s2, s_r6_384 f0-4.
 - 10-19 21:10 IST R6 local run on all 4,407 train studies DONE (scratch_r6/work{0,1,2}/ours_sub.csv, ~1.7 h on 3 A100s).
   Gold58 label AUC: stud_mm2 0.9414, R6 (out-of-sample on gold) 0.9368, **0.6 stud_mm2 + 0.4 rank-mapped R6 = 0.9495** (+0.008;
   prob-mix 0.945, temp-mix 0.949) -> labels/stud_r6.csv. Training s_r6 5-fold + full_s1 (s_mm2 recipe; workers 8683-8685, ETA ~05:00),
