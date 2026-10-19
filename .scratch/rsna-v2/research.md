@@ -260,3 +260,19 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   goodpjw Part B reader (in heliosli 0.9586, dropped from our raptor-r6 base) as 4th arm if runtime allows.
 - 09:53 IST (cron sweep add-on): web search finds only launch coverage (rsna.org press, AuntMinnie); no new
   OAI/external-data ruling. Topic 743416: no new host reply since the Oct 14 Chris Carr ruling. Plan unchanged.
+
+## 2026-10-19 19:42 IST — sweep (evening, user-requested)
+- LB top: 0.969 (RB & Matheus & Tucker & Tony), 0.968 x3 (azamatt, CentralyDS, Sergey Bryansky), 0.967 x4 (joinT fusion,
+  BarryZhou, MEJAL, Kangaroo). Elyra not in top-20; 0.958 (rank ~479 this morning).
+- Notebooks: nothing new above the public 0.958 recipe (only starter/EDA notebooks since morning).
+- Forum: 750529 - no-external-data participants say public notebooks gain a lot from external data; no method details.
+  750318 - commits stuck QUEUED = max 2 GPU batch sessions/account (matches our experience).
+  Our questions 750257-750260 heavily downvoted (-24..-28), no host reply. 750259 non-staff reply (Dread Development):
+  "the datasets they used you have to sign up for". fastMRI access = request form with affiliation + intended use ->
+  under the host test ("limit access to users with institutional affiliations clearly do not") R7/R6 (fastMRI+ aux) are at risk,
+  not only Raptor (OAI).
+- Hedge check: S6fall run_config has no external_mcl / fastMRI aux (external_mcl_weight absent -> 0); init = timm
+  convnext_small in22k. fastMRI code files exist in the S6 repo but are not used by this checkpoint. Remaining external
+  piece in the hedge: anatomy.pt (heliosli orthofoundation dataset) used for localisation at inference.
+- Plan impact: none for selection (user selects on final day). Final #2 (S6 + ours) stays the low-risk hedge;
+  ours-only (0.948, 57xxxx) is the only fully clean fallback.
