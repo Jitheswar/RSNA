@@ -5,6 +5,7 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-19 10:28 IST: 57367335 4-arm Raptor+R7+ours 1/3 + S6 0.25 = 0.957 (no gain over 3-arm). 57376046 (ours 0.25) pending.
 - 10-19 07:28 IST: 57361639 Raptor+R6flip+ours 0.5 = 0.956 (vs 1/3 0.958). submit51 submitted as 57376046 (ours 0.25). 4 slots left today.
 - 10-19 06:30 IST: **57360889 Raptor+R6flip+ours 1/3 = 0.958 NEW BEST -> final #1.** Final #2 stays 57298923 (no OAI). Launched submit51 (Raptor+R6flip+ours 0.25, rsna-v2-blend). 57361639 (ours 0.5), 57367335 (4-arm) pending.
 - 10-19 05:28 IST: 57361296 Raptor+R7+ours 1/3 = 0.957 (ties 57302931 R7+S6+ours). 3 still pending.
