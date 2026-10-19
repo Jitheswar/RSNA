@@ -276,3 +276,12 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
   piece in the hedge: anatomy.pt (heliosli orthofoundation dataset) used for localisation at inference.
 - Plan impact: none for selection (user selects on final day). Final #2 (S6 + ours) stays the low-risk hedge;
   ours-only (0.948, 57xxxx) is the only fully clean fallback.
+
+## 2026-10-19 20:30 IST — sweep (goal: 1st place)
+- Forum 748295: azamat (#2-4, 0.968): "haven't used any external datasets ... short answer is labels"; "AI, not by hand. And don't
+  rely on reports alone" -> image+report VLM labels drive the top. 750529 "zoomed-in method" (no detail). 750334 sells LLM labels.
+- R6 bundle manifest: targets probe_targets_opusv11b (Opus labels), gold_in_training 0, 4 folds (split unpublished), convnext_small
+  in22k init, fm_aux distillation, state head. -> ACTION: distil R6 into our labels (done: gold58 label AUC 0.9414 -> 0.9495).
+- Past RSNA winners: 2023 abdominal trauma 1st = 2.5D CNN + GRU with auxiliary segmentation; 2024 lumbar = localise-then-crop.
+  Localisation-crop models not feasible before Oct 22 without annotations; heliosli R6 already uses SKM-TEA anchors (knee-centred).
+- Codex CLI: all GPT models rejected on the ChatGPT account (Oct 19) -> no frontier relabel.
