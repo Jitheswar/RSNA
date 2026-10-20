@@ -5,6 +5,8 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-21 02:35 IST ours-only 23 new (s_r6/b/c + 384 + 3 full) = 0.951 (57449656) = 6/12-model 0.951 (firm plateau). 4-arm 57443971
+  pending. Training s_r6b_s2 5-fold (seed 82).
 - 10-20 21:05 IST submit59 4-arm Raptor+R6flip+12 new (1/3) + S6fall 0.2 (DS -d, slug rsna-v2-timing) PENDING. Armed
   scratch_r6/sub60.sh: ours-only all new R6-distilled models (~23) when s_r6c + s_r6_384 + s_r6b_full finish (DS -e).
 - 10-20 19:00 IST Raptor+R6flip+12 new 1/3 = 0.958 (57427394). s_r6c (R6 weight 0.8) folds 0-1 worse on gold (0.921 vs s_r6b 0.936).
