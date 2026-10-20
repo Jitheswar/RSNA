@@ -285,3 +285,10 @@ Conclusion: no public label set beats our multimodal labels; Opus mm remains the
 - Past RSNA winners: 2023 abdominal trauma 1st = 2.5D CNN + GRU with auxiliary segmentation; 2024 lumbar = localise-then-crop.
   Localisation-crop models not feasible before Oct 22 without annotations; heliosli R6 already uses SKM-TEA anchors (knee-centred).
 - Codex CLI: all GPT models rejected on the ChatGPT account (Oct 19) -> no frontier relabel.
+
+## 2026-10-20 12:00 IST — public label sets vs ours (gold58 macro AUC)
+- ours stud_r6 0.9495 (0.6 stud_mm2 + 0.4 rank R6). Public: omerzalman evidence-fusion soft 0.929 (11 findings, used gold in its
+  "expert_oof" review -> likely optimistic), omerzalman 98%/99% sets 0.926/0.923, cyruspinto SUPER_CONSENSUS 0.917, siamrahman w5
+  0.896, haungjiawei LLM v2 0.798, argon4 0.762, lingyu07 v53 1.000 (= gold copied in; unusable). Mixing omer/cyrus into ours:
+  +0.001 / +0.000 -> not used. haungjiawei dup_groups.csv = 46 identical-report groups WITHIN train (no train-test leak).
+- LB top unchanged: 0.969 RB&Matheus&Tucker&Tony; 0.968 azamatt, CentralyDS, Sergey Bryansky; 0.967 x6.

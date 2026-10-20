@@ -16,3 +16,5 @@ artifacts/*
 /artifacts/private/
 /rsna-knee-abnormality-detection.zip
 /scratch_r6/
+/scratch_rap/
+/scratch_labels/
