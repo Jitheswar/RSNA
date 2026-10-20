@@ -5,6 +5,8 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 21:05 IST submit59 4-arm Raptor+R6flip+12 new (1/3) + S6fall 0.2 (DS -d, slug rsna-v2-timing) PENDING. Armed
+  scratch_r6/sub60.sh: ours-only all new R6-distilled models (~23) when s_r6c + s_r6_384 + s_r6b_full finish (DS -e).
 - 10-20 19:00 IST Raptor+R6flip+12 new 1/3 = 0.958 (57427394). s_r6c (R6 weight 0.8) folds 0-1 worse on gold (0.921 vs s_r6b 0.936).
   **FINALS RECOMMENDATION (user must select on Kaggle before Oct 22 23:59 UTC):** #1 57427394 (Raptor+R6flip+12 R6-distilled
   models, 0.958; strongest own leg: 12 alone = 0.951) ; #2 57298923 (S6fall + 34 s_mm2, 0.954, no OAI lineage).
