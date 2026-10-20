@@ -5,6 +5,8 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-21 05:00 IST armed scratch_r6/sub61.sh: after s_r6b_s2 5 folds (and >= 05:36 IST Oct 21) -> Raptor+R6flip+18 R6-distilled models 1/3
+  (DS -c, slug rsna-v2-rehearsal) = alternative final #1 candidate if it scores >= 0.958.
 - 10-21 04:50 IST 4-arm Raptor+R6flip+12 new + S6 0.2 = 0.958 (57443971). Every blend variant = 0.957-0.958; ours-only 0.951 for 6/12/23
   new models. Finals recommendation unchanged: #1 57427394, #2 57298923 (user selects on Kaggle).
 - 10-21 02:35 IST ours-only 23 new (s_r6/b/c + 384 + 3 full) = 0.951 (57449656) = 6/12-model 0.951 (firm plateau). 4-arm 57443971
