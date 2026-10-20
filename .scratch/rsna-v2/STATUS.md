@@ -5,6 +5,9 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 19:00 IST Raptor+R6flip+12 new 1/3 = 0.958 (57427394). s_r6c (R6 weight 0.8) folds 0-1 worse on gold (0.921 vs s_r6b 0.936).
+  **FINALS RECOMMENDATION (user must select on Kaggle before Oct 22 23:59 UTC):** #1 57427394 (Raptor+R6flip+12 R6-distilled
+  models, 0.958; strongest own leg: 12 alone = 0.951) ; #2 57298923 (S6fall + 34 s_mm2, 0.954, no OAI lineage).
 - 10-20 14:40 IST ours-only 12 new (s_r6 5 + full s1/s2 + s_r6b 5) = 0.951 (57428378) = 6-model 0.951 (plateau).
   Raptor+R6flip+[6+24] ours 0.5 = 0.957 (57412336) < 1/3 0.958. Pending: 58 (Raptor+R6flip+12 new, 1/3).
   FINALS (proposed): #1 = Raptor+R6flip+new-family leg 1/3 (57412225, 0.958; or 58 if >= 0.958) -- same public score as 57360889
