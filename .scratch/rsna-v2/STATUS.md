@@ -5,6 +5,11 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 10:50 IST ours-only 30 (6 s_r6 + 24 s_mm2) = 0.949 (57414678) < 6 s_r6 alone 0.951 -> old families dilute; legs = new family only.
+  Raptor+R6flip+[6 s_r6 only] 1/3 = 0.958 (57412225) = ties best (public saturated). s_r6b f0-1 >= s_r6 (weak 0.9233 vs 0.9228).
+  s_r6_384 f0 was OOM-killed ~05:10 by the Raptor duplicates -> requeued. Armed scratch_r6/sub5758.sh (after s_r6b 5 folds):
+  submit57 ours-only 12 new (DS -e, slug rehearsal2), submit58 Raptor+R6flip+12 new 1/3 (DS -c, slug rehearsal).
+  Mirror aug already negative (Oct 5) -> not retried.
 - 10-20 05:40 IST **ours-only s_r6 (6 models) = 0.951** (57410574) vs best ours-only 0.948 (34 models) -> R6 distillation works on LB.
   Queued s_r6b (labels 0.4 stud_mm2 + 0.6 rank R6, seed 62) ahead of s_r6_384 f2-4. Raptor 384/224 run locally on train
   (scratch_rap/, inside the GPU jobs via srun --overlap -n 1; Raptor spawns cpu_count-8 workers -> capped at 6):
