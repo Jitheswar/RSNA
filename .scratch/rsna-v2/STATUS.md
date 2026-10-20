@@ -5,6 +5,11 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 05:40 IST **ours-only s_r6 (6 models) = 0.951** (57410574) vs best ours-only 0.948 (34 models) -> R6 distillation works on LB.
+  Queued s_r6b (labels 0.4 stud_mm2 + 0.6 rank R6, seed 62) ahead of s_r6_384 f2-4. Raptor 384/224 run locally on train
+  (scratch_rap/, inside the GPU jobs via srun --overlap -n 1; Raptor spawns cpu_count-8 workers -> capped at 6):
+  gold58 Raptor-384 0.923, 224 0.915, R6 0.937; teacher R6+Raptor mixes give no gold gain (0.9495 vs 0.9497) -> NO Raptor
+  distillation (keeps OAI out of our leg). submit56 (Oct 20 slot 1): ours-only 30 = 6 s_r6 + 24 s_mm2.
 - 10-20 04:55 IST Oct 19 slots 2-5 all used on s_r6 tests (PENDING): submit52 ours-only 6 s_r6; submit53 Raptor+R6flip+[6 s_r6 + 24]
   1/3 (rsna-v2-blend, DS rsna-v2-models); submit54 Raptor+R6flip+[6 s_r6 only] 1/3 (rsna-v2-rehearsal, DS rsna-v2-models-c);
   submit55 Raptor+R6flip+[6+24] ours 0.5 (rsna-v2-timing, DS rsna-v2-models-d). release.sh now also creates a dataset on 403.
