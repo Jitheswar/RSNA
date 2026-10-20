@@ -12,14 +12,15 @@ export RELEASE_TAG="r$(date +%Y%m%d-%H%M%S)-$RANDOM"
 rm -rf "$D"; mkdir -p "$D"
 ~/rsna-gpu2/bin/python scripts/v2/package_models.py --ckpts $1 --out "$D" ${KINFER:+--k-infer $KINFER} ${ENSJSON:+--ens-json $ENSJSON} ${WEIGHTS:+--weight $WEIGHTS} 2>&1 | grep -v -i warn
 ls -la "$D" | head -30
-(cd "$D" && { $KG datasets version -p . -m "$2 [$RELEASE_TAG]" 2>&1 | tail -2 | tee /dev/stderr | grep -qi "not found\|404\|403\|forbidden\|does not exist" && $KG datasets create -p . 2>&1 | tail -2; } || true)
+if $KG datasets status jitheswar/$DS >/dev/null 2>&1; then (cd "$D" && $KG datasets version -p . -m "$2 [$RELEASE_TAG]" 2>&1 | tail -2) || true
+else echo "dataset jitheswar/$DS not found -> create (private)"; (cd "$D" && $KG datasets create -p . 2>&1 | tail -2) || true; fi
 T=$(mktemp -d)
 for i in $(seq 1 90); do
   rm -f "$T/release_tag.txt"
   $KG datasets download jitheswar/$DS -f release_tag.txt -p "$T" --force >/dev/null 2>&1 || true
   [ -f "$T/release_tag.txt.zip" ] && (cd "$T" && unzip -o -q release_tag.txt.zip) || true
   served=$(cat "$T/release_tag.txt" 2>/dev/null || echo none)
-  st=$($KG datasets status jitheswar/$DS 2>&1 | tail -1)
+  st=$($KG datasets status jitheswar/$DS 2>&1 | tail -1 || true)
   if [ "$served" = "$RELEASE_TAG" ] && [ "$st" = "ready" ]; then echo "release $RELEASE_TAG live (check $i)"; exit 0; fi
   sleep 20
 done

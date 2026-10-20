@@ -5,6 +5,10 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 13:15 IST Raptor+R6flip+[6 s_r6 + 24 s_mm2] 1/3 = 0.958 (57410982). s_r6b 5-fold weak 0.9235 / gold 0.9220 (>= s_r6).
+  Submitted: submit58 Raptor+R6flip+12 new 1/3 (DS -c), submit57 ours-only 12 new (DS -e). Pending: 55 (ours 0.5), 57, 58.
+  release.sh FIX: kaggle returns 403 (not 404) for a missing dataset and set -e+pipefail killed the script silently -> now checks
+  `datasets status` first and creates the dataset (private) when missing. Queued s_r6c (R6 weight 0.8, seed 72) 5-fold.
 - 10-20 10:50 IST ours-only 30 (6 s_r6 + 24 s_mm2) = 0.949 (57414678) < 6 s_r6 alone 0.951 -> old families dilute; legs = new family only.
   Raptor+R6flip+[6 s_r6 only] 1/3 = 0.958 (57412225) = ties best (public saturated). s_r6b f0-1 >= s_r6 (weak 0.9233 vs 0.9228).
   s_r6_384 f0 was OOM-killed ~05:10 by the Raptor duplicates -> requeued. Armed scratch_r6/sub5758.sh (after s_r6b 5 folds):
