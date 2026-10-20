@@ -5,6 +5,10 @@ Publication framing: public notebook = attributed baseline; our pipeline (labels
 measured contribution (ours alone / baseline alone / blend at a pre-fixed weight, bootstrap CIs).
 
 ## Pipeline (all code in scripts/v2/)
+- 10-20 14:40 IST ours-only 12 new (s_r6 5 + full s1/s2 + s_r6b 5) = 0.951 (57428378) = 6-model 0.951 (plateau).
+  Raptor+R6flip+[6+24] ours 0.5 = 0.957 (57412336) < 1/3 0.958. Pending: 58 (Raptor+R6flip+12 new, 1/3).
+  FINALS (proposed): #1 = Raptor+R6flip+new-family leg 1/3 (57412225, 0.958; or 58 if >= 0.958) -- same public score as 57360889
+  but its own leg is stronger alone (0.951 vs 0.948); #2 = no-OAI hedge 57298923 (S6 + 34 s_mm2, 0.954).
 - 10-20 13:15 IST Raptor+R6flip+[6 s_r6 + 24 s_mm2] 1/3 = 0.958 (57410982). s_r6b 5-fold weak 0.9235 / gold 0.9220 (>= s_r6).
   Submitted: submit58 Raptor+R6flip+12 new 1/3 (DS -c), submit57 ours-only 12 new (DS -e). Pending: 55 (ours 0.5), 57, 58.
   release.sh FIX: kaggle returns 403 (not 404) for a missing dataset and set -e+pipefail killed the script silently -> now checks
