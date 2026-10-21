@@ -602,3 +602,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   leaderboard snapshots, old notebooks, docs/evidence; rewrite README short + clean (what / how it works / scores / credits; NO "try it yourself" section - user: let users figure it out).
   Do NOT touch before the deadline (live submissions use scripts/v2).
 - 10-22 04:31 IST 5-arm S6 0.2 (57487113) = 0.958 (tie -> finals unchanged). S6 0.3 (57487380) pending.
+- 10-22 04:42 IST 5-arm S6 0.3 (57487380) = 0.958 (tie). Nothing pending. Finals unchanged: 57461662 + 57443971.
