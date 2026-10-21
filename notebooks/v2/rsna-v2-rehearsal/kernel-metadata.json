@@ -13,9 +13,9 @@
  ],
  "dataset_sources": [
   "nartaa/rsna-knee-publication-swa-weights-20261007",
-  "heliosli/rsna-knee-compact-r7cnxfsss",
+  "heliosli/rsna-knee-r6-frozen-fe055406-w1",
   "heliosli/rsna-orthofoundation-fold0-epoch7-20261004",
-  "jitheswar/rsna-v2-models",
+  "jitheswar/rsna-v2-models-c",
   "nartaa/rsna-knee-s6fall-weights"
  ],
  "kernel_sources": [],
