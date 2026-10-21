@@ -599,5 +599,5 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - 10-21 20:40 IST HF private repo Jitheswar/rsna-knee-v2-r6distilled: 18 models + code + final#1 notebook + README (copy: .scratch/rsna-v2/hf_README.md; fast option = 6 s_r6 models, LB 0.951 alone).
 - TODO AFTER DEADLINE (Oct 23 05:29 IST; user approved): repo cleanup. Tag `pre-cleanup`, keep only the v2 path that produced
   the finals (scripts/v2, notebooks/v2 used + build.py, STATUS/research notes), remove legacy src/rsna_knee + tests, .scratch
-  leaderboard snapshots, old notebooks, docs/evidence; rewrite README short + beginner friendly (what / how it works / scores /
-  try it yourself with HF models / credits). Do NOT touch before the deadline (live submissions use scripts/v2).
+  leaderboard snapshots, old notebooks, docs/evidence; rewrite README short + clean (what / how it works / scores / credits; NO "try it yourself" section - user: let users figure it out).
+  Do NOT touch before the deadline (live submissions use scripts/v2).
