@@ -601,3 +601,4 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
   the finals (scripts/v2, notebooks/v2 used + build.py, STATUS/research notes), remove legacy src/rsna_knee + tests, .scratch
   leaderboard snapshots, old notebooks, docs/evidence; rewrite README short + clean (what / how it works / scores / credits; NO "try it yourself" section - user: let users figure it out).
   Do NOT touch before the deadline (live submissions use scripts/v2).
+- 10-22 04:31 IST 5-arm S6 0.2 (57487113) = 0.958 (tie -> finals unchanged). S6 0.3 (57487380) pending.
