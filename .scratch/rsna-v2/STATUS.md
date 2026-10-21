@@ -591,3 +591,8 @@ Laterality checker `lat_clf.pt` (99% held-out): flip if p>0.99 or (weak geometry
 - Oct 18 21:42 IST Raptor + R6flip + 34 (ours 1/3) commit run finally COMPLETE (~9 h incl. Kaggle queue) and SUBMITTED (submit47). 3 slots left today.
 - Oct 18 21:55 IST user: use remaining 3 slots. Launched submit48 (Raptor + R7 + 34 ours 1/3 + S6 0.25), submit49 (Raptor + R7 + 34 ours 1/3); submit50 (Raptor + R6flip + ours 0.5) queued (Kaggle max 2 GPU sessions).
 - Oct 18 22:07 IST submitted: Raptor + R7 + ours 1/3 (57361296), Raptor + R6flip + ours 0.5 (57361639). Pending also Raptor + R6flip + ours 1/3 (57360889). submit48 (4-arm with S6) still queued on Kaggle.
+
+## Oct 21 19:55 IST
+- Finals SELECTED by user: 57461662 (3-arm, 18 models, 0.958) + 57443971 (4-arm S6fall 0.2, 0.958).
+- Launched scratch_r6/sub62.sh: 5-arm (Raptor + R6flip + 18 ours 1/3 + S6fall 0.2 [DS d, rsna-v2-timing] and 0.3 [DS c, rsna-v2-rehearsal]).
+  Logs artifacts/private/v2/logs/submit62.log / submit63.log. Swap a final only if a variant beats 0.958.
