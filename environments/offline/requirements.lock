@@ -1,6 +1,0 @@
-# Runtime-only pins for the offline inference environment.
-# Install these from an already provisioned local wheelhouse; this file has no
-# package index or runtime download instruction.
-numpy==2.2.6
-pydicom==3.0.1
-torch==2.7.1+cpu

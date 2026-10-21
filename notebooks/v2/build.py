@@ -18,7 +18,7 @@ _tagf = here.parent.parent / f"artifacts/private/v2/kaggle/{DS}/release_tag.txt"
 tag = _tagf.read_text().strip() if _tagf.exists() else "untagged"
 leg = (here / "leg.py").read_text().replace("__WEIGHT__", str(weight)).replace("__ONLY__", str(only)).replace("__TAG__", tag)
 print("model package tag", tag)
-base_dir = here.parent / "blend"
+base_dir = here / "public0946"
 if only:
     nb = {"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
     nb["cells"].append({"cell_type": "markdown", "metadata": {}, "source": [

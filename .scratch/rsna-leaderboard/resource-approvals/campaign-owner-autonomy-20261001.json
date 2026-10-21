@@ -1,9 +1,0 @@
-{
-  "external_spend_usd": 0,
-  "interpretation": "Both concrete prepared requests are approved. Continue campaign decisions autonomously within applicable Kaggle requirements and existing zero external spend. No guarantee of first place or automatic claim of achieved rank.",
-  "owner_exact_request_response": "yes",
-  "owner_followup_exact_text": "approve anything as long as we win 1st place and fits kaggle comp dont ask me",
-  "received_at_utc": "2026-10-01T00:49:57.061247+00:00",
-  "response_to": "Approve Ticket51 exact20-to36GPUhour expansion and Ticket39 single30minute GPU checkpoint replay",
-  "schema_version": "rsna-campaign-owner-authorization-v1"
-}

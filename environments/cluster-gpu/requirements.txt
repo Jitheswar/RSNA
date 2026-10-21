@@ -1,8 +1,0 @@
-# Ticket-13 GPU environment contract for Python 3.11.
-# Resolve this only after the cluster driver/CUDA compatibility gate passes.
-# The CPU environment in requirements-cpu.lock is intentionally separate.
---index-url https://download.pytorch.org/whl/cu126
---extra-index-url https://pypi.org/simple
-numpy==2.2.6
-pydicom==3.0.1
-torch==2.7.1+cu126

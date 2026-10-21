@@ -1,4 +1,0 @@
-[tools]
-gh = "latest"
-node = "lts"
-python = "3.11.16"
