@@ -1,7 +1,8 @@
 # Report-to-Reference Calibration for Knee MRI: Learning Multi-Finding Classifiers from Multilingual Radiology Reports
 
-*Working draft (RSNA 2026 Knee Abnormality Detection). Numbers are from `.scratch/rsna-v2/STATUS.md`; every claim
-below has a run, file or submission reference there. Priority: competition first, paper second.*
+*Working draft (RSNA 2026 Knee Abnormality Detection). Numbers are from `docs/log.md`; every claim below has a run,
+file or submission reference there. Leaderboard numbers (public and private) come from the Kaggle submission API
+(retrieved 2026-10-28, after the competition closed on 2026-10-22). Final standing: private 0.944, rank 245 / 6,299.*
 
 ## Abstract (draft)
 Clinical knee MRI comes with free-text reports, not image-level reference labels. We study the RSNA 2026 knee
@@ -15,10 +16,16 @@ laterality) — and close them with (1) canonical anatomical normalisation with 
 reads three MRI montages together with the report. Students improve reference-standard AUC from 0.881 (teachers) to
 0.920, and full-coverage multimodal labels — a frontier model on 18% of studies, a local open-weight 27B VLM on the
 rest, no API cost — raise it further (within-fold 0.927 -> 0.932) while leaving report-label agreement unchanged,
-i.e. the labels move from the reports toward the image-reading panel. On the hidden test our models alone reach 0.947
-and pre-fixed rank blends with attributed public pipelines 0.949. We document that most public stacks above 0.95 rely
-on weights trained with controlled-access data (OAI), and report negative results (second self-training round, mirror
-augmentation, AUC-margin loss, self-consistency and reasoning modes for the VLM labeller).
+i.e. the labels move from the reports toward the image-reading panel. Distilling a public image model into these
+labels (rank-mapped, weight 0.4) raises label AUC further (0.941 -> 0.950). On the private test split (~70% of
+~1,300 studies), our models alone improve from 0.921 (teachers) to 0.931 (students), 0.936 (multimodal labels) and
+0.938 (distilled labels), against 0.927 for the unchanged attributed public baseline and 0.934 for the strongest
+OAI-free public pipeline. Pre-fixed rank blends with attributed public pipelines reach 0.944 (rank 245 of 6,299
+teams); an OAI-free blend reaches the same 0.944 as blends that use public weights trained on controlled-access data
+(OAI). Gold58 decisions transferred in sign to the private split, and public and private scores agree closely
+(r = 0.974 over 60 submissions). We report negative results (second self-training round, mirror augmentation,
+AUC-margin loss, self-consistency and reasoning modes for the VLM labeller, per-finding blend weights fitted on the
+reference set).
 
 ## 1 Introduction
 Large imaging datasets come with reports, not reference labels. Here 4,407 training studies carry reports in about
@@ -135,13 +142,14 @@ synovitis +0.025, fracture +0.016, lateral meniscus +0.013 (medial OA -0.008).
 Calibrated vs public labels with the same bag recipe (fold 0, epoch 4): weak 0.866 vs 0.791, gold12 0.909 vs 0.823.
 
 ### 6.3 Students vs teachers (5-fold OOF; headline)
-| model | OOF weak AUC | gold58 AUC [95% CI] | public LB (5 folds) |
-|---|---|---|---|
-| teacher (calibrated report labels) | 0.9046 | 0.881 [0.840, 0.915] | 0.935 |
-| student (0.5 report + 0.5 teacher OOF) | 0.9179 | 0.920 [0.892, 0.943] | **0.944** |
+| model | OOF weak AUC | gold58 AUC [95% CI] | public LB (5 folds) | private LB (5 folds) |
+|---|---|---|---|---|
+| teacher (calibrated report labels) | 0.9046 | 0.881 [0.840, 0.915] | 0.935 | 0.921 |
+| student (0.5 report + 0.5 teacher OOF) | 0.9179 | 0.920 [0.892, 0.943] | **0.944** | **0.931** |
 Paired bootstrap on gold58: +0.038 [+0.020, +0.061], P < 0.001. 11 of 12 findings improve on gold58 (ACL flat, 0.988 -> 0.984;
 all 12 improve on weak AUC); largest gains on findings the reports under-call or omit: lateral OA 0.754 -> 0.865, synovitis 0.772 -> 0.851, Baker's cyst 0.908 -> 0.978,
 contusion 0.892 -> 0.946, MCL 0.857 -> 0.896, lateral meniscus 0.799 -> 0.855 (gold58 per target).
+The gain transferred to the hidden test: +0.009 public and +0.010 private.
 
 ### 6.4 Recipe refinements (students, fold 0; weak AUC / gold12)
 | variant | weak | gold12 | notable per-target change |
@@ -155,39 +163,71 @@ contusion 0.892 -> 0.946, MCL 0.857 -> 0.896, lateral meniscus 0.799 -> 0.855 (g
 | EfficientNetV2-S 384 | 0.9004 | 0.938 | hurts ensembles |
 Inference windows (trained 20/12/10): 14/8/7 -0.0017, 30/18/15 +0.0006, 40/24/20 +0.0010 weak AUC.
 
-### 6.5 Leaderboard (public 30%)
-| submission | public AUC |
-|---|---|
-| attributed public baseline (yamadan96/rsna-knee-d4-public0946), unchanged | 0.943 |
-| ours: 5-fold teachers / 5-fold students | 0.935 / 0.944 |
-| blend, rank weight 0.5: baseline + teachers | 0.946 |
-| blend, rank weight 0.5 / 0.65: baseline + students | 0.948 / 0.948 |
-| ours: 25 students (5 ConvNeXt-S families x 5 folds) | 0.945 |
-| ours: ensemble-teacher students s_mix1e (5-fold) / + 1 full-data model | 0.946 / 0.946 |
-| ours: + 1 full-data fine-tune on multimodal labels (3 epochs, Kaggle T4) | 0.946 |
-| blend, rank weight 0.65: baseline + s_mix1e 5-fold | 0.948 |
-| blend, rank weight 0.65: baseline + s_mix1e 5-fold + full-data + mm fine-tune | 0.949 |
-| A/B single full-data model vs its 2 mm-label fine-tunes (seeds 45/46) | 0.943 vs 0.944 |
-| ours: s_mm2 5-fold / + full-data s_mm2 (full-coverage multimodal labels) | 0.946 / 0.947 |
-| ours: 19 models (s_mm2 + seed 2 + 384 5-fold each, 3 full-data + 384 full-data) | 0.948 |
-| attributed R7 stage alone (OAI-free half of the public 0.957 stack) | 0.949 |
-| blend, rank weight 0.5: R7 + s_mm2 5-fold | 0.954 |
-| blend, rank weight 0.4 / 0.5 / 0.6 / 0.7: R7 + 11 s_mm2 models (5-fold + 2 full-data + 4 folds @384) | **0.955** / **0.955** / **0.955** / 0.954 |
-| blend, rank weight 0.5: R7 + 13 s_mm2 models (+ 384 f4 + seed-2 f0) | **0.955** |
-| blend, rank weight 0.5: R7 + 19 models (ours-only 19 = 0.948) | **0.955** |
-| blend 1/3 each: R7 + nartaa S6fall + 27 models | **0.957** |
-| blend R7 .25 / ours .25 / S6 .5 | 0.956 |
-| blend 1/3 each: R6 flip-TTA + S6fall + 34 models | 0.956 |
-| blend 1/3 each: R7 + S6fall + 34 models | **0.957** |
-| blend per-finding weights from gold-58 (R7 + S6 + 34) | 0.955 |
-| hedge per-finding weights (S6 + 34) | 0.954 |
-| blend 0.5/0.5: nartaa S6fall (ImageNet init, OAI fallback removed) + 27 models -- no OAI lineage | 0.954 |
-| blend 1/3 each: nartaa Raptor 384+224 (OAI-trained, disclosed) + R7 + 34 models | **0.957** |
-| blend 1/3 each: nartaa Raptor 384+224 (OAI-trained, disclosed) + R6 flip-TTA + 34 models | **0.958** |
-| blend rank weight 0.5 ours: Raptor + R6 flip-TTA + 34 models | 0.956 |
-| blend rank weight 0.25 ours: Raptor + R6 flip-TTA + 34 models | 0.958 |
-| 4 arms: Raptor + R7 + 34 models (1/3 each) + S6fall 0.25 | 0.957 |
-| ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — |
+### 6.5 Leaderboard (public ~30% / private ~70%)
+Public and private scores of every submission come from the Kaggle submission API (team Elyra, retrieved
+2026-10-28). Final private standing: **0.944, rank 245 / 6,299** (winner 0.960; rank-22 cutoff 0.954).
+
+| submission | public AUC | private AUC |
+|---|---|---|
+| attributed public baseline (yamadan96/rsna-knee-d4-public0946), unchanged | 0.943 | 0.927 |
+| ours: 5-fold teachers / 5-fold students | 0.935 / 0.944 | 0.921 / 0.931 |
+| blend, rank weight 0.5: baseline + teachers | 0.946 | 0.932 |
+| blend, rank weight 0.5 / 0.65: baseline + students | 0.948 / 0.948 | 0.933 / 0.933 |
+| ours: 25 students (5 ConvNeXt-S families x 5 folds) | 0.945 | 0.933 |
+| ours: ensemble-teacher students s_mix1e (5-fold + 1 full-data model) | 0.946 | 0.933 |
+| ours: + 1 full-data fine-tune on multimodal labels (3 epochs, Kaggle T4) | 0.946 | 0.934 |
+| blend, rank weight 0.65: baseline + s_mix1e 5-fold | 0.948 | 0.935 |
+| blend, rank weight 0.65: baseline + s_mix1e 5-fold + full-data + 1 / 2 mm fine-tunes | 0.949 / 0.949 | 0.935 / 0.936 |
+| A/B single full-data model vs its 2 mm-label fine-tunes (seeds 45/46) | 0.943 vs 0.944 | 0.932 vs 0.934 |
+| ours: s_mm2 5-fold / + full-data s_mm2 (full-coverage multimodal labels) | 0.946 / 0.947 | 0.935 / 0.936 |
+| ours: 19 / 22 / 27 s_mm2-family models | 0.948 | 0.936 |
+| blend, rank weight 0.65: baseline + s_mm2 5-fold | 0.949 | 0.936 |
+| attributed R7 stage alone (OAI-free half of the public 0.957 stack) | 0.949 | 0.934 |
+| blend, rank weight 0.5: R7 + s_mm2 5-fold | 0.954 | 0.942 |
+| blend, rank weight 0.4 / 0.5 / 0.6 / 0.7: R7 + 11 s_mm2 models (5-fold + 2 full-data + 4 folds @384) | 0.955 / 0.955 / 0.955 / 0.954 | 0.942 / 0.943 / 0.943 / 0.942 |
+| blend, rank weight 0.5: R7 + 13 / 19 / 22 / 27 models | 0.955 | 0.943 |
+| blend 1/3 each: R7 + nartaa S6fall + 27 / 34 models (OAI-free) | **0.957** | **0.944** |
+| blend R7 .25 / ours .25 / S6 .5 | 0.956 | 0.943 |
+| blend 1/3 each: R6 flip-TTA + S6fall + 34 models | 0.956 | 0.943 |
+| blend per-finding weights from gold-58 (R7 + S6 + 34) | 0.955 | 0.943 |
+| hedge per-finding weights (S6 + 34) | 0.954 | 0.941 |
+| blend 0.5/0.5: nartaa S6fall (ImageNet init, OAI fallback removed) + 27 / 34 models -- no OAI lineage | 0.954 | 0.942 |
+| blend 1/3 each: nartaa Raptor 384+224 (OAI-trained, disclosed) + R7 + 34 models | 0.957 | 0.943 |
+| 4 arms: Raptor + R7 + 34 models (1/3 each) + S6fall 0.25 | 0.957 | 0.943 |
+| blend 1/3 each: Raptor + R6 flip-TTA + 34 models | 0.958 | 0.943 |
+| blend rank weight 0.5 / 0.25 ours: Raptor + R6 flip-TTA + 34 models | 0.956 / 0.958 | 0.943 / 0.943 |
+| **ours: 6 s_r6 models (R6-distilled labels, 6.5b)** | **0.951** | **0.938** |
+| ours: 6 s_r6 + 24 s_mm2 (30 models) | 0.949 | 0.937 |
+| ours: 12 / 23 R6-distilled models | 0.951 / 0.951 | 0.938 / 0.938 |
+| blend 1/3 each: Raptor + R6 flip-TTA + 6 s_r6 + 24 s_mm2 | 0.958 | 0.944 |
+| blend 1/3 each: Raptor + R6 flip-TTA + 6 / 12 R6-distilled models | 0.958 / 0.958 | 0.943 / 0.943 |
+| **final #2:** Raptor + R6 flip-TTA + 12 R6-distilled (1/3), then S6fall 0.2 | **0.958** | **0.944** |
+| **final #1:** Raptor + R6 flip-TTA + 18 R6-distilled (1/3) | **0.958** | 0.943 |
+| 5 arms: final #1 + S6fall 0.2 / 0.3 | 0.958 / 0.958 | 0.943 / 0.943 |
+| ours, negative: ResNet50@224 / CoAtNet-1@224 families (5-fold OOF weak 0.898 / 0.911 vs ConvNeXt-S 0.921) | — | — |
+
+**6.5a Ours alone vs the attributed baseline (private split).** Each label generation moved our own leg in the
+direction gold58 predicted: teachers 0.921 -> students 0.931 (+0.010) -> ensemble-teacher students 0.933 ->
+multimodal-label students 0.935-0.936 -> R6-distilled students 0.938. The unchanged attributed public baseline scores
+0.927 and the strongest OAI-free public pipeline (R7) 0.934; our final leg alone is +0.011 over the former and
++0.004 over the latter.
+
+**6.5b Distillation from a public image model (R6, Oct 19-20).** heliosli's public R6 (ConvNeXt-S, ImageNet-22k
+init, OrthoFoundation feature-distillation auxiliary, SKM-TEA anchor localisation, flip TTA; trained on Opus-derived
+labels, reference studies never used in training per its manifest) was run on all 4,407 training studies (3 A100s,
+~1.7 h). Its predictions were rank-mapped per finding onto the marginal distribution of our labels and mixed in:
+gold58 label AUC stud_mm2 0.9414, R6 alone 0.9368 (out-of-sample on gold), 0.6 stud_mm2 + 0.4 rank-mapped R6
+**0.9495** (probability mix 0.945, temperature mix 0.949). Students on these labels (s_r6, s_mm2 recipe) reach OOF weak
+0.9229 / gold58 0.9215 (s_mm2 0.9210 / 0.9212); R6 weight 0.6 (s_r6b) 0.9235 / 0.9220; weight 0.8 is worse on gold
+(folds 0-1: 0.921 vs 0.936). On the hidden test, 6 s_r6 models score 0.951 public / 0.938 private, vs 0.948 / 0.936
+for 19-34 s_mm2 models; 12 and 23 R6-distilled models give the same 0.951 / 0.938, and adding the older s_mm2 families
+dilutes the leg (30 models: 0.949 / 0.937). The OAI-trained Raptor CoAtNet run the same way adds nothing as a second
+teacher (gold58 0.9497 vs 0.9495) and was not distilled, which keeps OAI out of our own leg.
+
+**6.5c Public vs private agreement.** Over our 60 submissions with public AUC >= 0.93, Pearson r(public, private) =
+0.974. Public was a reliable coarse signal, but differences <= 0.001 were noise: every blend variant of the final week
+scored 0.957-0.958 public and 0.943-0.944 private. About 1,297 teams finished at exactly 0.942 private (likely the
+widely forked public 0.958 notebook recipe; not verified). Our finals finished 0.001-0.002 above that cluster.
 
 Ensembles saturate: 6 -> 25 models moves the public score by <= 0.001, and a single full-data fine-tune on the
 multimodal labels (coverage 17.7% of training studies) is invisible at ensemble level. The remaining label gain
@@ -215,19 +255,27 @@ arXiv 2601.18250), was itself pretrained on ~1.25 M knee images that include ~20
 radiographs. We never access OAI data; the competition rules explicitly allow freely available pre-trained models, so
 we treat R7 as admissible but report it separately and keep an ours-only submission with no OAI lineage as a hedge.
 
-**Final submissions and OAI disclosure (Oct 18-19).** After the host's ruling (topic 743416) was read as covering
+**Final submissions and OAI disclosure (Oct 18-21).** After the host's ruling (topic 743416) was read as covering
 datasets that require only registration and licence acknowledgement, we allowed the public OAI-trained Raptor
-weights (nartaa, 384 + 224 CoAtNet) in one of our two final submissions; we never downloaded or trained on OAI data
-ourselves. Final #1: Raptor + heliosli R6 flip-TTA + our 34 models, rank weight 1/3 each (public 0.958; our weight
-0.25 also 0.958, 0.5 gives 0.956). Final #2 (hedge, no OAI-trained weights and no OAI-pretrained init): nartaa S6fall
-(ImageNet init) + our models, 0.5/0.5 (public 0.954). The two finals bound the effect of OAI-derived weights on the
-private split. Adding S6 as a fourth arm (0.957) or swapping R6 for R7 (0.957) did not help; ~1,170 teams share the
-public notebook score 0.958, so public differences among these blends are within noise.
+weights (nartaa, 384 + 224 CoAtNet) in blends; we never downloaded or trained on OAI data ourselves. The plan until
+Oct 20 was one Raptor blend plus a hedge with no OAI lineage (S6fall + ours, 0.954 public). On Oct 21 the team
+selected two Raptor blends: **final #1** Raptor + heliosli R6 flip-TTA + our 18 R6-distilled models, rank weight 1/3
+each (57461662; public 0.958, private 0.943), and **final #2** the same with 12 R6-distilled models and S6fall
+blended in at 0.2 (57443971; public 0.958, private **0.944**, the scoring final). Adding S6 as a fifth arm (0.2 / 0.3)
+or swapping R6 for R7 did not change public scores (0.957-0.958).
+
+**OAI-derived weights gave no private-set gain.** The OAI-free blend R7 + S6fall + ours (1/3 each; 57255056 and
+57302931) scored **0.944 private**, the same as the best Raptor-containing blends (0.943-0.944); the blend with no OAI
+lineage at all (S6fall + ours) scored 0.942. The two-final hedge therefore cost nothing on the private split, and
+the private results bound the contribution of OAI-trained public weights on top of our pipeline at <= 0.001.
 
 **Blend weight is flat (Oct 14).** R7 + 11 s_mm2 models at our-leg rank weight 0.4 / 0.5 / 0.6 / 0.7 scored
 0.955 / 0.955 / 0.955 / 0.954, and 13 models at 0.5 also 0.955: two equally strong, differently built pipelines
 (R7 alone 0.949, ours alone 0.947) give +0.006 over either, and the gain is insensitive to the mixing weight. The
-public split (~390 studies, +-0.004) cannot rank leg variants further; selection relies on gold58 within-fold AUC.
+private split agrees: 0.942 / 0.943 / 0.943 / 0.942 (R7 alone 0.934, ours alone 0.936, i.e. +0.007). The public
+split (~390 studies, +-0.004) cannot rank leg variants further; selection relies on gold58 within-fold AUC.
+Per-finding weights fitted on gold58 (in-sample gain +0.004) lowered both splits (public 0.955 vs 0.957, private
+0.943 vs 0.944): weights fitted on 58 studies do not transfer.
 
 ### 6.6 Negative results and ablations
 - **Second self-training round** (same architecture, labels from round-1 student OOF): weak AUC unchanged
@@ -265,7 +313,8 @@ synovitis 62-92% everywhere; OA 47-59% of Turkish reports.
 ## 7 Discussion and limitations (draft)
 **Where the gains come from.** The largest single improvement came from the labels, not the network: calibrated
 report labels beat public labels by ~0.075 weak AUC on the same recipe, and image-informed students added +0.038
-gold58 AUC and +0.009 on the hidden test. Architecture changes within a fixed label set moved results by <= 0.005
+gold58 AUC and +0.009 public / +0.010 private on the hidden test; full-coverage multimodal labels and R6
+distillation added a further +0.005 and +0.002 private. Architecture changes within a fixed label set moved results by <= 0.005
 (resolution, backbone size, DINOv2, EfficientNetV2), while recipe changes that target specific findings helped where
 predicted (pos_weight -> rare findings such as MCL and fracture; denser axial sampling -> patellofemoral OA).
 
@@ -287,11 +336,22 @@ safe yardstick; we decide label changes on the reference panel's direction only 
 ensemble 0.943 in ~6.4 h. Inference cost (~290 s per ConvNeXt-S model per 1,300 studies, measured) bounds how many of
 our models fit beside the baseline in 9 h; we select families greedily by OOF objective per second.
 
-**Limitations.** Gold58 is small (CIs +-0.03) and not prevalence-matched; the public leaderboard covers ~390 studies
-(+-0.004); results on the private split are pending. Report languages were identified heuristically. Commercial LLM
-labels depend on proprietary models (we also report open-weight models). We used no external MRI data.
+**Gap to the top.** The winning private score was 0.960 (rank-22 cutoff 0.954) vs our 0.944. Top teams reported
+using no external data and attributed their results to labels from AI reading images, not reports alone. Our frontier
+multimodal labels covered only 18% of studies (the rest came from a 27B open-weight VLM), and our own leg used one
+architecture family; full-coverage frontier relabelling and localise-then-crop models are the most likely missing
+pieces.
+
+**Limitations.** Gold58 is small (CIs +-0.03), not prevalence-matched and was reused for many development decisions,
+so it is not an untouched test. The public leaderboard covers ~390 studies (+-0.004); the private split (~910
+studies) is the only untouched evaluation, it gives one score per submission (no CIs), and it covers our ensembles
+rather than isolated components. Report languages were identified heuristically. Commercial LLM labels depend on
+proprietary models (we also report open-weight models). Final blends include attributed third-party public weights
+with partly unclear provenance (fastMRI / OAI lineage); our own leg is reported separately. We used no external MRI
+data.
 
 ## Pending
-- Laterality-normalisation ablation (abl_nolat), aux-head and uniform-K ablations (queued on idle GPUs).
-- 5-fold pos_weight / 24-window / 384 / DINOv2 families; ensemble-teacher round; full-data seeds; final LB numbers.
-- Private LB after the deadline; compare final #1 (OAI-derived Raptor) vs #2 (no OAI lineage).
+- Laterality-normalisation ablation (abl_nolat), aux-head (abl_noaux) and uniform-K (abl_uniK) ablations: never
+  completed before the deadline (abl_nolat stopped at ~30%); needed before claiming each component's contribution.
+- Done: 5-fold pos_weight / 24-window / 384 / DINOv2 families, ensemble-teacher round, full-data seeds, final public
+  and private LB numbers (6.5), OAI vs OAI-free comparison on the private split (6.5).
